@@ -1,0 +1,91 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : "system-dark",
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.72960,0.63398,0.38448,1.00000"
+          },
+          "glass" : true,
+          "image-name" : "Crona Terminal Icon.svg",
+          "name" : "Crona Terminal Icon",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              -159.0078125,
+              -173.9453125
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.81610,0.69963,0.41119,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : "none"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "display-p3:0.81610,0.69963,0.41119,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Crona C 4.svg",
+          "name" : "Crona C 4",
+          "position" : {
+            "scale" : 0.45,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "blend-mode" : "lighten",
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "srgb:0.00000,0.00000,0.00000,0.17909"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.00000,0.00000,0.00000,1.00000"
+              }
+            }
+          ],
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Crona BG.svg",
+          "name" : "Crona BG",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}
