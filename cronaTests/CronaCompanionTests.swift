@@ -113,6 +113,39 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.method, "kernel.info.get")
     }
 
+    func testDaemonClientBuildsKernelShutdownRequest() async throws {
+        let response = """
+        {
+          "id":"response-1",
+          "result":{"ok":true}
+        }
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        let result = try await client.kernelShutdown()
+
+        XCTAssertTrue(result.ok)
+        let request: Data = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "kernel.shutdown")
+    }
+
+    func testStatusItemClickIntentUsesSecondaryClickForContextMenu() {
+        XCTAssertEqual(
+            StatusItemClickIntent.resolve(eventType: .rightMouseUp),
+            .showContextMenu
+        )
+        XCTAssertEqual(
+            StatusItemClickIntent.resolve(eventType: .leftMouseUp),
+            .togglePopup
+        )
+        XCTAssertEqual(
+            StatusItemClickIntent.resolve(eventType: nil),
+            .togglePopup
+        )
+    }
+
     func testPreferencesPersist() throws {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)

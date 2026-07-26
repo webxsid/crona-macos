@@ -17,6 +17,7 @@ enum PopoverModalKind {
 
 struct PopoverRootView: View {
     @ObservedObject var appState: CompanionAppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 16) {
@@ -93,6 +94,11 @@ struct PopoverRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         .animation(.easeInOut(duration: 0.16), value: appState.isEndSessionSheetPresented)
         .animation(.easeInOut(duration: 0.16), value: appState.issueActionEditor)
+        .onAppear {
+            appState.registerSettingsSceneAction {
+                openSettings()
+            }
+        }
     }
 
     private var hasPresentedModal: Bool {
@@ -128,7 +134,26 @@ struct PopoverRootView: View {
 
             HStack {
                 Spacer()
-                SettingsLink {
+                Menu {
+                    Button("About Crona", action: appState.openAbout)
+
+                    Divider()
+
+                    SettingsLink {
+                        Text("Settings…")
+                    }
+
+                    Divider()
+
+                    Button("Documentation", action: appState.openDocumentation)
+                    Button("GitHub", action: appState.openGitHub)
+                    Button("Support", action: appState.openSupport)
+
+                    Divider()
+
+                    Button("Stop Crona…", role: .destructive, action: appState.requestStopCrona)
+                    Button("Quit Crona", action: appState.quitCrona)
+                } label: {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.7))
@@ -136,14 +161,8 @@ struct PopoverRootView: View {
                         .background(Circle().fill(Color.white.opacity(0.06)))
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        appState.dismissMenuBarPopup()
-                    }
-                )
-                .keyboardShortcut(",", modifiers: [.command])
-                .help("Open Settings")
-                .accessibilityLabel("Open Settings")
+                .help("Crona Menu")
+                .accessibilityLabel("Open Crona Menu")
             }
         }
         .frame(maxWidth: .infinity, minHeight: 30)

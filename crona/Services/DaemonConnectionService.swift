@@ -68,6 +68,60 @@ final class DaemonConnectionService: ObservableObject {
         return try await body(client)
     }
 
+    func shutdownAndWait(
+        timeout: Duration = .seconds(5),
+        pollInterval: Duration = .milliseconds(100)
+    ) async throws {
+        guard let shutdownClient = client else {
+            stop()
+            markDaemonStopped()
+            return
+        }
+
+        stop()
+        do {
+            _ = try await shutdownClient.kernelShutdown()
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: timeout)
+
+            while clock.now < deadline {
+                do {
+                    _ = try await shutdownClient.healthGet()
+                } catch {
+                    markDaemonStopped()
+                    return
+                }
+                try await Task.sleep(for: pollInterval)
+            }
+
+            do {
+                _ = try await shutdownClient.healthGet()
+            } catch {
+                markDaemonStopped()
+                return
+            }
+
+            throw CronaConnectionFailure.transport(
+                "Crona did not stop within five seconds."
+            )
+        } catch {
+            client = nil
+            connectionState = .disconnected
+            lastErrorDescription = error.localizedDescription
+            start()
+            throw error
+        }
+    }
+
+    private func markDaemonStopped() {
+        client = nil
+        kernelInfo = nil
+        health = nil
+        alertStatus = nil
+        connectionState = .disconnected
+        lastErrorDescription = nil
+    }
+
     private func runConnectionLoop() async {
         while !Task.isCancelled {
             if connectionState == .connected, eventTask != nil {

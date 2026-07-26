@@ -15,14 +15,14 @@ final class WindowService {
         self.appState = appState
     }
 
-    func showSettings() {
+    func showSettings(openScene: () -> Void) {
         presentAsRegularApplication()
         if let settingsWindow, settingsWindow.isVisible {
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        openScene()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -90,6 +90,29 @@ final class WindowService {
         } catch {
             appState?.daemonConnection.lastErrorDescription = "Failed to open TUI: \(error.localizedDescription)"
         }
+    }
+
+    func confirmStopCrona(hasActiveSession: Bool) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Stop Crona?"
+        alert.informativeText = hasActiveSession
+            ? "The daemon and companion will quit. Your active timer will not be committed automatically."
+            : "The daemon and companion will quit. You can start Crona again whenever you need it."
+        alert.addButton(withTitle: "Stop Crona")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    func showStopCronaError(_ message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Crona Couldn’t Stop"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func activateAppForPopup() {

@@ -10,6 +10,15 @@ enum StatusPopupSizing {
     }
 }
 
+enum StatusItemClickIntent: Equatable {
+    case togglePopup
+    case showContextMenu
+
+    static func resolve(eventType: NSEvent.EventType?) -> Self {
+        eventType == .rightMouseUp ? .showContextMenu : .togglePopup
+    }
+}
+
 @MainActor
 final class StatusBarService: NSObject {
     private weak var appState: CompanionAppState?
@@ -23,6 +32,7 @@ final class StatusBarService: NSObject {
     private var lastRenderedDisplayMode: MenuBarDisplayMode?
     private var pendingUpdate = false
     private var animationGeneration = 0
+    private lazy var contextMenu = makeContextMenu()
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
@@ -31,7 +41,7 @@ final class StatusBarService: NSObject {
     func installIfNeeded() {
         guard let button = statusItem.button, let appState else { return }
         button.target = self
-        button.action = #selector(togglePopup(_:))
+        button.action = #selector(handleStatusItemClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         makePopupPanel(appState: appState)
         updateStatusItem()
@@ -139,13 +149,92 @@ final class StatusBarService: NSObject {
     }
 
     @objc
-    private func togglePopup(_ sender: AnyObject?) {
+    private func handleStatusItemClick(_ sender: AnyObject?) {
+        switch StatusItemClickIntent.resolve(eventType: NSApp.currentEvent?.type) {
+        case .togglePopup:
+            togglePopup()
+        case .showContextMenu:
+            showContextMenuFromStatusItem()
+        }
+    }
+
+    private func togglePopup() {
         guard let panel = popupPanel else { return }
         if panel.isVisible {
             dismissPopup()
         } else {
             showPopup()
         }
+    }
+
+    private func showContextMenuFromStatusItem() {
+        guard let button = statusItem.button else { return }
+        dismissPopup(animated: false)
+        let location = NSPoint(x: button.bounds.midX, y: button.bounds.minY - 4)
+        contextMenu.popUp(positioning: nil, at: location, in: button)
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Crona")
+        menu.autoenablesItems = false
+        menu.addItem(menuItem("About Crona", action: #selector(openAbout)))
+        menu.addItem(.separator())
+
+        let settings = menuItem("Settings…", action: #selector(openSettings))
+        settings.keyEquivalent = ","
+        settings.keyEquivalentModifierMask = [.command]
+        menu.addItem(settings)
+        menu.addItem(.separator())
+
+        menu.addItem(menuItem("Documentation", action: #selector(openDocumentation)))
+        menu.addItem(menuItem("GitHub", action: #selector(openGitHub)))
+        menu.addItem(menuItem("Support", action: #selector(openSupport)))
+        menu.addItem(.separator())
+
+        let stop = menuItem("Stop Crona…", action: #selector(stopCrona))
+        stop.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
+        menu.addItem(stop)
+
+        let quit = menuItem("Quit Crona", action: #selector(quitCrona))
+        quit.keyEquivalent = "q"
+        quit.keyEquivalentModifierMask = [.command]
+        menu.addItem(quit)
+        return menu
+    }
+
+    private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.isEnabled = true
+        return item
+    }
+
+    @objc private func openAbout() {
+        appState?.openAbout()
+    }
+
+    @objc private func openSettings() {
+        appState?.openSettings()
+    }
+
+    @objc private func openDocumentation() {
+        appState?.openDocumentation()
+    }
+
+    @objc private func openGitHub() {
+        appState?.openGitHub()
+    }
+
+    @objc private func openSupport() {
+        appState?.openSupport()
+    }
+
+    @objc private func stopCrona() {
+        appState?.requestStopCrona()
+    }
+
+    @objc private func quitCrona() {
+        appState?.quitCrona()
     }
 
     private func showPopup() {

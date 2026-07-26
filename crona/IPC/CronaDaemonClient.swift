@@ -104,6 +104,10 @@ final class CronaDaemonClient {
         try await request(method: "kernel.info.get")
     }
 
+    func kernelShutdown() async throws -> CronaOKResponse {
+        try await request(method: "kernel.shutdown")
+    }
+
     func contextGet() async throws -> CronaActiveContext {
         try await request(method: "context.get")
     }

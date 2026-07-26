@@ -77,6 +77,7 @@ final class CompanionAppState: ObservableObject {
     private var endSessionFallbackTask: Task<Void, Never>?
     private var hardLimitPopupDismissTask: Task<Void, Never>?
     private var lastWarningIndicatorKey: String?
+    private var settingsSceneAction: (() -> Void)?
     @Published var selectedFocusIssue: DailyFocusIssue?
     @Published var issueActionEditor: IssueActionEditor?
     @Published var issueActionNote = ""
@@ -254,7 +255,58 @@ final class CompanionAppState: ObservableObject {
 
     func openSettings() {
         statusBarService.dismissPopup { [weak self] in
-            self?.windowService.showSettings()
+            guard let self, let settingsSceneAction = self.settingsSceneAction else {
+                return
+            }
+            self.windowService.showSettings(openScene: settingsSceneAction)
+        }
+    }
+
+    func registerSettingsSceneAction(_ action: @escaping () -> Void) {
+        settingsSceneAction = action
+    }
+
+    func openAbout() {
+        setSelectedSettingsDestination(.about)
+        openSettings()
+    }
+
+    func quitCrona() {
+        statusBarService.dismissPopup(animated: false)
+        NSApp.terminate(nil)
+    }
+
+    func openDocumentation() {
+        openExternalURL("https://github.com/webxsid/crona/tree/main/docs")
+    }
+
+    func openGitHub() {
+        openExternalURL("https://github.com/webxsid/crona")
+    }
+
+    func openSupport() {
+        openExternalURL("https://github.com/webxsid/crona/discussions")
+    }
+
+    private func openExternalURL(_ value: String) {
+        guard let url = URL(string: value) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func requestStopCrona() {
+        statusBarService.dismissPopup(animated: false)
+        guard windowService.confirmStopCrona(hasActiveSession: hasActiveFocusSession) else {
+            return
+        }
+
+        Task {
+            do {
+                try await daemonConnection.shutdownAndWait()
+                NSApp.terminate(nil)
+            } catch {
+                logger.error("Failed to stop Crona: \(error.localizedDescription, privacy: .public)")
+                windowService.showStopCronaError(error.localizedDescription)
+            }
         }
     }
 
