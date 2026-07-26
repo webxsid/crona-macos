@@ -33,7 +33,7 @@
 	<key>CRONA_DAEMON_LABEL</key>
 	<string>crona</string>
 	<key>CRONA_RUNTIME_DIR</key>
-	<string>$(HOME)/Library/Application Support/Crona Dev</string>
+	<string>~/Library/Application Support/Crona Dev</string>
 	<key>CRONA_KERNEL_EXECUTABLE</key>
 	<string>crona-kernel</string>
 	<key>CRONA_KERNEL_DEV_EXECUTABLE</key>

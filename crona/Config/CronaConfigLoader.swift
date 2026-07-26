@@ -22,7 +22,9 @@ final class CronaConfigLoader {
     func load() -> LoadedCronaRuntime {
         let environmentValues = environmentProvider()
         let configuredRuntimeDirectory = Self.requiredBundleValue(bundle, key: "CRONA_RUNTIME_DIR")
-        let runtimeDirectory = Self.optionalEnv(environmentValues, key: "CRONA_HOME") ?? configuredRuntimeDirectory
+        let runtimeDirectory = Self.expandedPath(
+            Self.optionalEnv(environmentValues, key: "CRONA_HOME") ?? configuredRuntimeDirectory
+        )
         let config = CronaConfig(
             environment: Self.requiredBundleValue(bundle, key: "CRONA_APP_ENV").cronaEnv,
             daemonLabel: Self.requiredBundleValue(bundle, key: "CRONA_DAEMON_LABEL"),
@@ -54,6 +56,10 @@ final class CronaConfigLoader {
 
     private static func optionalEnv(_ values: [String: String], key: String) -> String? {
         values[key]
+    }
+
+    private static func expandedPath(_ path: String) -> String {
+        (path as NSString).expandingTildeInPath
     }
 
     private static func requiredBundleValue(_ bundle: Bundle, key: String) -> String {

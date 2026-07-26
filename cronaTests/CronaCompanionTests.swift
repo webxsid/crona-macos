@@ -406,6 +406,27 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(runtime.config.defaultSocketPath, "/tmp/override/kernel.sock")
     }
 
+    func testConfigLoaderExpandsRuntimeHomeAtLaunch() {
+        let loader = CronaConfigLoader(
+            bundle: TestBundle.info([
+                "CRONA_APP_ENV": "production",
+                "CRONA_DAEMON_LABEL": "crona",
+                "CRONA_RUNTIME_DIR": "~/Library/Application Support/Crona",
+                "CRONA_KERNEL_EXECUTABLE": "crona-kernel",
+                "CRONA_KERNEL_DEV_EXECUTABLE": "crona-kernel-dev"
+            ]),
+            environmentProvider: { [:] }
+        )
+
+        let runtime = loader.load()
+        let expected = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Crona")
+            .path
+
+        XCTAssertEqual(runtime.config.runtimeDirectoryPath, expected)
+        XCTAssertFalse(runtime.config.runtimeDirectoryPath.contains("/Users/runner"))
+    }
+
     func testOptionalActiveContextDecodesNull() throws {
         let response = """
         {"id":"response-1","result":null}

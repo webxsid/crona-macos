@@ -1,7 +1,6 @@
 #include "Base.xcconfig"
 
 CRONA_APP_ENV = production
-CRONA_RUNTIME_DIR = $(HOME)/Library/Application Support/Crona
+CRONA_RUNTIME_DIR = ~/Library/Application Support/Crona
 CRONA_DISCOVERY_PATH = $(CRONA_RUNTIME_DIR)/kernel.json
 CRONA_SOCKET_PATH = $(CRONA_RUNTIME_DIR)/kernel.sock
-
