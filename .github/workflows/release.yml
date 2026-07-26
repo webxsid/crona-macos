@@ -46,7 +46,12 @@ jobs:
             exit 1
           }
           printf '%s' "${BUILD_VERSION}" | grep -Eq '^[0-9]+([.][0-9]+){0,2}$'
+          SPARKLE_PUBLIC_ED_KEY="$(printf '%s' "${SPARKLE_PUBLIC_ED_KEY}" | tr -d '\r\n')"
           test -n "${SPARKLE_PUBLIC_ED_KEY}"
+          ruby -r base64 -e '
+            key = Base64.strict_decode64(ARGV.fetch(0))
+            abort("SPARKLE_PUBLIC_ED_KEY must decode to 32 bytes") unless key.bytesize == 32
+          ' "${SPARKLE_PUBLIC_ED_KEY}"
 
           mkdir -p feed
           if curl --fail --silent --show-error \
@@ -109,6 +114,7 @@ jobs:
           if [[ "${RELEASE_VERSION}" == *-beta.* ]]; then
             RELEASE_CHANNEL="beta"
           fi
+          SPARKLE_PUBLIC_ED_KEY="$(printf '%s' "${SPARKLE_PUBLIC_ED_KEY}" | tr -d '\r\n')"
           xcodebuild archive \
             -project crona.xcodeproj \
             -scheme crona \
@@ -195,6 +201,7 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_NOTARY_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
           DMG_NAME: ${{ steps.package.outputs.dmg }}
         run: |
           set -euo pipefail
@@ -245,6 +252,12 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${MOUNT_POINT}/Crona.app/Contents/Info.plist")" = "com.webxsid.crona"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${MOUNT_POINT}/Crona.app/Contents/Info.plist")" = "${{ steps.package.outputs.base_version }}"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CRONA_RELEASE_VERSION' "${MOUNT_POINT}/Crona.app/Contents/Info.plist")" = "${{ steps.package.outputs.version }}"
+          EMBEDDED_SPARKLE_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "${MOUNT_POINT}/Crona.app/Contents/Info.plist")"
+          test "${EMBEDDED_SPARKLE_KEY}" = "$(printf '%s' "${SPARKLE_PUBLIC_ED_KEY}" | tr -d '\r\n')"
+          ruby -r base64 -e '
+            key = Base64.strict_decode64(ARGV.fetch(0))
+            abort("embedded SUPublicEDKey must decode to 32 bytes") unless key.bytesize == 32
+          ' "${EMBEDDED_SPARKLE_KEY}"
           codesign --verify --deep --strict --verbose=2 "${MOUNT_POINT}/Crona.app"
           xcrun stapler validate "${MOUNT_POINT}/Crona.app"
           lipo "${MOUNT_POINT}/Crona.app/Contents/MacOS/crona" -verify_arch arm64
@@ -310,6 +323,8 @@ jobs:
             --release-notes-url-prefix "https://webxsid.github.io/crona-macos/" \
             "${CHANNEL[@]}" \
             feed
+          grep -Eq '<enclosure[^>]+sparkle:edSignature=' feed/appcast.xml
+          grep -q '<!-- sparkle-signatures:' feed/appcast.xml
           rm -f "feed/${ARCHIVE_NAME}"
           rm -rf feed/old_updates
 
