@@ -1052,7 +1052,6 @@ struct PlaceholderPanel: View {
 
 struct EndSessionSheetView: View {
     @ObservedObject var appState: CompanionAppState
-    @FocusState private var isCommitFieldFocused: Bool
 
     var body: some View {
         ZStack {
@@ -1073,26 +1072,13 @@ struct EndSessionSheetView: View {
                         .font(.headline)
                         .foregroundStyle(.white)
 
-                    ZStack(alignment: .topLeading) {
-                        if appState.endSessionCommitMessage.isEmpty {
-                            Text("Describe what you completed")
-                                .font(.body)
-                                .foregroundStyle(.white.opacity(0.28))
-                                .padding(.horizontal, 19)
-                                .padding(.vertical, 16)
-                                .allowsHitTesting(false)
-                        }
-
-                        TextEditor(text: $appState.endSessionCommitMessage)
-                            .scrollContentBackground(.hidden)
-                            .font(.body)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .frame(height: 104)
-                            .focused($isCommitFieldFocused)
-                            .disabled(appState.isSubmittingEndSession)
-                    }
+                    StableMultilineTextField(
+                        text: $appState.endSessionCommitMessage,
+                        placeholder: "Describe what you completed",
+                        isEnabled: !appState.isSubmittingEndSession,
+                        focusRequest: appState.endSessionFocusRequest
+                    )
+                    .frame(height: 104)
                     .background(cardBackground(stroke: Color.white.opacity(0.08)))
 
                     if let error = appState.endSessionErrorMessage, !error.isEmpty {
@@ -1133,16 +1119,6 @@ struct EndSessionSheetView: View {
         .frame(width: 360)
         .fixedSize(horizontal: false, vertical: true)
         .shadow(color: .black.opacity(0.34), radius: 32, y: 22)
-        .onAppear {
-            DispatchQueue.main.async {
-                isCommitFieldFocused = true
-            }
-        }
-        .onChange(of: appState.endSessionFocusRequest) {
-            DispatchQueue.main.async {
-                isCommitFieldFocused = true
-            }
-        }
     }
 }
 

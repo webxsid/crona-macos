@@ -132,6 +132,10 @@ final class CronaDaemonClient {
         try await request(method: "timer.resume")
     }
 
+    func timerAdvance() async throws -> CronaTimerState {
+        try await request(method: "timer.advance")
+    }
+
     func timerExtend(_ input: CronaTimerExtendRequest) async throws -> CronaTimerState {
         try await request(method: "timer.extend", params: AnyEncodable(input))
     }
@@ -238,11 +242,60 @@ final class CronaDaemonClient {
         try await request(method: "alerts.test_notification")
     }
 
+    func alertsTestSound() async throws -> CronaOKResponse {
+        try await request(method: "alerts.test_sound")
+    }
+
+    func alertSettingsGet() async throws -> CronaAlertSettings {
+        let allSettings: [String: CronaAlertSettings] = try await request(
+            method: "settings.get_all"
+        )
+        if let localSettings = allSettings["local"] {
+            return localSettings
+        }
+        guard let settings = allSettings.values.first else {
+            throw CronaConnectionFailure.malformedResponse
+        }
+        return settings
+    }
+
+    func alertSettingsPut(_ values: [String: JSONValue]) async throws {
+        let _: JSONValue = try await request(
+            method: "settings.put",
+            params: AnyEncodable(values)
+        )
+    }
+
+    func alertSettingPatch(key: String, value: JSONValue) async throws {
+        let _: JSONValue = try await request(
+            method: "settings.patch",
+            params: AnyEncodable([
+                "key": JSONValue.string(key),
+                "value": value
+            ])
+        )
+    }
+
+    func acknowledgeAlertDelivery(_ ack: CronaAlertDeliveryAck) async throws -> CronaOKResponse {
+        try await request(method: "alerts.delivery.ack", params: AnyEncodable(ack))
+    }
+
     func subscribeToEvents() async throws -> AsyncThrowingStream<CronaProtocolEvent, Error> {
         let envelope = CronaKernelRequestEnvelope(id: UUID().uuidString, method: "events.subscribe", params: nil)
         let requestData = try JSONEncoder.crona.encode(envelope)
         ipcLogger.debug("Sending events.subscribe request")
         return try await transport.openEventStream(with: requestData)
+    }
+
+    func subscribeToAlertDeliveries(
+        capabilities: CronaAlertDeliveryCapability
+    ) async throws -> AsyncThrowingStream<CronaProtocolEvent, Error> {
+        let envelope = CronaKernelRequestEnvelope(
+            id: UUID().uuidString,
+            method: "alerts.delivery.subscribe",
+            params: AnyEncodable(capabilities)
+        )
+        return try await transport.openEventStream(with: JSONEncoder.crona.encode(envelope))
     }
 
     func request<Response: Decodable>(method: String, params: AnyEncodable? = nil) async throws -> Response {

@@ -10,9 +10,138 @@ final class WindowService {
     private var hardLimitWarningPanel: HardLimitWarningPanel?
     private var hardLimitWarningGlobalMonitor: Any?
     private var hardLimitWarningLocalMonitor: Any?
+    private var breakScreenPanels: [CGDirectDisplayID: BreakScreenPanel] = [:]
+    private var breakScreenPrimaryDisplayID: CGDirectDisplayID?
+    private var screenParametersObserver: NSObjectProtocol?
+
+    var breakScreensVisible: Bool {
+        breakScreenPanels.values.contains(where: \.isVisible)
+    }
+
+    var hardLimitPopupVisible: Bool {
+        hardLimitPanel?.isVisible == true
+    }
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.breakScreensVisible else { return }
+                self.showBreakScreens()
+            }
+        }
+    }
+
+    func showBreakScreens() {
+        guard let appState else { return }
+        let screens = NSScreen.screens
+        let activeIDs = Set(screens.compactMap(Self.displayID))
+        if
+            breakScreenPrimaryDisplayID == nil
+                || !activeIDs.contains(breakScreenPrimaryDisplayID!)
+        {
+            let activeScreen = screenContainingMouse(in: screens) ?? NSScreen.main ?? screens.first
+            breakScreenPrimaryDisplayID = activeScreen.flatMap(Self.displayID)
+        }
+
+        let staleIDs = breakScreenPanels.keys.filter { !activeIDs.contains($0) }
+        for id in staleIDs {
+            guard let panel = breakScreenPanels.removeValue(forKey: id) else { continue }
+            panel.orderOut(nil)
+            panel.close()
+        }
+
+        for screen in screens {
+            guard let id = Self.displayID(screen) else { continue }
+            let isPrimary = id == breakScreenPrimaryDisplayID
+            let rootView = BreakScreenRootView(
+                appState: appState,
+                screen: screen,
+                isPrimary: isPrimary
+            )
+
+            let panel: BreakScreenPanel
+            if let existing = breakScreenPanels[id] {
+                panel = existing
+                if let controller = panel.contentViewController as? NSHostingController<BreakScreenRootView> {
+                    controller.rootView = rootView
+                } else {
+                    panel.contentViewController = NSHostingController(rootView: rootView)
+                }
+            } else {
+                panel = makeBreakScreenPanel(rootView: rootView)
+                breakScreenPanels[id] = panel
+            }
+
+            panel.setFrame(screen.frame, display: true)
+            let wasVisible = panel.isVisible
+            if !wasVisible {
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.24
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    panel.animator().alphaValue = 1
+                }
+            }
+            if isPrimary, !wasVisible {
+                NSApp.activate(ignoringOtherApps: true)
+                panel.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    func closeBreakScreens() {
+        let panels = Array(breakScreenPanels.values)
+        breakScreenPanels.removeAll()
+        breakScreenPrimaryDisplayID = nil
+        for panel in panels {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+            }, completionHandler: {
+                panel.orderOut(nil)
+                panel.contentViewController = nil
+                panel.close()
+            })
+        }
+    }
+
+    private func makeBreakScreenPanel(
+        rootView: BreakScreenRootView
+    ) -> BreakScreenPanel {
+        let panel = BreakScreenPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = true
+        panel.backgroundColor = .black
+        panel.hasShadow = false
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+        panel.isReleasedWhenClosed = false
+        panel.contentViewController = NSHostingController(rootView: rootView)
+        return panel
+    }
+
+    private func screenContainingMouse(in screens: [NSScreen]) -> NSScreen? {
+        let location = NSEvent.mouseLocation
+        return screens.first(where: { NSMouseInRect(location, $0.frame, false) })
+    }
+
+    private static func displayID(_ screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
+            .uint32Value
     }
 
     func showSettings(openScene: () -> Void) {
@@ -122,21 +251,14 @@ final class WindowService {
     func showHardLimitPopup() {
         guard let appState else { return }
 
-        let panel: HardLimitPanel
-        if let existingPanel = hardLimitPanel, existingPanel.isVisible {
-            panel = existingPanel
-        } else {
-            destroyHardLimitPanel()
-            panel = makeHardLimitPanel(appState: appState)
-            hardLimitPanel = panel
-        }
-
-        activateAppForPopup()
         let targetScreen = popupTargetScreen()
+        let panel = hardLimitPanel ?? makeHardLimitPanel(appState: appState)
+        hardLimitPanel = panel
         position(panel: panel, on: targetScreen)
 
+        panel.makeFirstResponder(nil)
+        activateAppForPopup()
         panel.makeKeyAndOrderFront(nil)
-        panel.orderFrontRegardless()
         animatePopupEntrance(panel)
     }
 
@@ -147,7 +269,23 @@ final class WindowService {
     }
 
     func closeHardLimitPopup() {
+        guard let panel = hardLimitPanel else { return }
+        panel.makeFirstResponder(nil)
+        panel.resignKey()
+        panel.orderOut(nil)
+    }
+
+    func shutdown() {
+        closeHardLimitPopup()
         destroyHardLimitPanel()
+        closeHardLimitWarningIndicator()
+        hardLimitWarningPanel?.close()
+        hardLimitWarningPanel = nil
+        closeBreakScreens()
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+            self.screenParametersObserver = nil
+        }
     }
 
     func showHardLimitWarningIndicator() {
@@ -338,4 +476,11 @@ private final class HardLimitPanel: NSPanel {
 private final class HardLimitWarningPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+private final class BreakScreenPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {}
 }

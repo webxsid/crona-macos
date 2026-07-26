@@ -9,6 +9,7 @@ final class CronaAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        appState?.windowService.shutdown()
         appState?.stop()
     }
 }

@@ -45,6 +45,164 @@ struct CronaAlertStatus: Codable, Equatable {
     let bundledSoundSupported: Bool
     let iconPath: String?
     let availableSoundPresets: [String]
+    let companionDeliverySupported: Bool?
+    let companionDeliveryActive: Bool?
+}
+
+nonisolated struct CronaAlertDeliveryCapability: Codable, Equatable {
+    let clientID: String
+    let notifications: Bool
+    let sounds: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case clientID = "clientId"
+        case notifications
+        case sounds
+    }
+}
+
+nonisolated struct CronaAlertDeliveryAction: Codable, Equatable {
+    let id: String
+    let title: String
+    let expectedReadySegmentType: String?
+}
+
+nonisolated struct CronaAlertRequest: Codable, Equatable {
+    let kind: String
+    let title: String
+    let subtitle: String?
+    let body: String
+    let urgency: String
+    let iconEnabled: Bool
+    let soundPreset: String?
+    let playSound: Bool
+}
+
+nonisolated struct CronaAlertDelivery: Codable, Equatable {
+    let id: String
+    let alert: CronaAlertRequest
+    let deliverNotification: Bool
+    let playSound: Bool
+    let actions: [CronaAlertDeliveryAction]?
+}
+
+nonisolated struct CronaAlertDeliveryAck: Codable, Equatable {
+    let deliveryID: String
+    let notificationAccepted: Bool
+    let soundAccepted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case deliveryID = "deliveryId"
+        case notificationAccepted
+        case soundAccepted
+    }
+}
+
+enum CronaAlertSoundPreset: String, Codable, CaseIterable, Equatable, Identifiable {
+    case chime
+    case softBell = "soft_bell"
+    case notificationPing = "notification_ping"
+    case focusGong = "focus_gong"
+    case minimalClick = "minimal_click"
+
+    var id: String { rawValue }
+}
+
+enum CronaAlertProminence: String, Codable, CaseIterable, Equatable, Identifiable {
+    case quiet = "low"
+    case standard = "normal"
+    case timeSensitive = "high"
+
+    var id: String { rawValue }
+}
+
+struct CronaAlertSettings: Decodable, Equatable {
+    let boundaryNotificationsEnabled: Bool
+    let boundarySoundEnabled: Bool
+    let alertSoundPreset: CronaAlertSoundPreset
+    let alertUrgency: CronaAlertProminence
+    let inactivityAlertsEnabled: Bool
+    let inactivityThresholdMinutes: Int
+    let inactivityRepeatMinutes: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case boundaryNotificationsEnabled
+        case boundarySoundEnabled
+        case alertSoundPreset
+        case alertUrgency
+        case inactivityAlertsEnabled
+        case inactivityThresholdMinutes
+        case inactivityRepeatMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        boundaryNotificationsEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .boundaryNotificationsEnabled)
+            ?? true
+        boundarySoundEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .boundarySoundEnabled)
+            ?? true
+        alertSoundPreset =
+            try values.decodeIfPresent(CronaAlertSoundPreset.self, forKey: .alertSoundPreset)
+            ?? .chime
+        alertUrgency =
+            try values.decodeIfPresent(CronaAlertProminence.self, forKey: .alertUrgency)
+            ?? .standard
+        inactivityAlertsEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .inactivityAlertsEnabled)
+            ?? true
+        inactivityThresholdMinutes =
+            try values.decodeIfPresent(Int.self, forKey: .inactivityThresholdMinutes)
+            ?? 60
+        inactivityRepeatMinutes =
+            try values.decodeIfPresent(Int.self, forKey: .inactivityRepeatMinutes)
+            ?? 60
+    }
+
+    init(
+        boundaryNotificationsEnabled: Bool,
+        boundarySoundEnabled: Bool,
+        alertSoundPreset: CronaAlertSoundPreset,
+        alertUrgency: CronaAlertProminence,
+        inactivityAlertsEnabled: Bool,
+        inactivityThresholdMinutes: Int,
+        inactivityRepeatMinutes: Int
+    ) {
+        self.boundaryNotificationsEnabled = boundaryNotificationsEnabled
+        self.boundarySoundEnabled = boundarySoundEnabled
+        self.alertSoundPreset = alertSoundPreset
+        self.alertUrgency = alertUrgency
+        self.inactivityAlertsEnabled = inactivityAlertsEnabled
+        self.inactivityThresholdMinutes = inactivityThresholdMinutes
+        self.inactivityRepeatMinutes = inactivityRepeatMinutes
+    }
+
+    func applying(key: String, value: JSONValue) -> CronaAlertSettings {
+        CronaAlertSettings(
+            boundaryNotificationsEnabled: key == "boundaryNotificationsEnabled"
+                ? value.boolValue ?? boundaryNotificationsEnabled
+                : boundaryNotificationsEnabled,
+            boundarySoundEnabled: key == "boundarySoundEnabled"
+                ? value.boolValue ?? boundarySoundEnabled
+                : boundarySoundEnabled,
+            alertSoundPreset: key == "alertSoundPreset"
+                ? value.stringValue.flatMap(CronaAlertSoundPreset.init(rawValue:)) ?? alertSoundPreset
+                : alertSoundPreset,
+            alertUrgency: key == "alertUrgency"
+                ? value.stringValue.flatMap(CronaAlertProminence.init(rawValue:)) ?? alertUrgency
+                : alertUrgency,
+            inactivityAlertsEnabled: key == "inactivityAlertsEnabled"
+                ? value.boolValue ?? inactivityAlertsEnabled
+                : inactivityAlertsEnabled,
+            inactivityThresholdMinutes: key == "inactivityThresholdMinutes"
+                ? value.intValue ?? inactivityThresholdMinutes
+                : inactivityThresholdMinutes,
+            inactivityRepeatMinutes: key == "inactivityRepeatMinutes"
+                ? value.intValue ?? inactivityRepeatMinutes
+                : inactivityRepeatMinutes
+        )
+    }
 }
 
 struct CronaActiveContext: Codable, Equatable {
@@ -504,6 +662,11 @@ nonisolated struct CronaProtocolEvent: Decodable, Equatable {
         guard case let .object(object) = payload else { return nil }
         return object["sessionId"]?.stringValue
     }
+
+    func decodePayload<Value: Decodable>(_ type: Value.Type) throws -> Value {
+        let data = try JSONEncoder().encode(payload ?? .null)
+        return try JSONDecoder().decode(type, from: data)
+    }
 }
 
 nonisolated enum JSONValue: Codable, Equatable {
@@ -517,6 +680,20 @@ nonisolated enum JSONValue: Codable, Equatable {
     var stringValue: String? {
         if case let .string(value) = self {
             return value
+        }
+        return nil
+    }
+
+    var boolValue: Bool? {
+        if case let .bool(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    var intValue: Int? {
+        if case let .number(value) = self, value.rounded() == value {
+            return Int(value)
         }
         return nil
     }

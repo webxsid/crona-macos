@@ -30,7 +30,14 @@ struct SettingsRootView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     SettingsSidebarSection(
                         title: "Settings",
-                        items: [.general, .menuBar, .notifications, .stats],
+                        items: [.general, .menuBar],
+                        selected: appState.selectedSettingsDestination,
+                        onSelect: appState.setSelectedSettingsDestination
+                    )
+
+                    SettingsSidebarSection(
+                        title: "Focus",
+                        items: [.breakScreen, .notifications, .stats],
                         selected: appState.selectedSettingsDestination,
                         onSelect: appState.setSelectedSettingsDestination
                     )
@@ -76,6 +83,10 @@ struct SettingsRootView: View {
                     case .menuBar:
                         SettingsPane(subtitle: "Keep the right amount of focus in sight.") {
                             MenuBarSettingsView(appState: appState)
+                        }
+                    case .breakScreen:
+                        SettingsPane(subtitle: "Step away when a pomodoro break begins.") {
+                            BreakScreenSettingsView(appState: appState)
                         }
                     case .notifications:
                         SettingsPane(subtitle: "Decide when Crona should get your attention.") {
@@ -374,28 +385,370 @@ private struct MenuBarSettingsView: View {
     }
 }
 
-private struct NotificationSettingsView: View {
+private struct BreakScreenSettingsView: View {
     @ObservedObject var appState: CompanionAppState
+
+    private var preferences: CompanionPreferences {
+        appState.preferences.preferences
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsCard("Permission") {
+            SettingsCard("Break Screen") {
+                SettingsToggleRow(
+                    title: "Take Over the Screen",
+                    subtitle: "Cover every display when a pomodoro break begins.",
+                    isOn: Binding(
+                        get: { preferences.breakScreenEnabled },
+                        set: { appState.preferences.preferences.breakScreenEnabled = $0 }
+                    )
+                )
+            }
+
+            SettingsCard("Enforcement") {
+                HStack(spacing: 10) {
+                    ForEach(BreakScreenMode.allCases) { mode in
+                        BreakScreenModeCard(
+                            mode: mode,
+                            selected: preferences.breakScreenMode == mode
+                        ) {
+                            appState.preferences.preferences.breakScreenMode = mode
+                        }
+                    }
+                }
+                .padding(.vertical, 10)
+
+                if preferences.breakScreenMode == .strict {
+                    SettingsPickerRow(
+                        title: "Skip Delay",
+                        subtitle: "Keep Skip unavailable at the beginning of each break.",
+                        selection: Binding(
+                            get: { preferences.breakScreenStrictDelaySeconds },
+                            set: {
+                                appState.preferences.preferences.breakScreenStrictDelaySeconds =
+                                    CompanionPreferences.normalizedBreakScreenStrictDelaySeconds($0)
+                            }
+                        )
+                    ) {
+                        ForEach(CompanionPreferences.breakScreenStrictDelayOptions, id: \.self) {
+                            Text("\($0) seconds").tag($0)
+                        }
+                    }
+                }
+            }
+
+            SettingsCard("Background") {
+                SettingsPickerRow(
+                    title: "Style",
+                    subtitle: "Choose what appears behind the break countdown.",
+                    selection: Binding(
+                        get: { preferences.breakScreenBackgroundStyle },
+                        set: { appState.preferences.preferences.breakScreenBackgroundStyle = $0 }
+                    )
+                ) {
+                    ForEach(BreakScreenBackgroundStyle.allCases) {
+                        Text($0.title).tag($0)
+                    }
+                }
+
+                switch preferences.breakScreenBackgroundStyle {
+                case .systemWallpaper:
+                    settingsFootnote("Uses each display’s current wallpaper with a quiet dimming layer.")
+                case .solidColor:
+                    HStack {
+                        Text("Break Color")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        ColorPicker("", selection: solidColorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                    }
+                    .padding(.vertical, 10)
+                case .gradient:
+                    SettingsPickerRow(
+                        title: "Gradient",
+                        subtitle: "Choose a calm background for your break.",
+                        selection: Binding(
+                            get: { preferences.breakScreenGradientPreset },
+                            set: { appState.preferences.preferences.breakScreenGradientPreset = $0 }
+                        )
+                    ) {
+                        ForEach(BreakScreenGradientPreset.allCases) {
+                            Text($0.title).tag($0)
+                        }
+                    }
+                }
+            }
+
+            BreakScreenSettingsPreview(preferences: preferences)
+        }
+        .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenMode)
+        .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenBackgroundStyle)
+    }
+
+    private var solidColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(rgba: preferences.breakScreenSolidColor) },
+            set: {
+                appState.preferences.preferences.breakScreenSolidColor =
+                    CompanionRGBAColor(nsColor: NSColor($0))
+            }
+        )
+    }
+}
+
+private struct BreakScreenModeCard: View {
+    let mode: BreakScreenMode
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 20, weight: .semibold))
+                Text(mode.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(
+                        selected ? Color.accentColor : Color.primary.opacity(0.07),
+                        lineWidth: selected ? 2 : 0.75
+                    )
+            )
+        }
+        .buttonStyle(SettingsPressButtonStyle())
+    }
+
+    private var symbolName: String {
+        switch mode {
+        case .easy: return "forward.end"
+        case .strict: return "timer"
+        case .hard: return "lock.fill"
+        }
+    }
+
+    private var subtitle: String {
+        switch mode {
+        case .easy: return "Skip anytime"
+        case .strict: return "Skip after a pause"
+        case .hard: return "No skipping"
+        }
+    }
+}
+
+private struct BreakScreenSettingsPreview: View {
+    let preferences: CompanionPreferences
+
+    var body: some View {
+        ZStack {
+            BreakScreenBackgroundView(preferences: preferences, screen: NSScreen.main)
+            VStack(spacing: 5) {
+                Text("Short Break")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+                Text("04:32")
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("Ends at 4:45 PM")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+            .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 150)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.75)
+        )
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @ObservedObject var appState: CompanionAppState
+    @ObservedObject private var alertSettings: AlertSettingsService
+
+    init(appState: CompanionAppState) {
+        self.appState = appState
+        _alertSettings = ObservedObject(wrappedValue: appState.alertSettingsService)
+    }
+
+    var body: some View {
+        let settings = alertSettings.settings
+
+        VStack(alignment: .leading, spacing: 18) {
+            SettingsCard("Native Notifications") {
                 SettingsValueRow(
-                    title: "Notifications",
-                    subtitle: "Crona can alert you when a focus boundary needs attention.",
-                    value: notificationStatusText(appState.notificationService.authorizationStatus)
+                    title: "Permission",
+                    subtitle: "Let Crona deliver alerts with native actions and sounds.",
+                    value: notificationStatusText(
+                        appState.notificationService.authorizationStatus
+                    )
+                )
+
+                SettingsValueRow(
+                    title: "Delivery",
+                    subtitle: "The daemon falls back automatically whenever the app cannot deliver.",
+                    value: deliveryStatusText
                 )
 
                 HStack(spacing: 10) {
-                    SettingsActionButton("Allow Notifications", systemImage: "bell.badge") {
+                    SettingsActionButton("Allow Notifications", systemImage: "bell.badge.fill") {
                         appState.requestNotificationAuthorization()
                     }
 
-                    SettingsActionButton("Send a Test", systemImage: "paperplane", prominent: false) {
+                    SettingsActionButton("System Settings", systemImage: "gear", prominent: false) {
+                        appState.notificationService.openSystemNotificationSettings()
+                    }
+                }
+            }
+
+            SettingsCard("Alerts") {
+                SettingsToggleRow(
+                    title: "Show Notifications",
+                    subtitle: "Keep focus boundaries, reminders, and Crona updates in Notification Center.",
+                    isOn: Binding(
+                        get: { settings?.boundaryNotificationsEnabled ?? true },
+                        set: {
+                            appState.alertSettingsService.setBoolean(
+                                "boundaryNotificationsEnabled",
+                                value: $0
+                            )
+                        }
+                    )
+                )
+                .disabled(settings == nil)
+
+                SettingsToggleRow(
+                    title: "Play Alert Sounds",
+                    subtitle: "Use the selected Crona sound when an alert needs your attention.",
+                    isOn: Binding(
+                        get: { settings?.boundarySoundEnabled ?? true },
+                        set: {
+                            appState.alertSettingsService.setBoolean(
+                                "boundarySoundEnabled",
+                                value: $0
+                            )
+                        }
+                    )
+                )
+                .disabled(settings == nil)
+
+                SettingsPickerRow(
+                    title: "Sound",
+                    subtitle: "Choose the tone used for Crona alerts.",
+                    selection: Binding(
+                        get: {
+                            alertSettings.settings?.alertSoundPreset ?? .chime
+                        },
+                        set: {
+                            alertSettings.setSoundPreset($0)
+                            appState.notificationService.playPresetPreview($0.rawValue)
+                        }
+                    )
+                ) {
+                    Text("Chime").tag(CronaAlertSoundPreset.chime)
+                    Text("Soft Bell").tag(CronaAlertSoundPreset.softBell)
+                    Text("Notification Ping").tag(CronaAlertSoundPreset.notificationPing)
+                    Text("Focus Gong").tag(CronaAlertSoundPreset.focusGong)
+                    Text("Minimal Click").tag(CronaAlertSoundPreset.minimalClick)
+                }
+                .disabled(settings == nil || settings?.boundarySoundEnabled == false)
+
+                SettingsPickerRow(
+                    title: "Prominence",
+                    subtitle: "Choose how strongly Crona alerts should break through.",
+                    selection: Binding(
+                        get: {
+                            alertSettings.settings?.alertUrgency ?? .standard
+                        },
+                        set: {
+                            alertSettings.setProminence($0)
+                        }
+                    )
+                ) {
+                    Text("Quiet").tag(CronaAlertProminence.quiet)
+                    Text("Standard").tag(CronaAlertProminence.standard)
+                    Text("Time Sensitive").tag(CronaAlertProminence.timeSensitive)
+                }
+                .disabled(settings == nil)
+
+                HStack(spacing: 10) {
+                    SettingsActionButton("Send Test", systemImage: "paperplane.fill") {
                         appState.sendTestNotification()
                     }
-                    .disabled(appState.daemonConnection.connectionState != .connected)
+
+                    SettingsActionButton("Play Sound", systemImage: "speaker.wave.2.fill", prominent: false) {
+                        appState.sendTestSound()
+                    }
                 }
+                .disabled(appState.daemonConnection.connectionState != .connected)
+            }
+
+            SettingsCard("Focus Reminders") {
+                SettingsToggleRow(
+                    title: "Inactivity Reminder",
+                    subtitle: "Nudge me when a focus session may have been left running.",
+                    isOn: Binding(
+                        get: { settings?.inactivityAlertsEnabled ?? true },
+                        set: {
+                            appState.alertSettingsService.setBoolean(
+                                "inactivityAlertsEnabled",
+                                value: $0
+                            )
+                        }
+                    )
+                )
+                .disabled(settings == nil)
+
+                SettingsPickerRow(
+                    title: "Remind After",
+                    subtitle: "Wait this long without activity before the first reminder.",
+                    selection: Binding(
+                        get: { settings?.inactivityThresholdMinutes ?? 60 },
+                        set: {
+                            appState.alertSettingsService.setInteger(
+                                "inactivityThresholdMinutes",
+                                value: $0
+                            )
+                        }
+                    )
+                ) {
+                    ForEach([15, 30, 45, 60, 90, 120], id: \.self) {
+                        Text("\($0) minutes").tag($0)
+                    }
+                }
+                .disabled(settings == nil || settings?.inactivityAlertsEnabled == false)
+
+                SettingsPickerRow(
+                    title: "Repeat",
+                    subtitle: "Space out follow-up reminders while the session stays active.",
+                    selection: Binding(
+                        get: { settings?.inactivityRepeatMinutes ?? 60 },
+                        set: {
+                            appState.alertSettingsService.setInteger(
+                                "inactivityRepeatMinutes",
+                                value: $0
+                            )
+                        }
+                    )
+                ) {
+                    ForEach([15, 30, 60, 90, 120], id: \.self) {
+                        Text("\($0) minutes").tag($0)
+                    }
+                }
+                .disabled(settings == nil || settings?.inactivityAlertsEnabled == false)
             }
 
             SettingsCard("Focus Boundaries") {
@@ -442,6 +795,21 @@ private struct NotificationSettingsView: View {
                 title: "Notification preview",
                 subtitle: "Add an image or GIF named SettingsNotificationDemo."
             )
+
+            if let error = alertSettings.lastErrorDescription {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var deliveryStatusText: String {
+        switch appState.notificationService.deliveryState {
+        case .active: return "Crona for macOS"
+        case .connecting: return "Connecting"
+        case .failed: return "Daemon fallback"
+        case .unavailable: return "Daemon fallback"
         }
     }
 
@@ -895,6 +1263,7 @@ private extension SettingsDestination {
         switch self {
         case .general: return "General"
         case .menuBar: return "Menu Bar"
+        case .breakScreen: return "Break Screen"
         case .notifications: return "Notifications"
         case .stats: return "Stats"
         case .runtime: return "Runtime"
@@ -907,6 +1276,7 @@ private extension SettingsDestination {
         switch self {
         case .general: return "gearshape.fill"
         case .menuBar: return "menubar.rectangle"
+        case .breakScreen: return "moon.stars.fill"
         case .notifications: return "bell.fill"
         case .stats: return "chart.line.uptrend.xyaxis"
         case .runtime: return "bolt.horizontal.circle.fill"

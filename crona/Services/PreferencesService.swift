@@ -1,6 +1,63 @@
 import Combine
 import Foundation
 
+enum BreakScreenMode: String, Codable, Equatable, CaseIterable, Identifiable {
+    case easy
+    case strict
+    case hard
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .easy: return "Easy"
+        case .strict: return "Strict"
+        case .hard: return "Hard"
+        }
+    }
+}
+
+enum BreakScreenBackgroundStyle: String, Codable, Equatable, CaseIterable, Identifiable {
+    case systemWallpaper
+    case solidColor
+    case gradient
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .systemWallpaper: return "Wallpaper"
+        case .solidColor: return "Color"
+        case .gradient: return "Gradient"
+        }
+    }
+}
+
+enum BreakScreenGradientPreset: String, Codable, Equatable, CaseIterable, Identifiable {
+    case graphite
+    case ocean
+    case forest
+    case ember
+    case dawn
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+struct CompanionRGBAColor: Codable, Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+
+    static let breakScreenDefault = CompanionRGBAColor(
+        red: 0.055,
+        green: 0.075,
+        blue: 0.11,
+        alpha: 1
+    )
+}
+
 enum MenuBarDisplayMode: String, Codable, Equatable, CaseIterable, Identifiable {
     case iconOnly
     case textOnly
@@ -57,6 +114,7 @@ enum MenuBarTimeFormat: String, Codable, Equatable, CaseIterable, Identifiable {
 
 struct CompanionPreferences: Codable, Equatable {
     static let hardLimitWarningLeadTimeOptions = [10, 20, 30]
+    static let breakScreenStrictDelayOptions = [5, 10, 15, 30, 60]
 
     var launchAtLogin = false
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
@@ -66,6 +124,12 @@ struct CompanionPreferences: Codable, Equatable {
     var showHardLimitActionPopups = true
     var showHardLimitWarningIndicator = true
     var hardLimitWarningLeadSeconds = 10
+    var breakScreenEnabled = false
+    var breakScreenMode: BreakScreenMode = .easy
+    var breakScreenStrictDelaySeconds = 15
+    var breakScreenBackgroundStyle: BreakScreenBackgroundStyle = .systemWallpaper
+    var breakScreenSolidColor = CompanionRGBAColor.breakScreenDefault
+    var breakScreenGradientPreset: BreakScreenGradientPreset = .graphite
     var pinPopover = false
     var runtimeDirectoryOverride: String?
     var tuiCommand = "crona"
@@ -74,6 +138,12 @@ struct CompanionPreferences: Codable, Equatable {
         hardLimitWarningLeadTimeOptions.min {
             abs($0 - value) < abs($1 - value)
         } ?? 10
+    }
+
+    static func normalizedBreakScreenStrictDelaySeconds(_ value: Int) -> Int {
+        breakScreenStrictDelayOptions.min {
+            abs($0 - value) < abs($1 - value)
+        } ?? 15
     }
 }
 
@@ -87,6 +157,12 @@ extension CompanionPreferences {
         case showHardLimitActionPopups
         case showHardLimitWarningIndicator
         case hardLimitWarningLeadSeconds
+        case breakScreenEnabled
+        case breakScreenMode
+        case breakScreenStrictDelaySeconds
+        case breakScreenBackgroundStyle
+        case breakScreenSolidColor
+        case breakScreenGradientPreset
         case pinPopover
         case runtimeDirectoryOverride
         case tuiCommand
@@ -116,6 +192,24 @@ extension CompanionPreferences {
         hardLimitWarningLeadSeconds =
             try values.decodeIfPresent(Int.self, forKey: .hardLimitWarningLeadSeconds)
             ?? 10
+        breakScreenEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .breakScreenEnabled)
+            ?? false
+        breakScreenMode =
+            try values.decodeIfPresent(BreakScreenMode.self, forKey: .breakScreenMode)
+            ?? .easy
+        breakScreenStrictDelaySeconds =
+            try values.decodeIfPresent(Int.self, forKey: .breakScreenStrictDelaySeconds)
+            ?? 15
+        breakScreenBackgroundStyle =
+            try values.decodeIfPresent(BreakScreenBackgroundStyle.self, forKey: .breakScreenBackgroundStyle)
+            ?? .systemWallpaper
+        breakScreenSolidColor =
+            try values.decodeIfPresent(CompanionRGBAColor.self, forKey: .breakScreenSolidColor)
+            ?? .breakScreenDefault
+        breakScreenGradientPreset =
+            try values.decodeIfPresent(BreakScreenGradientPreset.self, forKey: .breakScreenGradientPreset)
+            ?? .graphite
         pinPopover = try values.decodeIfPresent(Bool.self, forKey: .pinPopover) ?? false
         runtimeDirectoryOverride =
             try values.decodeIfPresent(String.self, forKey: .runtimeDirectoryOverride)
@@ -132,6 +226,12 @@ extension CompanionPreferences {
         try values.encode(showHardLimitActionPopups, forKey: .showHardLimitActionPopups)
         try values.encode(showHardLimitWarningIndicator, forKey: .showHardLimitWarningIndicator)
         try values.encode(hardLimitWarningLeadSeconds, forKey: .hardLimitWarningLeadSeconds)
+        try values.encode(breakScreenEnabled, forKey: .breakScreenEnabled)
+        try values.encode(breakScreenMode, forKey: .breakScreenMode)
+        try values.encode(breakScreenStrictDelaySeconds, forKey: .breakScreenStrictDelaySeconds)
+        try values.encode(breakScreenBackgroundStyle, forKey: .breakScreenBackgroundStyle)
+        try values.encode(breakScreenSolidColor, forKey: .breakScreenSolidColor)
+        try values.encode(breakScreenGradientPreset, forKey: .breakScreenGradientPreset)
         try values.encode(pinPopover, forKey: .pinPopover)
         try values.encodeIfPresent(runtimeDirectoryOverride, forKey: .runtimeDirectoryOverride)
         try values.encode(tuiCommand, forKey: .tuiCommand)
@@ -157,6 +257,10 @@ final class PreferencesService: ObservableObject {
             normalized.hardLimitWarningLeadSeconds =
                 CompanionPreferences.normalizedHardLimitWarningLeadSeconds(
                     decoded.hardLimitWarningLeadSeconds
+                )
+            normalized.breakScreenStrictDelaySeconds =
+                CompanionPreferences.normalizedBreakScreenStrictDelaySeconds(
+                    decoded.breakScreenStrictDelaySeconds
                 )
             self.preferences = normalized
         } else {

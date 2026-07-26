@@ -337,6 +337,13 @@ final class TimerService: ObservableObject {
         } catch {}
     }
 
+    @discardableResult
+    func advanceTimer() async throws -> TimerSnapshot {
+        let state = try await daemonConnection.withClient { try await $0.timerAdvance() }
+        apply(state)
+        return snapshot
+    }
+
     func endTimer(commitMessage: String) async {
         do {
             _ = try await daemonConnection.withClient { try await $0.timerEnd(commitMessage: commitMessage) }

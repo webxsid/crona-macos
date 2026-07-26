@@ -102,6 +102,11 @@ final class StatusBarService: NSObject {
         }
     }
 
+    func showPopupFromNotification() {
+        guard popupPanel?.isVisible != true else { return }
+        showPopup()
+    }
+
     private func applyStatusItemUpdate() {
         guard let button = statusItem.button, let appState else { return }
         let model = appState.popoverModel

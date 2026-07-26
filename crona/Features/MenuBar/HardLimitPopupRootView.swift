@@ -160,7 +160,6 @@ private struct HardLimitDecisionView: View {
 
 private struct HardLimitEndSessionView: View {
     @ObservedObject var appState: CompanionAppState
-    @FocusState private var isCommitFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -171,26 +170,13 @@ private struct HardLimitEndSessionView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                ZStack(alignment: .topLeading) {
-                    if appState.endSessionCommitMessage.isEmpty {
-                        Text("Describe what you completed")
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.28))
-                            .padding(.horizontal, 19)
-                            .padding(.vertical, 16)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $appState.endSessionCommitMessage)
-                        .scrollContentBackground(.hidden)
-                        .font(.body)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .frame(height: 110)
-                        .focused($isCommitFieldFocused)
-                        .disabled(appState.isSubmittingEndSession)
-                }
+                StableMultilineTextField(
+                    text: $appState.endSessionCommitMessage,
+                    placeholder: "Describe what you completed",
+                    isEnabled: !appState.isSubmittingEndSession,
+                    focusRequest: appState.endSessionFocusRequest
+                )
+                .frame(height: 110)
                 .background(cardBackground(stroke: Color.white.opacity(0.08)))
 
                 if let error = appState.endSessionErrorMessage, !error.isEmpty {
@@ -225,23 +211,6 @@ private struct HardLimitEndSessionView: View {
             }
         }
         .padding(8)
-        .onAppear {
-            DispatchQueue.main.async {
-                isCommitFieldFocused = true
-            }
-        }
-        .onChange(of: appState.hardLimitPopupPhase) { _, newPhase in
-            guard newPhase == .endSession else { return }
-            DispatchQueue.main.async {
-                isCommitFieldFocused = true
-            }
-        }
-        .onChange(of: appState.endSessionFocusRequest) {
-            guard appState.hardLimitPopupPhase == .endSession else { return }
-            DispatchQueue.main.async {
-                isCommitFieldFocused = true
-            }
-        }
     }
 }
 

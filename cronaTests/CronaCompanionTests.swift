@@ -131,6 +131,104 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.method, "kernel.shutdown")
     }
 
+    func testDaemonClientBuildsTimerAdvanceRequest() async throws {
+        let response = """
+        {
+          "id":"response-1",
+          "result":{
+            "state":"running",
+            "sessionId":"session-1",
+            "segmentType":"short_break",
+            "hardLimitActive":true,
+            "hardLimitKind":"pomodoro"
+          }
+        }
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        let result = try await client.timerAdvance()
+
+        XCTAssertEqual(result.segmentType, "short_break")
+        let request: Data = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "timer.advance")
+    }
+
+    func testAlertDeliveryDecodesWithoutActions() throws {
+        let event = try JSONDecoder().decode(
+            CronaProtocolEvent.self,
+            from: """
+            {
+              "type":"alert.delivery",
+              "payload":{
+                "id":"alert-1",
+                "alert":{
+                  "kind":"daily_plan.reminder",
+                  "title":"Plan the day",
+                  "body":"Choose today's priorities.",
+                  "urgency":"normal",
+                  "iconEnabled":true,
+                  "playSound":false
+                },
+                "deliverNotification":true,
+                "playSound":false
+              }
+            }
+            """.data(using: .utf8)!
+        )
+
+        let delivery = try event.decodePayload(CronaAlertDelivery.self)
+
+        XCTAssertEqual(delivery.id, "alert-1")
+        XCTAssertEqual(delivery.alert.kind, "daily_plan.reminder")
+        XCTAssertNil(delivery.actions)
+    }
+
+    func testDaemonClientBuildsAlertDeliveryAckRequest() async throws {
+        let response = """
+        {"id":"response-1","result":{"ok":true}}
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        _ = try await client.acknowledgeAlertDelivery(
+            CronaAlertDeliveryAck(
+                deliveryID: "alert-1",
+                notificationAccepted: true,
+                soundAccepted: false
+            )
+        )
+
+        let request = try XCTUnwrap(transport.requestData)
+        let probe = try JSONDecoder().decode(AlertDeliveryAckRequestProbe.self, from: request)
+        XCTAssertEqual(probe.method, "alerts.delivery.ack")
+        XCTAssertEqual(probe.params.deliveryID, "alert-1")
+        XCTAssertTrue(probe.params.notificationAccepted)
+        XCTAssertFalse(probe.params.soundAccepted)
+    }
+
+    func testDaemonClientBuildsAlertDeliverySubscription() async throws {
+        let transport = CapturingDaemonTransport(responseData: Data())
+        let client = CronaDaemonClient(transport: transport)
+
+        let stream = try await client.subscribeToAlertDeliveries(
+            capabilities: CronaAlertDeliveryCapability(
+                clientID: "mac-client",
+                notifications: true,
+                sounds: true
+            )
+        )
+        for try await _ in stream {}
+
+        let request = try XCTUnwrap(transport.requestData)
+        let probe = try JSONDecoder().decode(AlertDeliverySubscriptionProbe.self, from: request)
+        XCTAssertEqual(probe.method, "alerts.delivery.subscribe")
+        XCTAssertEqual(probe.params.clientID, "mac-client")
+        XCTAssertTrue(probe.params.notifications)
+        XCTAssertTrue(probe.params.sounds)
+    }
+
     func testStatusItemClickIntentUsesSecondaryClickForContextMenu() {
         XCTAssertEqual(
             StatusItemClickIntent.resolve(eventType: .rightMouseUp),
@@ -156,6 +254,11 @@ final class CronaCompanionTests: XCTestCase {
         service.preferences.menuBarTimeFormat = .expanded
         service.preferences.menuBarShowsSeconds = false
         service.preferences.showHardLimitActionPopups = false
+        service.preferences.breakScreenEnabled = true
+        service.preferences.breakScreenMode = .strict
+        service.preferences.breakScreenStrictDelaySeconds = 30
+        service.preferences.breakScreenBackgroundStyle = .gradient
+        service.preferences.breakScreenGradientPreset = .ocean
         service.preferences.tuiCommand = "crona tui"
 
         let reloaded = PreferencesService(defaults: defaults)
@@ -164,6 +267,11 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(reloaded.preferences.menuBarTimeFormat, .expanded)
         XCTAssertFalse(reloaded.preferences.menuBarShowsSeconds)
         XCTAssertFalse(reloaded.preferences.showHardLimitActionPopups)
+        XCTAssertTrue(reloaded.preferences.breakScreenEnabled)
+        XCTAssertEqual(reloaded.preferences.breakScreenMode, .strict)
+        XCTAssertEqual(reloaded.preferences.breakScreenStrictDelaySeconds, 30)
+        XCTAssertEqual(reloaded.preferences.breakScreenBackgroundStyle, .gradient)
+        XCTAssertEqual(reloaded.preferences.breakScreenGradientPreset, .ocean)
         XCTAssertEqual(reloaded.preferences.tuiCommand, "crona tui")
     }
 
@@ -186,6 +294,10 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(preferences.showHardLimitActionPopups)
         XCTAssertTrue(preferences.showHardLimitWarningIndicator)
         XCTAssertEqual(preferences.hardLimitWarningLeadSeconds, 10)
+        XCTAssertFalse(preferences.breakScreenEnabled)
+        XCTAssertEqual(preferences.breakScreenMode, .easy)
+        XCTAssertEqual(preferences.breakScreenStrictDelaySeconds, 15)
+        XCTAssertEqual(preferences.breakScreenBackgroundStyle, .systemWallpaper)
     }
 
     func testPreferencesDefaultHardLimitPopupEnabled() {
@@ -202,6 +314,16 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(1), 10)
         XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(17), 20)
         XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(60), 30)
+    }
+
+    func testBreakScreenStrictDelayUsesFixedPresets() {
+        XCTAssertEqual(
+            CompanionPreferences.breakScreenStrictDelayOptions,
+            [5, 10, 15, 30, 60]
+        )
+        XCTAssertEqual(CompanionPreferences.normalizedBreakScreenStrictDelaySeconds(1), 5)
+        XCTAssertEqual(CompanionPreferences.normalizedBreakScreenStrictDelaySeconds(18), 15)
+        XCTAssertEqual(CompanionPreferences.normalizedBreakScreenStrictDelaySeconds(100), 60)
     }
 
     func testConfigLoaderUsesBundleDefaultsForDevelopment() {
@@ -507,6 +629,121 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(presentation.upcomingSegment?.durationSeconds, 1500)
         XCTAssertFalse(presentation.canPause)
         XCTAssertFalse(presentation.canResume)
+    }
+
+    func testBreakScreenProjectionStartsPreparedPomodoroBreak() {
+        let snapshot = TimerSnapshot(
+            state: "ready",
+            sessionID: "session-1",
+            nextSegmentType: "short_break",
+            readySegmentType: "short_break",
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            hardLimitBreakSeconds: 300,
+            isConnected: true
+        )
+
+        let projection = BreakScreenProjection.resolve(
+            snapshot: snapshot,
+            enabled: true,
+            managedSessionID: nil
+        )
+
+        XCTAssertTrue(projection.shouldPresent)
+        XCTAssertEqual(projection.transition, .startBreak)
+        XCTAssertEqual(projection.segment, .shortBreak)
+    }
+
+    func testBreakScreenProjectionResumesWorkOnlyForManagedBreak() {
+        let snapshot = TimerSnapshot(
+            state: "ready",
+            sessionID: "session-1",
+            nextSegmentType: "work",
+            readySegmentType: "work",
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            isConnected: true
+        )
+
+        let managed = BreakScreenProjection.resolve(
+            snapshot: snapshot,
+            enabled: false,
+            managedSessionID: "session-1"
+        )
+        let unmanaged = BreakScreenProjection.resolve(
+            snapshot: snapshot,
+            enabled: true,
+            managedSessionID: nil
+        )
+
+        XCTAssertEqual(managed.transition, .resumeWork)
+        XCTAssertFalse(managed.shouldPresent)
+        XCTAssertEqual(unmanaged.transition, .none)
+    }
+
+    func testBreakScreenProjectionIgnoresCountdownAndStopwatchStates() {
+        let countdown = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            segmentType: "short_break",
+            hardLimitActive: true,
+            hardLimitKind: .countdown,
+            isConnected: true
+        )
+        let stopwatch = TimerSnapshot(
+            state: "paused",
+            sessionID: "session-2",
+            segmentType: "short_break",
+            hardLimitActive: false,
+            isConnected: true
+        )
+
+        XCTAssertFalse(
+            BreakScreenProjection.resolve(
+                snapshot: countdown,
+                enabled: true,
+                managedSessionID: nil
+            ).shouldPresent
+        )
+        XCTAssertFalse(
+            BreakScreenProjection.resolve(
+                snapshot: stopwatch,
+                enabled: true,
+                managedSessionID: nil
+            ).shouldPresent
+        )
+    }
+
+    func testBreakScreenStrictDelayUsesAuthoritativeRemainingTime() {
+        var snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            segmentType: "short_break",
+            displayElapsedSeconds: 290,
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            hardLimitBreakSeconds: 300,
+            isConnected: true
+        )
+
+        XCTAssertEqual(
+            BreakScreenService.strictDelayRemaining(
+                snapshot: snapshot,
+                segment: .shortBreak,
+                delaySeconds: 15
+            ),
+            5
+        )
+
+        snapshot.displayElapsedSeconds = 280
+        XCTAssertEqual(
+            BreakScreenService.strictDelayRemaining(
+                snapshot: snapshot,
+                segment: .shortBreak,
+                delaySeconds: 15
+            ),
+            0
+        )
     }
 
     func testTimerPresentationKeepsNoBreakPomodoroAsPomodoro() {
@@ -1435,6 +1672,105 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(PopoverModalKind.dueDate.minimumHeight, 430)
         XCTAssertLessThan(PopoverModalKind.dueDate.minimumHeight, StatusPopupSizing.maximumHeight)
     }
+
+    func testAlertSettingsOptimisticProjectionMapsSoundAndProminence() throws {
+        let settings = try JSONDecoder().decode(
+            CronaAlertSettings.self,
+            from: Data("""
+            {
+              "alertSoundPreset":"chime",
+              "alertUrgency":"normal"
+            }
+            """.utf8)
+        )
+
+        let projected = settings
+            .applying(key: "alertSoundPreset", value: .string("focus_gong"))
+            .applying(key: "alertUrgency", value: .string("high"))
+
+        XCTAssertEqual(projected.alertSoundPreset, .focusGong)
+        XCTAssertEqual(projected.alertUrgency, .timeSensitive)
+    }
+
+    func testDaemonClientBuildsSingleAlertSettingPatch() async throws {
+        let response = Data(#"{"id":"response-1","result":{"ok":true}}"#.utf8)
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        try await client.alertSettingPatch(
+            key: "alertSoundPreset",
+            value: .string("notification_ping")
+        )
+
+        let request = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "settings.patch")
+        XCTAssertEqual(requestProbe.params["key"]?.stringValue, "alertSoundPreset")
+        XCTAssertEqual(requestProbe.params["value"]?.stringValue, "notification_ping")
+    }
+
+    func testDaemonClientSelectsLocalAlertSettings() async throws {
+        let response = alertSettingsResponse(
+            entries: """
+            "other": {"alertSoundPreset":"chime","alertUrgency":"low"},
+            "local": {"alertSoundPreset":"focus_gong","alertUrgency":"high"}
+            """
+        )
+        let client = CronaDaemonClient(
+            transport: CapturingDaemonTransport(responseData: response)
+        )
+
+        let settings = try await client.alertSettingsGet()
+
+        XCTAssertEqual(settings.alertSoundPreset, .focusGong)
+        XCTAssertEqual(settings.alertUrgency, .timeSensitive)
+    }
+
+    func testDaemonClientFallsBackToAvailableAlertSettingsUser() async throws {
+        let response = alertSettingsResponse(
+            entries: """
+            "account-user": {
+              "alertSoundPreset":"notification_ping",
+              "alertUrgency":"low"
+            }
+            """
+        )
+        let client = CronaDaemonClient(
+            transport: CapturingDaemonTransport(responseData: response)
+        )
+
+        let settings = try await client.alertSettingsGet()
+
+        XCTAssertEqual(settings.alertSoundPreset, .notificationPing)
+        XCTAssertEqual(settings.alertUrgency, .quiet)
+    }
+
+    func testDaemonClientRejectsEmptyAlertSettingsMap() async {
+        let response = alertSettingsResponse(entries: "")
+        let client = CronaDaemonClient(
+            transport: CapturingDaemonTransport(responseData: response)
+        )
+
+        do {
+            _ = try await client.alertSettingsGet()
+            XCTFail("Expected an empty settings map to be rejected")
+        } catch let error as CronaConnectionFailure {
+            XCTAssertEqual(error, .malformedResponse)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    private func alertSettingsResponse(entries: String) -> Data {
+        Data(
+            """
+            {
+              "id":"response-1",
+              "result":{\(entries)}
+            }
+            """.utf8
+        )
+    }
 }
 
 private final class TestBundle: Bundle, @unchecked Sendable {
@@ -1463,6 +1799,40 @@ private struct RequestWithParamsProbe: Decodable {
     let id: String
     let method: String
     let params: [String: JSONScalar]
+}
+
+private struct AlertDeliveryAckRequestProbe: Decodable {
+    struct Params: Decodable {
+        let deliveryID: String
+        let notificationAccepted: Bool
+        let soundAccepted: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case deliveryID = "deliveryId"
+            case notificationAccepted
+            case soundAccepted
+        }
+    }
+
+    let method: String
+    let params: Params
+}
+
+private struct AlertDeliverySubscriptionProbe: Decodable {
+    struct Params: Decodable {
+        let clientID: String
+        let notifications: Bool
+        let sounds: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case clientID = "clientId"
+            case notifications
+            case sounds
+        }
+    }
+
+    let method: String
+    let params: Params
 }
 
 private enum JSONScalar: Decodable {

@@ -6,6 +6,7 @@ import OSLog
 enum SettingsDestination: String, CaseIterable, Equatable, Identifiable {
     case general
     case menuBar
+    case breakScreen
     case notifications
     case stats
     case runtime
@@ -60,6 +61,7 @@ final class CompanionAppState: ObservableObject {
     let preferences: PreferencesService
     let kernelDiscovery: KernelDiscoveryService
     let notificationService: NotificationService
+    let alertSettingsService: AlertSettingsService
     let launchAtLoginService: LaunchAtLoginService
     let daemonConnection: DaemonConnectionService
     let diagnosticsService: DiagnosticsService
@@ -72,8 +74,10 @@ final class CompanionAppState: ObservableObject {
     let hardLimitCountdownService: HardLimitCountdownService
     let windowService: WindowService
     let statusBarService: StatusBarService
+    let breakScreenService: BreakScreenService
     private var cancellables: Set<AnyCancellable> = []
     private var daemonEventObserver: NSObjectProtocol?
+    private var daemonConnectObserver: NSObjectProtocol?
     private var endSessionFallbackTask: Task<Void, Never>?
     private var hardLimitPopupDismissTask: Task<Void, Never>?
     private var lastWarningIndicatorKey: String?
@@ -119,10 +123,12 @@ final class CompanionAppState: ObservableObject {
             daemonConnection: daemonConnection,
             kernelDiscovery: kernelDiscovery
         )
+        let alertSettingsService = AlertSettingsService(daemonConnection: daemonConnection)
 
         self.preferences = preferences
         self.kernelDiscovery = kernelDiscovery
         self.notificationService = notificationService
+        self.alertSettingsService = alertSettingsService
         self.launchAtLoginService = launchAtLoginService
         self.daemonConnection = daemonConnection
         self.contextService = contextService
@@ -133,8 +139,37 @@ final class CompanionAppState: ObservableObject {
         self.popoverStatsService = popoverStatsService
         self.hardLimitCountdownService = HardLimitCountdownService()
         self.diagnosticsService = diagnosticsService
-        self.windowService = WindowService()
-        self.statusBarService = StatusBarService()
+        let windowService = WindowService()
+        let statusBarService = StatusBarService()
+        self.windowService = windowService
+        self.statusBarService = statusBarService
+        self.breakScreenService = BreakScreenService(
+            preferences: preferences,
+            timerService: timerService,
+            windowService: windowService
+        )
+
+        notificationService.configure(
+            daemonConnection: daemonConnection,
+            onOpenCrona: { [weak statusBarService] in
+                statusBarService?.showPopupFromNotification()
+            },
+            onAdvanceTimer: { [weak timerService, weak statusBarService] expected in
+                Task { @MainActor in
+                    await timerService?.refresh()
+                    guard timerService?.snapshot.readySegmentType == expected else {
+                        statusBarService?.showPopupFromNotification()
+                        return
+                    }
+                    _ = try? await timerService?.advanceTimer()
+                }
+            },
+            shouldSilenceAlert: { [weak windowService] kind in
+                guard kind.hasPrefix("timer.") else { return false }
+                return windowService?.breakScreensVisible == true
+                    || windowService?.hardLimitPopupVisible == true
+            }
+        )
 
         self.windowService.configure(appState: self)
         self.statusBarService.configure(appState: self)
@@ -148,12 +183,26 @@ final class CompanionAppState: ObservableObject {
                 self?.handleDaemonEvent(event)
             }
         }
+        daemonConnectObserver = NotificationCenter.default.addObserver(
+            forName: .cronaDaemonDidConnect,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.alertSettingsService.refresh()
+                self.notificationService.reconcileDelivery()
+            }
+        }
         bindChildChanges()
     }
 
     deinit {
         if let daemonEventObserver {
             NotificationCenter.default.removeObserver(daemonEventObserver)
+        }
+        if let daemonConnectObserver {
+            NotificationCenter.default.removeObserver(daemonConnectObserver)
         }
         endSessionFallbackTask?.cancel()
         hardLimitPopupDismissTask?.cancel()
@@ -219,12 +268,15 @@ final class CompanionAppState: ObservableObject {
 
     func start() {
         statusBarService.installIfNeeded()
-        notificationService.refreshAuthorizationStatus()
+        notificationService.start()
         launchAtLoginService.refresh()
         daemonConnection.start()
+        breakScreenService.start()
     }
 
     func stop() {
+        notificationService.stop()
+        breakScreenService.stop()
         daemonConnection.stop()
     }
 
@@ -634,6 +686,18 @@ final class CompanionAppState: ObservableObject {
         Task { await daemonConnection.sendTestNotification() }
     }
 
+    func sendTestSound() {
+        Task {
+            do {
+                _ = try await daemonConnection.withClient { client in
+                    try await client.alertsTestSound()
+                }
+            } catch {
+                daemonConnection.lastErrorDescription = error.localizedDescription
+            }
+        }
+    }
+
     private func bindChildChanges() {
         dailyFocusService.$snapshot
             .map(\.issues)
@@ -671,7 +735,8 @@ final class CompanionAppState: ObservableObject {
             dailyFocusService.objectWillChange.eraseToAnyPublisher(),
             issueActionsService.objectWillChange.eraseToAnyPublisher(),
             habitsService.objectWillChange.eraseToAnyPublisher(),
-            popoverStatsService.objectWillChange.eraseToAnyPublisher()
+            popoverStatsService.objectWillChange.eraseToAnyPublisher(),
+            breakScreenService.objectWillChange.eraseToAnyPublisher()
         ]
         .forEach { publisher in
             publisher
@@ -682,6 +747,7 @@ final class CompanionAppState: ObservableObject {
                     self?.reconcileEndSessionPresentation()
                     self?.reconcileHardLimitPopupPresentation()
                     self?.reconcileHardLimitWarningIndicatorPresentation()
+                    self?.notificationService.reconcileDelivery()
                 }
                 .store(in: &cancellables)
         }
