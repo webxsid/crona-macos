@@ -51,7 +51,7 @@ struct SettingsRootView: View {
 
                     SettingsSidebarSection(
                         title: "Crona",
-                        items: [.about],
+                        items: [.updates, .about],
                         selected: appState.selectedSettingsDestination,
                         onSelect: appState.setSelectedSettingsDestination
                     )
@@ -103,6 +103,10 @@ struct SettingsRootView: View {
                     case .diagnostics:
                         SettingsPane(subtitle: "Everything you need when something feels off.") {
                             DiagnosticsSettingsView(appState: appState)
+                        }
+                    case .updates:
+                        SettingsPane(subtitle: "Keep Crona current without interrupting your focus.") {
+                            UpdatesSettingsView(appState: appState)
                         }
                     case .about:
                         SettingsPane(subtitle: "Crona for macOS, at a glance.") {
@@ -967,6 +971,122 @@ private struct DiagnosticsSettingsView: View {
     }
 }
 
+private struct UpdatesSettingsView: View {
+    @ObservedObject var appState: CompanionAppState
+
+    private var service: AppUpdateService { appState.appUpdateService }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SettingsCard("Installed") {
+                SettingsValueRow(
+                    title: "Crona",
+                    subtitle: "The version currently installed on this Mac.",
+                    value: "\(service.snapshot.currentVersion) (\(service.snapshot.currentBuild))"
+                )
+
+                SettingsValueRow(
+                    title: "Status",
+                    subtitle: statusSubtitle,
+                    value: statusValue
+                )
+
+                if let lastCheckedAt = service.snapshot.lastCheckedAt {
+                    SettingsValueRow(
+                        title: "Last Checked",
+                        subtitle: "The most recent completed update check.",
+                        value: lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
+                    )
+                }
+            }
+
+            SettingsCard("Release Channel") {
+                SettingsPickerRow(
+                    title: "Channel",
+                    subtitle: "Stable is dependable. Beta includes early releases and every stable update.",
+                    selection: Binding(
+                        get: { service.selectedChannel },
+                        set: { service.setChannel($0) }
+                    )
+                ) {
+                    ForEach(AppReleaseChannel.allCases) { channel in
+                        Text(channel.title).tag(channel)
+                    }
+                }
+
+                if service.selectedChannel == .stable,
+                    service.snapshot.installedChannel == .beta
+                {
+                    settingsFootnote(
+                        "You’ll stay on this build until a newer stable release is available."
+                    )
+                }
+            }
+
+            SettingsCard("Automatic Updates") {
+                SettingsToggleRow(
+                    title: "Check Automatically",
+                    subtitle: "Look for new releases quietly in the background.",
+                    isOn: Binding(
+                        get: { service.automaticallyChecksForUpdates },
+                        set: { service.setAutomaticallyChecksForUpdates($0) }
+                    )
+                )
+
+                SettingsToggleRow(
+                    title: "Download Automatically",
+                    subtitle: "Prepare verified updates so they are ready when Crona next quits.",
+                    isOn: Binding(
+                        get: { service.automaticallyDownloadsUpdates },
+                        set: { service.setAutomaticallyDownloadsUpdates($0) }
+                    )
+                )
+                .disabled(!service.automaticallyChecksForUpdates)
+                .opacity(service.automaticallyChecksForUpdates ? 1 : 0.5)
+            }
+
+            SettingsCard("Check Now") {
+                HStack(spacing: 12) {
+                    SettingsActionButton(
+                        service.hasAvailableUpdate ? "View Update" : "Check for Updates",
+                        systemImage: service.hasAvailableUpdate
+                            ? "arrow.down.circle.fill"
+                            : "arrow.clockwise"
+                    ) {
+                        service.checkForUpdates()
+                    }
+                    .disabled(!service.canCheckForUpdates)
+
+                    if let releaseNotesURL = service.snapshot.releaseNotesURL {
+                        Link(destination: releaseNotesURL) {
+                            Label("Release Notes", systemImage: "doc.text")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
+
+                if let error = service.snapshot.errorMessage, !error.isEmpty {
+                    settingsFootnote(error)
+                }
+            }
+        }
+    }
+
+    private var statusValue: String {
+        if service.snapshot.isChecking { return "Checking…" }
+        if service.hasAvailableUpdate {
+            return "\(service.snapshot.latestVersion ?? "Update") available"
+        }
+        return service.canCheckForUpdates ? "Up to date" : "Updater unavailable"
+    }
+
+    private var statusSubtitle: String {
+        service.hasAvailableUpdate
+            ? "A signed update is ready to review."
+            : "Crona will let you know when a newer build is available."
+    }
+}
+
 private struct AboutSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
@@ -994,7 +1114,7 @@ private struct AboutSettingsView: View {
                 SettingsValueRow(
                     title: "Version",
                     subtitle: "The version of Crona installed on this Mac.",
-                    value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+                    value: appState.appUpdateService.snapshot.currentVersion
                 )
                 SettingsValueRow(
                     title: "Protocol",
@@ -1002,8 +1122,13 @@ private struct AboutSettingsView: View {
                     value: CronaProtocolVersion.current.rawValue
                 )
                 SettingsValueRow(
-                    title: "Channel",
-                    subtitle: "The channel reported by the running kernel.",
+                    title: "App Channel",
+                    subtitle: "The release track used by this macOS app.",
+                    value: appState.appUpdateService.selectedChannel.title
+                )
+                SettingsValueRow(
+                    title: "Engine Channel",
+                    subtitle: "The channel reported by the running Crona engine.",
                     value: appState.daemonConnection.kernelInfo?.runningChannel ?? "Unknown"
                 )
             }
@@ -1268,6 +1393,7 @@ private extension SettingsDestination {
         case .stats: return "Stats"
         case .runtime: return "Runtime"
         case .diagnostics: return "Diagnostics"
+        case .updates: return "Updates"
         case .about: return "About"
         }
     }
@@ -1281,6 +1407,7 @@ private extension SettingsDestination {
         case .stats: return "chart.line.uptrend.xyaxis"
         case .runtime: return "bolt.horizontal.circle.fill"
         case .diagnostics: return "stethoscope"
+        case .updates: return "arrow.triangle.2.circlepath.circle.fill"
         case .about: return "info.circle.fill"
         }
     }

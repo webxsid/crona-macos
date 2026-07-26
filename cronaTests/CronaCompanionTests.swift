@@ -259,6 +259,7 @@ final class CronaCompanionTests: XCTestCase {
         service.preferences.breakScreenStrictDelaySeconds = 30
         service.preferences.breakScreenBackgroundStyle = .gradient
         service.preferences.breakScreenGradientPreset = .ocean
+        service.preferences.appUpdateChannel = .beta
         service.preferences.tuiCommand = "crona tui"
 
         let reloaded = PreferencesService(defaults: defaults)
@@ -272,6 +273,7 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(reloaded.preferences.breakScreenStrictDelaySeconds, 30)
         XCTAssertEqual(reloaded.preferences.breakScreenBackgroundStyle, .gradient)
         XCTAssertEqual(reloaded.preferences.breakScreenGradientPreset, .ocean)
+        XCTAssertEqual(reloaded.preferences.appUpdateChannel, .beta)
         XCTAssertEqual(reloaded.preferences.tuiCommand, "crona tui")
     }
 
@@ -298,6 +300,39 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(preferences.breakScreenMode, .easy)
         XCTAssertEqual(preferences.breakScreenStrictDelaySeconds, 15)
         XCTAssertEqual(preferences.breakScreenBackgroundStyle, .systemWallpaper)
+        XCTAssertNil(preferences.appUpdateChannel)
+    }
+
+    func testAppReleaseChannelInfersBetaFromPrereleaseVersion() {
+        XCTAssertEqual(AppReleaseChannel.inferred(from: "2.1.0-beta.3"), .beta)
+        XCTAssertEqual(AppReleaseChannel.inferred(from: "2.1.0"), .stable)
+    }
+
+    func testAppReleaseChannelPrefersExplicitBundleMetadata() {
+        XCTAssertEqual(
+            AppReleaseChannel.resolved(configuredValue: "beta", version: "2.1.0"),
+            .beta
+        )
+        XCTAssertEqual(
+            AppReleaseChannel.resolved(configuredValue: "stable", version: "2.1.0-beta.3"),
+            .stable
+        )
+        XCTAssertEqual(
+            AppReleaseChannel.resolved(configuredValue: nil, version: "2.1.0-beta.3"),
+            .beta
+        )
+    }
+
+    func testAppUpdateChannelPersistsWithoutStartingSparkle() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        let preferences = PreferencesService(defaults: defaults)
+        let service = AppUpdateService(preferences: preferences, enabled: false)
+
+        service.setChannel(.beta)
+
+        XCTAssertEqual(service.selectedChannel, .beta)
+        XCTAssertEqual(PreferencesService(defaults: defaults).preferences.appUpdateChannel, .beta)
     }
 
     func testPreferencesDefaultHardLimitPopupEnabled() {

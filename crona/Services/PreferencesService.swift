@@ -1,6 +1,22 @@
 import Combine
 import Foundation
 
+enum AppReleaseChannel: String, Codable, Equatable, CaseIterable, Identifiable {
+    case stable
+    case beta
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+
+    static func inferred(from version: String) -> Self {
+        version.lowercased().contains("-beta") ? .beta : .stable
+    }
+
+    static func resolved(configuredValue: String?, version: String) -> Self {
+        configuredValue.flatMap(Self.init(rawValue:)) ?? inferred(from: version)
+    }
+}
+
 enum BreakScreenMode: String, Codable, Equatable, CaseIterable, Identifiable {
     case easy
     case strict
@@ -133,6 +149,7 @@ struct CompanionPreferences: Codable, Equatable {
     var pinPopover = false
     var runtimeDirectoryOverride: String?
     var tuiCommand = "crona"
+    var appUpdateChannel: AppReleaseChannel?
 
     static func normalizedHardLimitWarningLeadSeconds(_ value: Int) -> Int {
         hardLimitWarningLeadTimeOptions.min {
@@ -166,6 +183,7 @@ extension CompanionPreferences {
         case pinPopover
         case runtimeDirectoryOverride
         case tuiCommand
+        case appUpdateChannel
     }
 
     init(from decoder: Decoder) throws {
@@ -214,6 +232,7 @@ extension CompanionPreferences {
         runtimeDirectoryOverride =
             try values.decodeIfPresent(String.self, forKey: .runtimeDirectoryOverride)
         tuiCommand = try values.decodeIfPresent(String.self, forKey: .tuiCommand) ?? "crona"
+        appUpdateChannel = try values.decodeIfPresent(AppReleaseChannel.self, forKey: .appUpdateChannel)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -235,6 +254,7 @@ extension CompanionPreferences {
         try values.encode(pinPopover, forKey: .pinPopover)
         try values.encodeIfPresent(runtimeDirectoryOverride, forKey: .runtimeDirectoryOverride)
         try values.encode(tuiCommand, forKey: .tuiCommand)
+        try values.encodeIfPresent(appUpdateChannel, forKey: .appUpdateChannel)
     }
 }
 

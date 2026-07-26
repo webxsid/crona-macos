@@ -11,6 +11,7 @@ enum SettingsDestination: String, CaseIterable, Equatable, Identifiable {
     case stats
     case runtime
     case diagnostics
+    case updates
     case about
 
     var id: String { rawValue }
@@ -75,6 +76,7 @@ final class CompanionAppState: ObservableObject {
     let windowService: WindowService
     let statusBarService: StatusBarService
     let breakScreenService: BreakScreenService
+    let appUpdateService: AppUpdateService
     private var cancellables: Set<AnyCancellable> = []
     private var daemonEventObserver: NSObjectProtocol?
     private var daemonConnectObserver: NSObjectProtocol?
@@ -124,6 +126,7 @@ final class CompanionAppState: ObservableObject {
             kernelDiscovery: kernelDiscovery
         )
         let alertSettingsService = AlertSettingsService(daemonConnection: daemonConnection)
+        let appUpdateService = AppUpdateService(preferences: preferences)
 
         self.preferences = preferences
         self.kernelDiscovery = kernelDiscovery
@@ -148,6 +151,7 @@ final class CompanionAppState: ObservableObject {
             timerService: timerService,
             windowService: windowService
         )
+        self.appUpdateService = appUpdateService
 
         notificationService.configure(
             daemonConnection: daemonConnection,
@@ -173,6 +177,17 @@ final class CompanionAppState: ObservableObject {
 
         self.windowService.configure(appState: self)
         self.statusBarService.configure(appState: self)
+        appUpdateService.configurePresentation(
+            shouldDefer: { [weak self] in
+                self?.isUpdatePresentationBlocked ?? false
+            },
+            willPresent: { [weak windowService] in
+                windowService?.beginExternalWindowPresentation()
+            },
+            didFinish: { [weak windowService] in
+                windowService?.endExternalWindowPresentation()
+            }
+        )
         daemonEventObserver = NotificationCenter.default.addObserver(
             forName: .cronaDaemonEventReceived,
             object: nil,
@@ -266,17 +281,27 @@ final class CompanionAppState: ObservableObject {
         settingsNavigation.current
     }
 
+    var isUpdatePresentationBlocked: Bool {
+        hasActiveFocusSession
+            || windowService.breakScreensVisible
+            || windowService.hardLimitPopupVisible
+            || isEndSessionSheetPresented
+            || issueActionEditor != nil
+    }
+
     func start() {
         statusBarService.installIfNeeded()
         notificationService.start()
         launchAtLoginService.refresh()
         daemonConnection.start()
         breakScreenService.start()
+        appUpdateService.start()
     }
 
     func stop() {
         notificationService.stop()
         breakScreenService.stop()
+        appUpdateService.stop()
         daemonConnection.stop()
     }
 
@@ -321,6 +346,16 @@ final class CompanionAppState: ObservableObject {
     func openAbout() {
         setSelectedSettingsDestination(.about)
         openSettings()
+    }
+
+    func openUpdates() {
+        setSelectedSettingsDestination(.updates)
+        openSettings()
+    }
+
+    func checkForAppUpdates() {
+        statusBarService.dismissPopup(animated: false)
+        appUpdateService.checkForUpdates()
     }
 
     func quitCrona() {
@@ -736,7 +771,8 @@ final class CompanionAppState: ObservableObject {
             issueActionsService.objectWillChange.eraseToAnyPublisher(),
             habitsService.objectWillChange.eraseToAnyPublisher(),
             popoverStatsService.objectWillChange.eraseToAnyPublisher(),
-            breakScreenService.objectWillChange.eraseToAnyPublisher()
+            breakScreenService.objectWillChange.eraseToAnyPublisher(),
+            appUpdateService.objectWillChange.eraseToAnyPublisher()
         ]
         .forEach { publisher in
             publisher

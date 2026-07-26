@@ -23,6 +23,30 @@ struct PopoverRootView: View {
         VStack(spacing: 16) {
             header
 
+            if appState.appUpdateService.hasAvailableUpdate,
+                !appState.isUpdatePresentationBlocked
+            {
+                Button(action: appState.checkForAppUpdates) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.blue)
+                        Text("Crona \(appState.appUpdateService.snapshot.latestVersion ?? "") is ready")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("Update")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.white.opacity(0.07))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
             if appState.hasActiveFocusSession {
                 NowTabView(appState: appState)
             } else {
@@ -142,6 +166,14 @@ struct PopoverRootView: View {
                     SettingsLink {
                         Text("Settings…")
                     }
+
+                    Button(
+                        appState.appUpdateService.hasAvailableUpdate
+                            ? "Update Available…"
+                            : "Check for Updates…",
+                        action: appState.checkForAppUpdates
+                    )
+                    .disabled(!appState.appUpdateService.canCheckForUpdates)
 
                     Divider()
 

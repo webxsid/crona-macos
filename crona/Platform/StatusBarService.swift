@@ -33,6 +33,7 @@ final class StatusBarService: NSObject {
     private var pendingUpdate = false
     private var animationGeneration = 0
     private lazy var contextMenu = makeContextMenu()
+    private weak var appUpdateMenuItem: NSMenuItem?
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
@@ -175,6 +176,7 @@ final class StatusBarService: NSObject {
     private func showContextMenuFromStatusItem() {
         guard let button = statusItem.button else { return }
         dismissPopup(animated: false)
+        refreshContextMenu()
         let location = NSPoint(x: button.bounds.midX, y: button.bounds.minY - 4)
         contextMenu.popUp(positioning: nil, at: location, in: button)
     }
@@ -189,6 +191,10 @@ final class StatusBarService: NSObject {
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = [.command]
         menu.addItem(settings)
+
+        let updates = menuItem("Check for Updates…", action: #selector(checkForUpdates))
+        appUpdateMenuItem = updates
+        menu.addItem(updates)
         menu.addItem(.separator())
 
         menu.addItem(menuItem("Documentation", action: #selector(openDocumentation)))
@@ -207,6 +213,14 @@ final class StatusBarService: NSObject {
         return menu
     }
 
+    private func refreshContextMenu() {
+        guard let appState, let item = appUpdateMenuItem else { return }
+        item.title = appState.appUpdateService.hasAvailableUpdate
+            ? "Update Available…"
+            : "Check for Updates…"
+        item.isEnabled = appState.appUpdateService.canCheckForUpdates
+    }
+
     private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -220,6 +234,10 @@ final class StatusBarService: NSObject {
 
     @objc private func openSettings() {
         appState?.openSettings()
+    }
+
+    @objc private func checkForUpdates() {
+        appState?.checkForAppUpdates()
     }
 
     @objc private func openDocumentation() {

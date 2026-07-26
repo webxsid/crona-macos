@@ -40,5 +40,11 @@
 	<string>crona-kernel-dev</string>
 	<key>CRONA_POSTHOG_API_KEY</key>
 	<string>$(CRONA_POSTHOG_API_KEY)</string>
+	<key>CRONA_RELEASE_CHANNEL</key>
+	<string>development</string>
+	<key>CRONA_RELEASE_VERSION</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CRONA_UPDATES_ENABLED</key>
+	<false/>
 </dict>
 </plist>

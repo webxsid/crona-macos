@@ -155,6 +155,15 @@ final class WindowService {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func beginExternalWindowPresentation() {
+        presentAsRegularApplication()
+    }
+
+    func endExternalWindowPresentation() {
+        guard settingsWindow?.isVisible != true else { return }
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func registerSettingsWindow(_ window: NSWindow) {
         guard settingsWindow !== window else { return }
         if let settingsWindowCloseObserver {
