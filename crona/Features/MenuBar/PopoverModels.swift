@@ -217,6 +217,17 @@ struct FocusStartConfigState: Equatable {
         resolvedMinutes(for: countdownChoice, customMinutes: customCountdownMinutes, fallback: 25, allowZero: false)
     }
 
+    var configuredDurationSeconds: Int? {
+        switch mode {
+        case .stopwatch:
+            return nil
+        case .pomodoro:
+            return pomodoroValues.totalSeconds
+        case .timer:
+            return max(1, resolvedCountdownMinutes) * 60
+        }
+    }
+
     var effectivePomodoroCycles: Int {
         breaksEnabled ? max(1, pomodoroCycles) : 1
     }
@@ -284,6 +295,7 @@ struct FocusStartConfigState: Equatable {
                 repoID: nil,
                 streamID: issue.streamID,
                 issueID: issue.id,
+                hardLimitKind: .pomodoro,
                 hardLimitTotalSeconds: values.totalSeconds,
                 hardLimitWorkSeconds: values.focusSeconds,
                 hardLimitBreakSeconds: values.breakSeconds,
@@ -296,26 +308,42 @@ struct FocusStartConfigState: Equatable {
                 repoID: nil,
                 streamID: issue.streamID,
                 issueID: issue.id,
+                hardLimitKind: .countdown,
                 hardLimitTotalSeconds: totalSeconds,
-                hardLimitWorkSeconds: totalSeconds,
-                hardLimitBreakSeconds: 0,
-                hardLimitLongBreakSeconds: 0,
-                hardLimitCyclesBeforeLongBreak: 0
+                hardLimitWorkSeconds: nil,
+                hardLimitBreakSeconds: nil,
+                hardLimitLongBreakSeconds: nil,
+                hardLimitCyclesBeforeLongBreak: nil
             )
         }
     }
 
     var extendRequest: CronaTimerExtendRequest? {
-        let totalSeconds = max(1, extendMinutes) * 60
-        return CronaTimerExtendRequest(
-            additionalSeconds: 0,
-            additionalSessions: max(1, extendSessions),
-            hardLimitTotalSeconds: totalSeconds,
-            hardLimitWorkSeconds: totalSeconds,
-            hardLimitBreakSeconds: 0,
-            hardLimitLongBreakSeconds: 0,
-            hardLimitCyclesBeforeLongBreak: 0
-        )
+        switch mode {
+        case .stopwatch:
+            return nil
+        case .timer:
+            return CronaTimerExtendRequest(
+                additionalSeconds: max(1, extendMinutes) * 60,
+                additionalSessions: 0,
+                hardLimitTotalSeconds: nil,
+                hardLimitWorkSeconds: nil,
+                hardLimitBreakSeconds: nil,
+                hardLimitLongBreakSeconds: nil,
+                hardLimitCyclesBeforeLongBreak: nil
+            )
+        case .pomodoro:
+            let values = pomodoroValues
+            return CronaTimerExtendRequest(
+                additionalSeconds: 0,
+                additionalSessions: max(1, extendSessions),
+                hardLimitTotalSeconds: values.totalSeconds,
+                hardLimitWorkSeconds: values.focusSeconds,
+                hardLimitBreakSeconds: values.breakSeconds,
+                hardLimitLongBreakSeconds: values.longBreakSeconds,
+                hardLimitCyclesBeforeLongBreak: values.cyclesBeforeLongBreak
+            )
+        }
     }
 
     var pomodoroValues: (focusSeconds: Int?, breakSeconds: Int?, longBreakSeconds: Int?, cyclesBeforeLongBreak: Int?, totalSeconds: Int?) {
@@ -365,5 +393,60 @@ struct FocusStartConfigState: Equatable {
         guard let estimateMinutes, estimateMinutes > 0 else { return nil }
         let remaining = estimateMinutes - max(0, workedSeconds / 60)
         return remaining > 0 ? remaining : nil
+    }
+}
+
+enum TimerEndProjection {
+    static func startEndDate(
+        config: FocusStartConfigState,
+        now: Date = Date()
+    ) -> Date? {
+        guard let duration = config.configuredDurationSeconds, duration > 0 else {
+            return nil
+        }
+        return now.addingTimeInterval(TimeInterval(duration))
+    }
+
+    static func activeEndDate(
+        snapshot: TimerSnapshot,
+        now: Date = Date()
+    ) -> Date? {
+        guard snapshot.sessionID != nil, snapshot.hardLimitActive else {
+            return nil
+        }
+        return now.addingTimeInterval(TimeInterval(max(0, snapshot.displayElapsedSeconds)))
+    }
+
+    static func extensionEndDate(
+        snapshot: TimerSnapshot,
+        request: CronaTimerExtendRequest,
+        now: Date = Date()
+    ) -> Date? {
+        let addedSeconds: Int
+        if request.additionalSeconds > 0 {
+            addedSeconds = request.additionalSeconds
+        } else {
+            guard
+                request.additionalSessions > 0,
+                let perSession = request.hardLimitTotalSeconds,
+                perSession > 0
+            else {
+                return nil
+            }
+            addedSeconds = perSession * request.additionalSessions
+        }
+
+        guard addedSeconds > 0 else { return nil }
+        let remaining = max(0, snapshot.displayElapsedSeconds)
+        return now.addingTimeInterval(TimeInterval(remaining + addedSeconds))
+    }
+}
+
+enum TimerEndTimeFormatter {
+    static func string(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter.string(from: date)
     }
 }

@@ -1,8 +1,51 @@
+import AppKit
 import XCTest
 @testable import crona
 
 @MainActor
 final class CronaCompanionTests: XCTestCase {
+    func testSettingsNavigationTracksBackAndForwardHistory() {
+        var history = SettingsNavigationHistory()
+
+        history.navigate(to: .menuBar)
+        history.navigate(to: .notifications)
+        history.goBack()
+
+        XCTAssertEqual(history.current, .menuBar)
+        XCTAssertTrue(history.canGoBack)
+        XCTAssertTrue(history.canGoForward)
+
+        history.goForward()
+
+        XCTAssertEqual(history.current, .notifications)
+        XCTAssertTrue(history.canGoBack)
+        XCTAssertFalse(history.canGoForward)
+    }
+
+    func testSettingsNavigationClearsForwardHistoryAfterNewSelection() {
+        var history = SettingsNavigationHistory()
+        history.navigate(to: .menuBar)
+        history.navigate(to: .notifications)
+        history.goBack()
+
+        history.navigate(to: .runtime)
+
+        XCTAssertEqual(history.current, .runtime)
+        XCTAssertFalse(history.canGoForward)
+    }
+
+    func testSettingsNavigationIgnoresDuplicateAndBoundaryActions() {
+        var history = SettingsNavigationHistory()
+
+        history.goBack()
+        history.goForward()
+        history.navigate(to: .general)
+
+        XCTAssertEqual(history.current, .general)
+        XCTAssertFalse(history.canGoBack)
+        XCTAssertFalse(history.canGoForward)
+    }
+
     func testDiscoveryResolvesEndpointAndDefaultsTransport() {
         let config = CronaConfig(
             environment: .development,
@@ -75,16 +118,57 @@ final class CronaCompanionTests: XCTestCase {
         defaults.removePersistentDomain(forName: #function)
 
         let service = PreferencesService(defaults: defaults)
-        service.preferences.menuBarDisplayMode = .iconOnly
+        service.preferences.menuBarDisplayMode = .textOnly
+        service.preferences.menuBarIdleTextMode = .focusToday
         service.preferences.menuBarTimeFormat = .expanded
         service.preferences.menuBarShowsSeconds = false
+        service.preferences.showHardLimitActionPopups = false
         service.preferences.tuiCommand = "crona tui"
 
         let reloaded = PreferencesService(defaults: defaults)
-        XCTAssertEqual(reloaded.preferences.menuBarDisplayMode, .iconOnly)
+        XCTAssertEqual(reloaded.preferences.menuBarDisplayMode, .textOnly)
+        XCTAssertEqual(reloaded.preferences.menuBarIdleTextMode, .focusToday)
         XCTAssertEqual(reloaded.preferences.menuBarTimeFormat, .expanded)
         XCTAssertFalse(reloaded.preferences.menuBarShowsSeconds)
+        XCTAssertFalse(reloaded.preferences.showHardLimitActionPopups)
         XCTAssertEqual(reloaded.preferences.tuiCommand, "crona tui")
+    }
+
+    func testPreferencesDecodeValuesSavedBeforeIdleTextSettingExisted() throws {
+        let data = """
+        {
+          "launchAtLogin": true,
+          "menuBarDisplayMode": "iconAndText",
+          "menuBarTimeFormat": "clock",
+          "menuBarShowsSeconds": false,
+          "pinPopover": true,
+          "tuiCommand": "crona"
+        }
+        """.data(using: .utf8)!
+
+        let preferences = try JSONDecoder().decode(CompanionPreferences.self, from: data)
+
+        XCTAssertEqual(preferences.menuBarDisplayMode, .iconAndText)
+        XCTAssertEqual(preferences.menuBarIdleTextMode, .idle)
+        XCTAssertTrue(preferences.showHardLimitActionPopups)
+        XCTAssertTrue(preferences.showHardLimitWarningIndicator)
+        XCTAssertEqual(preferences.hardLimitWarningLeadSeconds, 10)
+    }
+
+    func testPreferencesDefaultHardLimitPopupEnabled() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let service = PreferencesService(defaults: defaults)
+
+        XCTAssertTrue(service.preferences.showHardLimitActionPopups)
+    }
+
+    func testHardLimitWarningLeadTimeUsesFixedPresets() {
+        XCTAssertEqual(CompanionPreferences.hardLimitWarningLeadTimeOptions, [10, 20, 30])
+        XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(1), 10)
+        XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(17), 20)
+        XCTAssertEqual(CompanionPreferences.normalizedHardLimitWarningLeadSeconds(60), 30)
     }
 
     func testConfigLoaderUsesBundleDefaultsForDevelopment() {
@@ -212,6 +296,46 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(state.elapsedSeconds, 600)
     }
 
+    func testTimerStateDecodesExplicitHardLimitKind() throws {
+        let response = """
+        {
+          "id":"response-1",
+          "result":{
+            "state":"running",
+            "sessionId":"session-1",
+            "hardLimitActive":true,
+            "hardLimitKind":"countdown",
+            "hardLimitTotalSeconds":1500
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(CronaKernelResponseEnvelope<CronaTimerState>.self, from: response)
+        let state = try XCTUnwrap(decoded.result)
+        let snapshot = TimerSnapshot.from(state)
+
+        XCTAssertEqual(state.hardLimitKind, "countdown")
+        XCTAssertEqual(snapshot.hardLimitKind, .countdown)
+        XCTAssertEqual(TimerPresentation.from(snapshot).mode, .timer)
+    }
+
+    func testMissingAndUnknownHardLimitKindsNormalizeToPomodoro() throws {
+        for rawKind in [nil, "future-kind"] as [String?] {
+            let snapshot = TimerSnapshot(
+                state: "running",
+                sessionID: "session-1",
+                hardLimitActive: true,
+                hardLimitKind: CronaTimerHardLimitKind.normalized(rawKind),
+                hardLimitTotalSeconds: 1500,
+                hardLimitWorkSeconds: 1500,
+                isConnected: true
+            )
+
+            XCTAssertEqual(snapshot.hardLimitKind, .pomodoro)
+            XCTAssertEqual(TimerPresentation.from(snapshot).mode, .pomodoro)
+        }
+    }
+
     func testHabitDailyItemDecodesDueHabitPayload() throws {
         let response = """
         {
@@ -293,6 +417,7 @@ final class CronaCompanionTests: XCTestCase {
             sessionStartTime: nil,
             segmentStartTime: nil,
             hardLimitActive: true,
+            hardLimitKind: .countdown,
             hardLimitExpired: false,
             hardLimitTotalSeconds: 1800,
             hardLimitRemainingSeconds: 600,
@@ -310,7 +435,8 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(presentation.countsDown)
         XCTAssertEqual(presentation.displaySeconds, 1200)
         XCTAssertEqual(presentation.progressFraction ?? 0, 2.0 / 3.0, accuracy: 0.001)
-        XCTAssertTrue(presentation.canPause)
+        XCTAssertFalse(presentation.canPause)
+        XCTAssertFalse(presentation.canResume)
         XCTAssertEqual(presentation.phaseTitle, "Timer ends in")
     }
 
@@ -327,6 +453,7 @@ final class CronaCompanionTests: XCTestCase {
             sessionStartTime: nil,
             segmentStartTime: nil,
             hardLimitActive: true,
+            hardLimitKind: .pomodoro,
             hardLimitExpired: false,
             hardLimitTotalSeconds: 1800,
             hardLimitRemainingSeconds: 300,
@@ -343,7 +470,121 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(presentation.mode, .pomodoro)
         XCTAssertEqual(presentation.phaseTitle, "Break ends in")
         XCTAssertEqual(presentation.displaySeconds, 300)
-        XCTAssertNil(presentation.upcomingBreakSeconds)
+        XCTAssertEqual(presentation.upcomingSegment?.kind, .work)
+        XCTAssertEqual(presentation.upcomingSegment?.durationSeconds, 1500)
+        XCTAssertFalse(presentation.canPause)
+        XCTAssertFalse(presentation.canResume)
+    }
+
+    func testTimerPresentationKeepsNoBreakPomodoroAsPomodoro() {
+        let snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            segmentType: "work",
+            displayElapsedSeconds: 1200,
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            hardLimitTotalSeconds: 1500,
+            hardLimitRemainingSeconds: 1200,
+            hardLimitWorkSeconds: 1500,
+            isConnected: true
+        )
+
+        let presentation = TimerPresentation.from(snapshot)
+
+        XCTAssertEqual(presentation.mode, .pomodoro)
+        XCTAssertEqual(presentation.phaseTitle, "Focus ends in")
+        XCTAssertNil(presentation.upcomingSegment)
+    }
+
+    func testPomodoroWorkProjectionUsesCurrentSegmentDuration() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        var snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            segmentType: "work",
+            nextSegmentType: "short_break",
+            elapsedSeconds: 10,
+            segmentStartTime: now.addingTimeInterval(-10),
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            hardLimitTotalSeconds: 120,
+            hardLimitRemainingSeconds: 110,
+            hardLimitWorkSeconds: 60,
+            hardLimitBreakSeconds: 60,
+            snapshotAppliedAt: now,
+            isConnected: true
+        )
+        snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
+            for: snapshot,
+            at: now
+        )
+
+        let presentation = TimerPresentation.from(snapshot)
+
+        XCTAssertEqual(presentation.displaySeconds, 50)
+        XCTAssertEqual(presentation.progressFraction ?? 0, 5.0 / 6.0, accuracy: 0.001)
+        XCTAssertEqual(presentation.phaseTitle, "Break starts in")
+        XCTAssertEqual(presentation.upcomingSegment?.kind, .shortBreak)
+        XCTAssertEqual(presentation.upcomingSegment?.durationSeconds, 60)
+    }
+
+    func testPomodoroBreakProjectionUsesBreakDurationAndUpcomingFocus() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        var snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            segmentType: "short_break",
+            nextSegmentType: "work",
+            elapsedSeconds: 15,
+            segmentStartTime: now.addingTimeInterval(-15),
+            hardLimitActive: true,
+            hardLimitKind: .pomodoro,
+            hardLimitTotalSeconds: 120,
+            hardLimitRemainingSeconds: 45,
+            hardLimitWorkSeconds: 60,
+            hardLimitBreakSeconds: 60,
+            snapshotAppliedAt: now,
+            isConnected: true
+        )
+        snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
+            for: snapshot,
+            at: now
+        )
+
+        let presentation = TimerPresentation.from(snapshot)
+
+        XCTAssertEqual(presentation.displaySeconds, 45)
+        XCTAssertEqual(presentation.progressFraction ?? 0, 0.75, accuracy: 0.001)
+        XCTAssertEqual(presentation.phaseTitle, "Break ends in")
+        XCTAssertEqual(presentation.upcomingSegment?.kind, .work)
+        XCTAssertEqual(presentation.upcomingSegment?.durationSeconds, 60)
+    }
+
+    func testTimerPresentationAllowsPauseAndResumeOnlyForStopwatch() {
+        let running = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            elapsedSeconds: 90,
+            displayElapsedSeconds: 90,
+            isConnected: true
+        )
+        let paused = TimerSnapshot(
+            state: "paused",
+            sessionID: "session-1",
+            elapsedSeconds: 90,
+            displayElapsedSeconds: 90,
+            isConnected: true
+        )
+
+        let runningPresentation = TimerPresentation.from(running)
+        let pausedPresentation = TimerPresentation.from(paused)
+
+        XCTAssertEqual(runningPresentation.mode, .stopwatch)
+        XCTAssertTrue(runningPresentation.canPause)
+        XCTAssertFalse(runningPresentation.canResume)
+        XCTAssertFalse(pausedPresentation.canPause)
+        XCTAssertTrue(pausedPresentation.canResume)
     }
 
     func testFocusStartConfigBuildsStopwatchRequest() {
@@ -354,6 +595,7 @@ final class CronaCompanionTests: XCTestCase {
 
         XCTAssertEqual(request.streamID, 22)
         XCTAssertEqual(request.issueID, 33)
+        XCTAssertNil(request.hardLimitKind)
         XCTAssertNil(request.hardLimitTotalSeconds)
         XCTAssertNil(request.hardLimitWorkSeconds)
     }
@@ -374,11 +616,117 @@ final class CronaCompanionTests: XCTestCase {
 
         let request = state.startRequest(for: issue)
 
+        XCTAssertEqual(request.hardLimitKind, .pomodoro)
         XCTAssertEqual(request.hardLimitTotalSeconds, 7800)
         XCTAssertEqual(request.hardLimitWorkSeconds, 1500)
         XCTAssertEqual(request.hardLimitBreakSeconds, 300)
         XCTAssertEqual(request.hardLimitLongBreakSeconds, 900)
         XCTAssertEqual(request.hardLimitCyclesBeforeLongBreak, 4)
+    }
+
+    func testTimerStartEndProjectionUsesConfiguredCountdown() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let state = FocusStartConfigState(
+            mode: .timer,
+            countdownChoice: .custom,
+            customCountdownMinutes: 45
+        )
+
+        let endDate = try XCTUnwrap(TimerEndProjection.startEndDate(config: state, now: now))
+
+        XCTAssertEqual(endDate, now.addingTimeInterval(45 * 60))
+    }
+
+    func testPomodoroStartEndProjectionUsesCompletePlan() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let state = FocusStartConfigState(
+            mode: .pomodoro,
+            focusChoice: .preset25,
+            breakChoice: .preset5,
+            longBreakChoice: .preset15,
+            countdownChoice: .preset25,
+            pomodoroCycles: 4,
+            pomodoroCyclesBeforeLongBreak: 4
+        )
+
+        let endDate = try XCTUnwrap(TimerEndProjection.startEndDate(config: state, now: now))
+
+        XCTAssertEqual(endDate, now.addingTimeInterval(7_800))
+    }
+
+    func testStopwatchHasNoProjectedEndDate() {
+        let state = FocusStartConfigState(mode: .stopwatch)
+
+        XCTAssertNil(TimerEndProjection.startEndDate(config: state))
+    }
+
+    func testActiveEndProjectionUsesAuthoritativeDisplayRemaining() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            displayElapsedSeconds: 600,
+            hardLimitActive: true,
+            hardLimitRemainingSeconds: 605,
+            isConnected: true
+        )
+
+        let endDate = try XCTUnwrap(TimerEndProjection.activeEndDate(snapshot: snapshot, now: now))
+
+        XCTAssertEqual(endDate, now.addingTimeInterval(600))
+    }
+
+    func testTimerExtensionEndProjectionIncludesRemainingTime() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let snapshot = TimerSnapshot(
+            state: "running",
+            sessionID: "session-1",
+            displayElapsedSeconds: 120,
+            hardLimitActive: true,
+            isConnected: true
+        )
+        let request = CronaTimerExtendRequest(
+            additionalSeconds: 300,
+            additionalSessions: 1,
+            hardLimitTotalSeconds: nil,
+            hardLimitWorkSeconds: nil,
+            hardLimitBreakSeconds: nil,
+            hardLimitLongBreakSeconds: nil,
+            hardLimitCyclesBeforeLongBreak: nil
+        )
+
+        let endDate = try XCTUnwrap(
+            TimerEndProjection.extensionEndDate(snapshot: snapshot, request: request, now: now)
+        )
+
+        XCTAssertEqual(endDate, now.addingTimeInterval(420))
+    }
+
+    func testConfiguredExtensionEndProjectionUsesSessionCount() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let snapshot = TimerSnapshot(
+            state: "expired",
+            sessionID: "session-1",
+            displayElapsedSeconds: 0,
+            hardLimitActive: true,
+            hardLimitExpired: true,
+            isConnected: true
+        )
+        let request = CronaTimerExtendRequest(
+            additionalSeconds: 0,
+            additionalSessions: 2,
+            hardLimitTotalSeconds: 1_800,
+            hardLimitWorkSeconds: 1_500,
+            hardLimitBreakSeconds: 300,
+            hardLimitLongBreakSeconds: 0,
+            hardLimitCyclesBeforeLongBreak: 0
+        )
+
+        let endDate = try XCTUnwrap(
+            TimerEndProjection.extensionEndDate(snapshot: snapshot, request: request, now: now)
+        )
+
+        XCTAssertEqual(endDate, now.addingTimeInterval(3_600))
     }
 
     func testFocusStartConfigUsesRemainingEstimateForTimerDefault() {
@@ -391,8 +739,41 @@ final class CronaCompanionTests: XCTestCase {
 
         XCTAssertEqual(state.customCountdownMinutes, 45)
         XCTAssertEqual(state.countdownChoice, .custom)
+        XCTAssertEqual(request.hardLimitKind, .countdown)
         XCTAssertEqual(request.hardLimitTotalSeconds, 45 * 60)
-        XCTAssertEqual(request.hardLimitBreakSeconds, 0)
+        XCTAssertNil(request.hardLimitWorkSeconds)
+        XCTAssertNil(request.hardLimitBreakSeconds)
+        XCTAssertNil(request.hardLimitLongBreakSeconds)
+        XCTAssertNil(request.hardLimitCyclesBeforeLongBreak)
+    }
+
+    func testCountdownStartEncodingOmitsPomodoroCadence() throws {
+        let issue = DailyFocusIssue(
+            id: 33,
+            streamID: 22,
+            title: "Issue",
+            status: "planned",
+            estimateMinutes: nil,
+            workedSeconds: 0,
+            todoForDate: nil
+        )
+        let state = FocusStartConfigState(
+            mode: .timer,
+            countdownChoice: .custom,
+            customCountdownMinutes: 45
+        )
+
+        let encoded = try JSONEncoder().encode(state.startRequest(for: issue))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["hardLimitKind"] as? String, "countdown")
+        XCTAssertEqual(object["hardLimitTotalSeconds"] as? Int, 45 * 60)
+        XCTAssertNil(object["hardLimitWorkSeconds"])
+        XCTAssertNil(object["hardLimitBreakSeconds"])
+        XCTAssertNil(object["hardLimitLongBreakSeconds"])
+        XCTAssertNil(object["hardLimitCyclesBeforeLongBreak"])
     }
 
     func testFocusStartConfigDisablesDependentPomodoroFieldsWhenNoBreakSelected() {
@@ -433,6 +814,34 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertFalse(state.showsLongBreakAfterControls)
         XCTAssertEqual(state.pomodoroValues.longBreakSeconds, 0)
         XCTAssertEqual(state.pomodoroValues.cyclesBeforeLongBreak, 0)
+    }
+
+    func testFocusStartConfigClampsCustomDurations() {
+        let state = FocusStartConfigState(
+            mode: .pomodoro,
+            focusChoice: .custom,
+            breakChoice: .custom,
+            longBreakChoice: .custom,
+            countdownChoice: .custom,
+            customFocusMinutes: 0,
+            customBreakMinutes: -5,
+            customLongBreakMinutes: -10,
+            customCountdownMinutes: 0
+        )
+        var timerState = state
+        timerState.mode = .timer
+
+        XCTAssertEqual(state.resolvedFocusMinutes, 1)
+        XCTAssertEqual(state.resolvedBreakMinutes, 0)
+        XCTAssertEqual(state.resolvedLongBreakMinutes, 0)
+        XCTAssertEqual(timerState.resolvedCountdownMinutes, 1)
+    }
+
+    func testPopoverStatsMessagesCoverKnownLevels() {
+        XCTAssertTrue(PopoverStatsService.message(for: "strong").contains("strong"))
+        XCTAssertTrue(PopoverStatsService.message(for: "steady").contains("steady"))
+        XCTAssertTrue(PopoverStatsService.message(for: "overextended").contains("recovery"))
+        XCTAssertFalse(PopoverStatsService.message(for: "unknown").isEmpty)
     }
 
     func testHabitsServiceRefreshesForHabitCompletionEvents() {
@@ -545,6 +954,7 @@ final class CronaCompanionTests: XCTestCase {
             menuBarDisplayMode: .iconAndText,
             menuBarTimeFormat: .clock,
             menuBarShowsSeconds: true,
+            showHardLimitActionPopups: true,
             pinPopover: false,
             runtimeDirectoryOverride: nil,
             tuiCommand: "crona"
@@ -555,6 +965,63 @@ final class CronaCompanionTests: XCTestCase {
             timerSnapshot: TimerSnapshot()
         )
         XCTAssertEqual(title, "Idle")
+    }
+
+    func testMenuBarFormatterUsesTodayFocusWhenIdle() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+        preferences.menuBarIdleTextMode = .focusToday
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences,
+            connectionState: .connected,
+            timerSnapshot: TimerSnapshot(),
+            todayWorkedSeconds: 5_520
+        )
+
+        XCTAssertEqual(title, "1h32m")
+    }
+
+    func testMenuBarFormatterOmitsZeroHoursFromTodayFocus() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+        preferences.menuBarIdleTextMode = .focusToday
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences,
+            connectionState: .connected,
+            timerSnapshot: TimerSnapshot(),
+            todayWorkedSeconds: 1_920
+        )
+
+        XCTAssertEqual(title, "32m")
+    }
+
+    func testMenuBarFormatterFallsBackToIdleWithoutTodayMetrics() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .iconAndText
+        preferences.menuBarIdleTextMode = .focusToday
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences,
+            connectionState: .connected,
+            timerSnapshot: TimerSnapshot()
+        )
+
+        XCTAssertEqual(title, "Idle")
+    }
+
+    func testMenuBarFormatterKeepsTextOnlyItemReachableWhenDisconnected() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences,
+            connectionState: .disconnected,
+            timerSnapshot: TimerSnapshot()
+        )
+
+        XCTAssertEqual(title, "Offline")
     }
 
     func testDaemonClientBuildsListDueHabitsRequest() async throws {
@@ -573,6 +1040,95 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.params["date"]?.stringValue, "2026-07-13")
     }
 
+    func testDaemonClientBuildsIssueStatusTransitionsRequest() async throws {
+        let response = """
+        {
+          "id":"response-1",
+          "result":{
+            "id":42,
+            "currentStatus":"in_progress",
+            "allowedStatuses":["planned","blocked","in_review","done","abandoned"]
+          }
+        }
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        let result = try await client.issueStatusTransitions(issueID: 42)
+
+        XCTAssertEqual(result.currentStatus, "in_progress")
+        XCTAssertEqual(result.allowedStatuses, [.planned, .blocked, .inReview, .done, .abandoned])
+        let request = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "issue.status_transitions")
+        XCTAssertEqual(requestProbe.params["id"]?.intValue, 42)
+    }
+
+    func testDaemonClientBuildsIssueStatusChangeRequestWithNote() async throws {
+        let response = issueResponseData(status: "blocked", todoForDate: nil)
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        _ = try await client.changeIssueStatus(
+            issueID: 42,
+            status: .blocked,
+            note: "Waiting for review"
+        )
+
+        let request = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "issue.change_status")
+        XCTAssertEqual(requestProbe.params["id"]?.intValue, 42)
+        XCTAssertEqual(requestProbe.params["status"]?.stringValue, "blocked")
+        XCTAssertEqual(requestProbe.params["note"]?.stringValue, "Waiting for review")
+    }
+
+    func testDaemonClientBuildsSetAndClearIssueDueDateRequests() async throws {
+        let setTransport = CapturingDaemonTransport(
+            responseData: issueResponseData(status: "planned", todoForDate: "2026-08-02")
+        )
+        let setClient = CronaDaemonClient(transport: setTransport)
+        _ = try await setClient.setIssueTodo(issueID: 42, date: "2026-08-02")
+
+        var request = try XCTUnwrap(setTransport.requestData)
+        var requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "issue.set_todo")
+        XCTAssertEqual(requestProbe.params["id"]?.intValue, 42)
+        XCTAssertEqual(requestProbe.params["date"]?.stringValue, "2026-08-02")
+
+        let clearTransport = CapturingDaemonTransport(
+            responseData: issueResponseData(status: "planned", todoForDate: nil)
+        )
+        let clearClient = CronaDaemonClient(transport: clearTransport)
+        _ = try await clearClient.clearIssueTodo(issueID: 42)
+
+        request = try XCTUnwrap(clearTransport.requestData)
+        requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "issue.clear_todo")
+        XCTAssertEqual(requestProbe.params["id"]?.intValue, 42)
+    }
+
+    func testIssueStatusNoteRequirementsMirrorDaemonContract() {
+        XCTAssertTrue(CronaIssueStatus.blocked.requiresNote)
+        XCTAssertTrue(CronaIssueStatus.abandoned.requiresNote)
+        XCTAssertFalse(CronaIssueStatus.done.requiresNote)
+        XCTAssertEqual(CronaIssueStatus.inReview.notePrompt, "Review note (optional)")
+        XCTAssertNil(CronaIssueStatus.planned.notePrompt)
+    }
+
+    func testCronaCalendarDateQuickChoicesAreStable() throws {
+        XCTAssertEqual(
+            CronaCalendarDate.adding(days: 1, to: "2026-07-26"),
+            "2026-07-27"
+        )
+        XCTAssertEqual(
+            CronaCalendarDate.adding(days: 7, to: "2026-07-26"),
+            "2026-08-02"
+        )
+        let date = try XCTUnwrap(CronaCalendarDate.date(from: "2026-08-02"))
+        XCTAssertEqual(CronaCalendarDate.string(from: date), "2026-08-02")
+    }
+
     func testDaemonClientBuildsHabitCompleteRequest() async throws {
         let response = """
         {"id":"response-1","result":{"id":8,"habitId":101,"date":"2026-07-13","status":"completed"}}
@@ -589,6 +1145,49 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.params["habitId"]?.intValue, 101)
         XCTAssertEqual(requestProbe.params["date"]?.stringValue, "2026-07-13")
         XCTAssertEqual(requestProbe.params["status"]?.stringValue, "completed")
+    }
+
+    func testDaemonClientBuildsHabitFailedRequest() async throws {
+        let response = """
+        {"id":"response-1","result":{"id":8,"habitId":101,"date":"2026-07-13","status":"failed"}}
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        let completion = try await client.completeHabit(
+            habitID: 101,
+            date: "2026-07-13",
+            status: "failed"
+        )
+
+        XCTAssertEqual(completion.status, "failed")
+        let request = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "habit.complete")
+        XCTAssertEqual(requestProbe.params["habitId"]?.intValue, 101)
+        XCTAssertEqual(requestProbe.params["date"]?.stringValue, "2026-07-13")
+        XCTAssertEqual(requestProbe.params["status"]?.stringValue, "failed")
+    }
+
+    func testDaemonClientBuildsTimedHabitLogRequest() async throws {
+        let response = """
+        {"id":"response-1","result":{"id":8,"habitId":101,"date":"2026-07-13","status":"completed","durationMinutes":25}}
+        """.data(using: .utf8)!
+        let transport = CapturingDaemonTransport(responseData: response)
+        let client = CronaDaemonClient(transport: transport)
+
+        let completion = try await client.completeHabit(
+            habitID: 101,
+            date: "2026-07-13",
+            durationMinutes: 25
+        )
+
+        XCTAssertEqual(completion.durationMinutes, 25)
+        let request = try XCTUnwrap(transport.requestData)
+        let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(requestProbe.method, "habit.complete")
+        XCTAssertEqual(requestProbe.params["status"]?.stringValue, "completed")
+        XCTAssertEqual(requestProbe.params["durationMinutes"]?.intValue, 25)
     }
 
     func testDaemonClientBuildsEndSessionRequestWithCommitMessage() async throws {
@@ -611,6 +1210,24 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(TimerService.shouldRefresh(for: "session.ended"))
         XCTAssertTrue(TimerService.shouldRefresh(for: "timer.extended"))
         XCTAssertFalse(TimerService.shouldRefresh(for: "habit.completed"))
+    }
+
+    private func issueResponseData(status: String, todoForDate: String?) -> Data {
+        let todoJSON = todoForDate.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id":"response-1",
+          "result":{
+            "id":42,
+            "streamId":7,
+            "title":"Ship context menu",
+            "status":"\(status)",
+            "workedSeconds":0,
+            "pinnedDaily":false,
+            "todoForDate":\(todoJSON)
+          }
+        }
+        """.data(using: .utf8)!
     }
 
     func testContextServiceRefreshesForEndAndExtendEvents() {
@@ -657,12 +1274,133 @@ final class CronaCompanionTests: XCTestCase {
 
         XCTAssertEqual(request?.additionalSeconds, 300)
         XCTAssertEqual(request?.additionalSessions, 0)
-        XCTAssertEqual(request?.hardLimitTotalSeconds, 1800)
+        XCTAssertNil(request?.hardLimitTotalSeconds)
+        XCTAssertNil(request?.hardLimitWorkSeconds)
+        XCTAssertNil(request?.hardLimitBreakSeconds)
     }
 
     func testQuickExtendRequestRejectsZeroSeconds() {
         let request = CompanionAppState.buildQuickExtendRequest(snapshot: TimerSnapshot(), additionalSeconds: 0)
         XCTAssertNil(request)
+    }
+
+    func testHardLimitExtendChoiceMapsTimerValues() {
+        XCTAssertEqual(HardLimitExtendChoice.minutes1.secondsValue, 60)
+        XCTAssertEqual(HardLimitExtendChoice.minutes5.secondsValue, 300)
+        XCTAssertEqual(HardLimitExtendChoice.minutes15.secondsValue, 900)
+        XCTAssertNil(HardLimitExtendChoice.minutes15.sessionValue)
+    }
+
+    func testHardLimitExtendChoiceMapsPomodoroValues() {
+        XCTAssertEqual(HardLimitExtendChoice.session1.sessionValue, 1)
+        XCTAssertEqual(HardLimitExtendChoice.session2.sessionValue, 2)
+        XCTAssertNil(HardLimitExtendChoice.session1.secondsValue)
+    }
+
+    func testHardLimitCountdownAdvancesAndExpiresOnce() {
+        var state = HardLimitCountdownState(duration: 30)
+
+        XCTAssertFalse(state.advance(by: 12))
+        XCTAssertEqual(state.remaining, 18)
+        XCTAssertEqual(state.progress, 0.6, accuracy: 0.001)
+        XCTAssertEqual(state.displayedSeconds, 18)
+
+        XCTAssertTrue(state.advance(by: 18))
+        XCTAssertEqual(state.remaining, 0)
+        XCTAssertFalse(state.isRunning)
+        XCTAssertFalse(state.advance(by: 1))
+    }
+
+    func testHardLimitCountdownPausePreservesRemainingTime() {
+        var state = HardLimitCountdownState(duration: 30)
+        state.isPaused = true
+
+        XCTAssertFalse(state.advance(by: 3))
+        XCTAssertEqual(state.remaining, 30)
+
+        state.isPaused = false
+        XCTAssertFalse(state.advance(by: 2.5))
+        XCTAssertEqual(state.remaining, 27.5)
+        XCTAssertEqual(state.displayedSeconds, 28)
+    }
+
+    func testHardLimitCountdownClampsProjection() {
+        let state = HardLimitCountdownState(duration: 30, remaining: 40)
+
+        XCTAssertEqual(state.remaining, 30)
+        XCTAssertEqual(state.progress, 1)
+    }
+
+    func testHardLimitCountdownWaitsForAllPauseReasonsToClear() {
+        let service = HardLimitCountdownService()
+        service.start {}
+        XCTAssertEqual(service.state.duration, 30)
+
+        service.setPaused(true, reason: .hoverEnd)
+        service.setPaused(true, reason: .keyboardFocus)
+        XCTAssertTrue(service.state.isPaused)
+
+        service.setPaused(false, reason: .hoverEnd)
+        XCTAssertTrue(service.state.isPaused)
+
+        service.setPaused(false, reason: .keyboardFocus)
+        XCTAssertFalse(service.state.isPaused)
+        service.cancel()
+    }
+
+    func testStatusPopupOriginCentersBelowIcon() {
+        let origin = StatusBarService.popupOrigin(
+            iconRect: NSRect(x: 850, y: 1050, width: 20, height: 20),
+            menuBarBottomY: 1050,
+            panelSize: NSSize(width: 420, height: 400),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1920, height: 1050)
+        )
+
+        XCTAssertEqual(origin.x, 650)
+        XCTAssertEqual(origin.y, 638)
+    }
+
+    func testStatusPopupOriginClampsToVisibleScreenEdges() {
+        let leftOrigin = StatusBarService.popupOrigin(
+            iconRect: NSRect(x: 10, y: 1050, width: 20, height: 20),
+            menuBarBottomY: 1050,
+            panelSize: NSSize(width: 420, height: 400),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1920, height: 1050)
+        )
+        let rightOrigin = StatusBarService.popupOrigin(
+            iconRect: NSRect(x: 1900, y: 1050, width: 20, height: 20),
+            menuBarBottomY: 1050,
+            panelSize: NSSize(width: 420, height: 400),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1920, height: 1050)
+        )
+
+        XCTAssertEqual(leftOrigin.x, 8)
+        XCTAssertEqual(rightOrigin.x, 1492)
+    }
+
+    func testStatusPopupOriginUsesSecondaryScreenCoordinates() {
+        let origin = StatusBarService.popupOrigin(
+            iconRect: NSRect(x: -600, y: 880, width: 20, height: 20),
+            menuBarBottomY: 880,
+            panelSize: NSSize(width: 420, height: 300),
+            visibleFrame: NSRect(x: -1440, y: 0, width: 1440, height: 880)
+        )
+
+        XCTAssertEqual(origin.x, -800)
+        XCTAssertEqual(origin.y, 568)
+    }
+
+    func testStatusPopupSizingClampsTransientMeasurements() {
+        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 120), 180)
+        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 312.2), 313)
+        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 800), 700)
+    }
+
+    func testPopoverModalMinimumHeightsRemainBounded() {
+        XCTAssertEqual(PopoverModalKind.statusNote.minimumHeight, 260)
+        XCTAssertEqual(PopoverModalKind.endSession.minimumHeight, 360)
+        XCTAssertEqual(PopoverModalKind.dueDate.minimumHeight, 430)
+        XCTAssertLessThan(PopoverModalKind.dueDate.minimumHeight, StatusPopupSizing.maximumHeight)
     }
 }
 

@@ -15,6 +15,44 @@ enum SettingsDestination: String, CaseIterable, Equatable, Identifiable {
     var id: String { rawValue }
 }
 
+struct SettingsNavigationHistory: Equatable {
+    private(set) var current: SettingsDestination = .general
+    private(set) var backStack: [SettingsDestination] = []
+    private(set) var forwardStack: [SettingsDestination] = []
+
+    var canGoBack: Bool { !backStack.isEmpty }
+    var canGoForward: Bool { !forwardStack.isEmpty }
+
+    mutating func navigate(to destination: SettingsDestination) {
+        guard destination != current else { return }
+        backStack.append(current)
+        current = destination
+        forwardStack.removeAll()
+    }
+
+    mutating func goBack() {
+        guard let destination = backStack.popLast() else { return }
+        forwardStack.append(current)
+        current = destination
+    }
+
+    mutating func goForward() {
+        guard let destination = forwardStack.popLast() else { return }
+        backStack.append(current)
+        current = destination
+    }
+}
+
+enum EndSessionPresentationSource: Equatable {
+    case menuPopover
+    case hardLimitPopup
+}
+
+enum IssueActionEditor: Equatable {
+    case status(issue: DailyFocusIssue, status: CronaIssueStatus)
+    case dueDate(issue: DailyFocusIssue)
+}
+
 @MainActor
 final class CompanionAppState: ObservableObject {
     let logger = Logger(subsystem: "com.crona.macos", category: "app")
@@ -28,21 +66,38 @@ final class CompanionAppState: ObservableObject {
     let timerService: TimerService
     let contextService: ContextService
     let dailyFocusService: DailyFocusService
+    let issueActionsService: IssueActionsService
     let habitsService: HabitsService
     let popoverStatsService: PopoverStatsService
+    let hardLimitCountdownService: HardLimitCountdownService
     let windowService: WindowService
     let statusBarService: StatusBarService
     private var cancellables: Set<AnyCancellable> = []
     private var daemonEventObserver: NSObjectProtocol?
     private var endSessionFallbackTask: Task<Void, Never>?
+    private var hardLimitPopupDismissTask: Task<Void, Never>?
+    private var lastWarningIndicatorKey: String?
     @Published var selectedFocusIssue: DailyFocusIssue?
+    @Published var issueActionEditor: IssueActionEditor?
+    @Published var issueActionNote = ""
+    @Published var issueActionDate = Date()
     @Published var selectedPopoverTab: PopoverTab = .now
-    @Published var selectedSettingsDestination: SettingsDestination = .general
+    @Published private(set) var settingsNavigation = SettingsNavigationHistory()
     @Published var isEndSessionSheetPresented = false
     @Published var endSessionCommitMessage = ""
     @Published var isSubmittingEndSession = false
     @Published var endSessionErrorMessage: String?
     @Published private(set) var pendingEndSessionID: String?
+    @Published private(set) var endSessionPresentationSource: EndSessionPresentationSource?
+    @Published private(set) var endSessionFocusRequest = 0
+    @Published var hardLimitPopupPhase: HardLimitPopupPhase?
+    @Published private(set) var hardLimitPopupSessionID: String?
+    @Published var hardLimitPopupExtendChoice = HardLimitExtendChoice.defaultValue
+    @Published var hardLimitPopupErrorMessage: String?
+    @Published var isSubmittingHardLimitAction = false
+    @Published var hardLimitPopupSuccessModel: HardLimitPopupSuccessModel?
+    @Published var hardLimitWarningIndicatorModel: HardLimitWarningIndicatorModel?
+    @Published var isHardLimitPopupAnimatingIn = false
 
     init() {
         let preferences = PreferencesService()
@@ -53,6 +108,10 @@ final class CompanionAppState: ObservableObject {
         let contextService = ContextService(daemonConnection: daemonConnection)
         let timerService = TimerService(daemonConnection: daemonConnection)
         let dailyFocusService = DailyFocusService(daemonConnection: daemonConnection)
+        let issueActionsService = IssueActionsService(
+            daemonConnection: daemonConnection,
+            dailyFocusService: dailyFocusService
+        )
         let habitsService = HabitsService(daemonConnection: daemonConnection)
         let popoverStatsService = PopoverStatsService(daemonConnection: daemonConnection)
         let diagnosticsService = DiagnosticsService(
@@ -68,8 +127,10 @@ final class CompanionAppState: ObservableObject {
         self.contextService = contextService
         self.timerService = timerService
         self.dailyFocusService = dailyFocusService
+        self.issueActionsService = issueActionsService
         self.habitsService = habitsService
         self.popoverStatsService = popoverStatsService
+        self.hardLimitCountdownService = HardLimitCountdownService()
         self.diagnosticsService = diagnosticsService
         self.windowService = WindowService()
         self.statusBarService = StatusBarService()
@@ -94,6 +155,7 @@ final class CompanionAppState: ObservableObject {
             NotificationCenter.default.removeObserver(daemonEventObserver)
         }
         endSessionFallbackTask?.cancel()
+        hardLimitPopupDismissTask?.cancel()
     }
 
     var popoverModel: PopoverViewModel {
@@ -107,6 +169,15 @@ final class CompanionAppState: ObservableObject {
     }
 
     var popoverScreen: PopoverScreen {
+        if hasActiveFocusSession {
+            return .active(
+                ActiveTimerPopoverModel(
+                    presentation: TimerPresentation.from(timerService.snapshot),
+                    timerSnapshot: timerService.snapshot,
+                    contextSnapshot: contextService.snapshot
+                )
+            )
+        }
         if selectedPopoverTab == .stats {
             return .idle(IdleFocusPopoverModel(issues: [], date: ""))
         }
@@ -115,15 +186,6 @@ final class CompanionAppState: ObservableObject {
         }
         if daemonConnection.connectionState != .connected {
             return .disconnected
-        }
-        if timerService.snapshot.sessionID != nil, timerService.snapshot.state != "idle", timerService.snapshot.state != "disconnected" {
-            return .active(
-                ActiveTimerPopoverModel(
-                    presentation: TimerPresentation.from(timerService.snapshot),
-                    timerSnapshot: timerService.snapshot,
-                    contextSnapshot: contextService.snapshot
-                )
-            )
         }
         if let issue = selectedFocusIssue {
             return .startConfig(
@@ -144,6 +206,16 @@ final class CompanionAppState: ObservableObject {
         )
     }
 
+    var hasActiveFocusSession: Bool {
+        timerService.snapshot.sessionID != nil
+            && timerService.snapshot.state != "idle"
+            && timerService.snapshot.state != "disconnected"
+    }
+
+    var selectedSettingsDestination: SettingsDestination {
+        settingsNavigation.current
+    }
+
     func start() {
         statusBarService.installIfNeeded()
         notificationService.refreshAuthorizationStatus()
@@ -160,15 +232,41 @@ final class CompanionAppState: ObservableObject {
     }
 
     func setSelectedPopoverTab(_ tab: PopoverTab) {
+        guard !hasActiveFocusSession else {
+            selectedPopoverTab = .now
+            return
+        }
         selectedPopoverTab = tab
+        statusBarService.refreshPopupLayout()
     }
 
     func setSelectedSettingsDestination(_ destination: SettingsDestination) {
-        selectedSettingsDestination = destination
+        settingsNavigation.navigate(to: destination)
+    }
+
+    func goBackInSettings() {
+        settingsNavigation.goBack()
+    }
+
+    func goForwardInSettings() {
+        settingsNavigation.goForward()
     }
 
     func openSettings() {
-        windowService.showSettings()
+        statusBarService.dismissPopup { [weak self] in
+            self?.windowService.showSettings()
+        }
+    }
+
+    func dismissMenuBarPopup() {
+        statusBarService.dismissPopup()
+    }
+
+    private func refreshPopupLayoutAfterStateChange() {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.statusBarService.refreshPopupLayout()
+        }
     }
 
     func openTUI() {
@@ -184,7 +282,7 @@ final class CompanionAppState: ObservableObject {
     }
 
     func endTimer() {
-        beginEndSession()
+        beginEndSession(source: .menuPopover)
     }
 
     func extendTimer() {
@@ -206,6 +304,95 @@ final class CompanionAppState: ObservableObject {
         }
     }
 
+    func chooseHardLimitEnd() {
+        hardLimitCountdownService.cancel()
+        beginEndSession(source: .hardLimitPopup)
+        guard pendingEndSessionID != nil else { return }
+        hardLimitPopupErrorMessage = nil
+        hardLimitPopupPhase = .endSession
+        windowService.updateHardLimitPopup()
+        requestEndSessionFocus()
+    }
+
+    func chooseHardLimitExtend() {
+        hardLimitCountdownService.cancel()
+        guard let sessionID = timerService.snapshot.sessionID else { return }
+        hardLimitPopupSessionID = sessionID
+        hardLimitPopupErrorMessage = nil
+        hardLimitPopupExtendChoice = defaultExtendChoice(for: timerService.snapshot)
+        hardLimitPopupPhase = .extend
+        windowService.updateHardLimitPopup()
+    }
+
+    func confirmHardLimitExtend() {
+        guard let sessionID = hardLimitPopupSessionID ?? timerService.snapshot.sessionID else { return }
+        guard sessionID == timerService.snapshot.sessionID else {
+            hardLimitPopupErrorMessage = "The active session changed. Refresh and try again."
+            return
+        }
+
+        let request: CronaTimerExtendRequest?
+        switch TimerPresentation.from(timerService.snapshot).mode {
+        case .pomodoro:
+            request = buildPomodoroExtendRequest(choice: hardLimitPopupExtendChoice)
+        case .stopwatch, .timer:
+            request = Self.buildQuickExtendRequest(snapshot: timerService.snapshot, additionalSeconds: hardLimitPopupExtendChoice.secondsValue)
+        }
+
+        guard let request else {
+            hardLimitPopupErrorMessage = "No extend option is available."
+            return
+        }
+
+        isSubmittingHardLimitAction = true
+        hardLimitPopupErrorMessage = nil
+
+        Task {
+            do {
+                _ = try await daemonConnection.withClient { try await $0.timerExtend(request) }
+                await timerService.refresh()
+                await contextService.refresh()
+                await MainActor.run {
+                    self.presentExtendSuccess()
+                }
+            } catch {
+                logger.error("Failed to extend timer from popup: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    self.isSubmittingHardLimitAction = false
+                    self.hardLimitPopupErrorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    var hardLimitExtensionEndDate: Date? {
+        let request: CronaTimerExtendRequest?
+        switch TimerPresentation.from(timerService.snapshot).mode {
+        case .pomodoro:
+            request = buildPomodoroExtendRequest(choice: hardLimitPopupExtendChoice)
+        case .stopwatch, .timer:
+            request = Self.buildQuickExtendRequest(
+                snapshot: timerService.snapshot,
+                additionalSeconds: hardLimitPopupExtendChoice.secondsValue
+            )
+        }
+
+        guard let request else { return nil }
+        return TimerEndProjection.extensionEndDate(
+            snapshot: timerService.snapshot,
+            request: request
+        )
+    }
+
+    func returnToHardLimitDecision() {
+        guard !isSubmittingEndSession, !isSubmittingHardLimitAction else { return }
+        clearEndSessionState()
+        hardLimitPopupErrorMessage = nil
+        hardLimitPopupPhase = .decision
+        startHardLimitDecisionCountdown()
+        windowService.updateHardLimitPopup()
+    }
+
     func selectFocusIssue(_ issue: DailyFocusIssue) {
         selectedFocusIssue = issue
     }
@@ -214,12 +401,100 @@ final class CompanionAppState: ObservableObject {
         selectedFocusIssue = nil
     }
 
-    func beginEndSession() {
-        guard let sessionID = timerService.snapshot.sessionID else { return }
+    func requestIssueStatusChange(
+        issue: DailyFocusIssue,
+        status: CronaIssueStatus
+    ) {
+        issueActionsService.clearError()
+        guard status.notePrompt != nil else {
+            Task {
+                _ = await issueActionsService.changeStatus(
+                    issue: issue,
+                    status: status,
+                    note: nil
+                )
+            }
+            return
+        }
+        issueActionNote = ""
+        issueActionEditor = .status(issue: issue, status: status)
+        refreshPopupLayoutAfterStateChange()
+    }
+
+    func setIssueDueDate(_ issue: DailyFocusIssue, date: String) {
+        issueActionsService.clearError()
+        Task {
+            _ = await issueActionsService.setDueDate(issue: issue, date: date)
+        }
+    }
+
+    func clearIssueDueDate(_ issue: DailyFocusIssue) {
+        issueActionsService.clearError()
+        Task {
+            _ = await issueActionsService.clearDueDate(issue: issue)
+        }
+    }
+
+    func presentCustomDueDate(for issue: DailyFocusIssue) {
+        issueActionsService.clearError()
+        let initialValue = issue.todoForDate ?? dailyFocusService.snapshot.date
+        issueActionDate = CronaCalendarDate.date(from: initialValue) ?? Date()
+        issueActionEditor = .dueDate(issue: issue)
+        refreshPopupLayoutAfterStateChange()
+    }
+
+    func cancelIssueActionEditor() {
+        guard issueActionsService.actionInFlightIssueID == nil else { return }
+        issueActionEditor = nil
+        issueActionNote = ""
+        refreshPopupLayoutAfterStateChange()
+    }
+
+    func submitIssueActionEditor() {
+        guard let editor = issueActionEditor else { return }
+        switch editor {
+        case let .status(issue, status):
+            let trimmedNote = issueActionNote.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !status.requiresNote || !trimmedNote.isEmpty else {
+                return
+            }
+            Task {
+                let succeeded = await issueActionsService.changeStatus(
+                    issue: issue,
+                    status: status,
+                    note: trimmedNote.isEmpty ? nil : trimmedNote
+                )
+                if succeeded {
+                    issueActionEditor = nil
+                    issueActionNote = ""
+                    refreshPopupLayoutAfterStateChange()
+                }
+            }
+        case let .dueDate(issue):
+            let date = CronaCalendarDate.string(from: issueActionDate)
+            Task {
+                let succeeded = await issueActionsService.setDueDate(issue: issue, date: date)
+                if succeeded {
+                    issueActionEditor = nil
+                    refreshPopupLayoutAfterStateChange()
+                }
+            }
+        }
+    }
+
+    func beginEndSession(source: EndSessionPresentationSource) {
+        guard let sessionID = timerService.snapshot.sessionID else {
+            logger.error("Cannot present end session flow without an active session")
+            return
+        }
+        logger.debug("Presenting end session flow from \(String(describing: source), privacy: .public)")
         pendingEndSessionID = sessionID
+        endSessionPresentationSource = source
         endSessionCommitMessage = ""
         endSessionErrorMessage = nil
-        isEndSessionSheetPresented = true
+        isEndSessionSheetPresented = source == .menuPopover
+        requestEndSessionFocus()
+        refreshPopupLayoutAfterStateChange()
     }
 
     func cancelEndSession() {
@@ -227,9 +502,8 @@ final class CompanionAppState: ObservableObject {
         endSessionFallbackTask?.cancel()
         endSessionFallbackTask = nil
         isEndSessionSheetPresented = false
-        pendingEndSessionID = nil
-        endSessionCommitMessage = ""
-        endSessionErrorMessage = nil
+        clearEndSessionState()
+        refreshPopupLayoutAfterStateChange()
     }
 
     func confirmEndSession() {
@@ -283,6 +557,19 @@ final class CompanionAppState: ObservableObject {
         Task { await habitsService.complete(habit) }
     }
 
+    func logHabit(_ habit: HabitRowModel, durationMinutes: Int) {
+        Task {
+            await habitsService.complete(
+                habit,
+                durationMinutes: max(1, durationMinutes)
+            )
+        }
+    }
+
+    func failHabit(_ habit: HabitRowModel) {
+        Task { await habitsService.fail(habit) }
+    }
+
     func clearHabitCompletion(_ habit: HabitRowModel) {
         Task { await habitsService.clearCompletion(habit) }
     }
@@ -296,6 +583,30 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func bindChildChanges() {
+        dailyFocusService.$snapshot
+            .map(\.issues)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] issues in
+                self?.issueActionsService.synchronize(issues: issues)
+            }
+            .store(in: &cancellables)
+
+        timerService.$snapshot
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                guard let self else { return }
+                let isActive = snapshot.sessionID != nil
+                    && snapshot.state != "idle"
+                    && snapshot.state != "disconnected"
+                if isActive, self.selectedPopoverTab != .now {
+                    self.selectedPopoverTab = .now
+                }
+                self.statusBarService.refreshPopupLayout()
+            }
+            .store(in: &cancellables)
+
         [
             preferences.objectWillChange.eraseToAnyPublisher(),
             kernelDiscovery.objectWillChange.eraseToAnyPublisher(),
@@ -306,6 +617,7 @@ final class CompanionAppState: ObservableObject {
             timerService.objectWillChange.eraseToAnyPublisher(),
             contextService.objectWillChange.eraseToAnyPublisher(),
             dailyFocusService.objectWillChange.eraseToAnyPublisher(),
+            issueActionsService.objectWillChange.eraseToAnyPublisher(),
             habitsService.objectWillChange.eraseToAnyPublisher(),
             popoverStatsService.objectWillChange.eraseToAnyPublisher()
         ]
@@ -316,6 +628,8 @@ final class CompanionAppState: ObservableObject {
                     self?.objectWillChange.send()
                     self?.statusBarService.updateStatusItem()
                     self?.reconcileEndSessionPresentation()
+                    self?.reconcileHardLimitPopupPresentation()
+                    self?.reconcileHardLimitWarningIndicatorPresentation()
                 }
                 .store(in: &cancellables)
         }
@@ -323,6 +637,10 @@ final class CompanionAppState: ObservableObject {
 
     private func handleDaemonEvent(_ event: CronaProtocolEvent) {
         switch event.type {
+        case "timer.hard_limit_reached":
+            handleHardLimitReached(event)
+        case "timer.extended":
+            handleTimerExtended(event)
         case "session.ended":
             guard let sessionID = event.sessionID else { return }
             finalizeEndSessionIfNeeded(for: sessionID)
@@ -336,8 +654,6 @@ final class CompanionAppState: ObservableObject {
     }
 
     static func buildQuickExtendRequest(snapshot: TimerSnapshot, additionalSeconds: Int?) -> CronaTimerExtendRequest? {
-        let hasConfiguredHardLimit = snapshot.hardLimitTotalSeconds > 0
-
         guard let additionalSeconds, additionalSeconds > 0 else {
             return nil
         }
@@ -345,11 +661,11 @@ final class CompanionAppState: ObservableObject {
         return CronaTimerExtendRequest(
             additionalSeconds: additionalSeconds,
             additionalSessions: 0,
-            hardLimitTotalSeconds: hasConfiguredHardLimit ? snapshot.hardLimitTotalSeconds : nil,
-            hardLimitWorkSeconds: hasConfiguredHardLimit ? max(1, snapshot.hardLimitWorkSeconds) : nil,
-            hardLimitBreakSeconds: hasConfiguredHardLimit ? max(0, snapshot.hardLimitBreakSeconds) : nil,
-            hardLimitLongBreakSeconds: hasConfiguredHardLimit ? max(0, snapshot.hardLimitLongBreakSeconds) : nil,
-            hardLimitCyclesBeforeLongBreak: hasConfiguredHardLimit ? max(0, snapshot.hardLimitCyclesBeforeLongBreak) : nil
+            hardLimitTotalSeconds: nil,
+            hardLimitWorkSeconds: nil,
+            hardLimitBreakSeconds: nil,
+            hardLimitLongBreakSeconds: nil,
+            hardLimitCyclesBeforeLongBreak: nil
         )
     }
 
@@ -376,7 +692,12 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func finalizeEndSessionIfNeeded(for sessionID: String) {
-        guard let pendingEndSessionID, pendingEndSessionID == sessionID else { return }
+        guard let pendingEndSessionID, pendingEndSessionID == sessionID else {
+            if hardLimitPopupSessionID == sessionID {
+                finalizeHardLimitPopup()
+            }
+            return
+        }
         finalizeEndSessionUI()
     }
 
@@ -385,10 +706,12 @@ final class CompanionAppState: ObservableObject {
         endSessionFallbackTask = nil
         isSubmittingEndSession = false
         isEndSessionSheetPresented = false
-        pendingEndSessionID = nil
-        endSessionCommitMessage = ""
-        endSessionErrorMessage = nil
+        clearEndSessionState()
+        refreshPopupLayoutAfterStateChange()
         selectedFocusIssue = nil
+        if hardLimitPopupSessionID != nil {
+            finalizeHardLimitPopup()
+        }
     }
 
     private func reconcileEndSessionPresentation() {
@@ -398,4 +721,318 @@ final class CompanionAppState: ObservableObject {
             finalizeEndSessionUI()
         }
     }
+
+    private func handleHardLimitReached(_ event: CronaProtocolEvent) {
+        logger.debug("Handling hard limit popup for session: \(event.sessionID ?? "nil", privacy: .public)")
+        Task { [self] in
+            await timerService.refresh()
+            await contextService.refresh()
+            await MainActor.run {
+                guard preferences.preferences.showHardLimitActionPopups else { return }
+                guard timerService.snapshot.sessionID != nil else { return }
+                guard timerService.snapshot.hardLimitActive, timerService.snapshot.hardLimitExpired else { return }
+
+                finalizeHardLimitWarningIndicator()
+                hardLimitPopupDismissTask?.cancel()
+                hardLimitPopupDismissTask = nil
+                hardLimitPopupSessionID = timerService.snapshot.sessionID
+                hardLimitPopupPhase = .decision
+                hardLimitPopupExtendChoice = defaultExtendChoice(for: timerService.snapshot)
+                hardLimitPopupErrorMessage = nil
+                hardLimitPopupSuccessModel = nil
+                isSubmittingHardLimitAction = false
+                isHardLimitPopupAnimatingIn = false
+                startHardLimitDecisionCountdown()
+                windowService.showHardLimitPopup()
+                DispatchQueue.main.async {
+                    self.isHardLimitPopupAnimatingIn = true
+                }
+            }
+        }
+    }
+
+    private func handleTimerExtended(_ event: CronaProtocolEvent) {
+        guard let sessionID = hardLimitPopupSessionID, sessionID == event.sessionID || event.sessionID == nil else { return }
+        Task {
+            await timerService.refresh()
+            await contextService.refresh()
+            await MainActor.run {
+                presentExtendSuccess()
+            }
+        }
+    }
+
+    private func reconcileHardLimitPopupPresentation() {
+        guard let phase = hardLimitPopupPhase else { return }
+
+        guard daemonConnection.connectionState == .connected else {
+            finalizeHardLimitPopup()
+            return
+        }
+
+        guard let sessionID = hardLimitPopupSessionID ?? timerService.snapshot.sessionID else {
+            finalizeHardLimitPopup()
+            return
+        }
+
+        if timerService.snapshot.sessionID != sessionID, phase != .success {
+            finalizeHardLimitPopup()
+            return
+        }
+
+        windowService.updateHardLimitPopup()
+    }
+
+    private func reconcileHardLimitWarningIndicatorPresentation() {
+        guard preferences.preferences.showHardLimitWarningIndicator else {
+            finalizeHardLimitWarningIndicator()
+            return
+        }
+
+        guard daemonConnection.connectionState == .connected else {
+            finalizeHardLimitWarningIndicator()
+            return
+        }
+
+        let snapshot = timerService.snapshot
+        guard snapshot.sessionID != nil, snapshot.state == "running", snapshot.hardLimitActive, !snapshot.hardLimitExpired else {
+            finalizeHardLimitWarningIndicator()
+            return
+        }
+
+        guard let model = buildHardLimitWarningIndicatorModel(snapshot: snapshot) else {
+            finalizeHardLimitWarningIndicator()
+            return
+        }
+
+        if lastWarningIndicatorKey != model.id {
+            lastWarningIndicatorKey = model.id
+        }
+        hardLimitWarningIndicatorModel = model
+        windowService.showHardLimitWarningIndicator()
+    }
+
+    private func presentExtendSuccess() {
+        hardLimitCountdownService.cancel()
+        let presentation = TimerPresentation.from(timerService.snapshot)
+        let timeFormatter = MenuBarTextFormatter.formatElapsed(
+            seconds: presentation.displaySeconds,
+            format: preferences.preferences.menuBarTimeFormat,
+            showsSeconds: preferences.preferences.menuBarShowsSeconds
+        )
+        let endTimeText: String
+        if let endDate = TimerEndProjection.activeEndDate(snapshot: timerService.snapshot) {
+            endTimeText = TimerEndTimeFormatter.string(from: endDate)
+        } else {
+            endTimeText = "Now"
+        }
+
+        hardLimitPopupPhase = .success
+        hardLimitPopupSuccessModel = HardLimitPopupSuccessModel(
+            remainingTimeText: timeFormatter,
+            endTimeText: endTimeText
+        )
+        hardLimitPopupErrorMessage = nil
+        isSubmittingHardLimitAction = false
+        windowService.updateHardLimitPopup()
+
+        hardLimitPopupDismissTask?.cancel()
+        hardLimitPopupDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.2))
+            self?.finalizeHardLimitPopup()
+        }
+    }
+
+    private func finalizeHardLimitPopup() {
+        hardLimitCountdownService.cancel()
+        hardLimitPopupDismissTask?.cancel()
+        hardLimitPopupDismissTask = nil
+        isHardLimitPopupAnimatingIn = false
+        hardLimitPopupPhase = nil
+        hardLimitPopupSessionID = nil
+        hardLimitPopupExtendChoice = .defaultValue
+        hardLimitPopupErrorMessage = nil
+        hardLimitPopupSuccessModel = nil
+        isSubmittingHardLimitAction = false
+        windowService.closeHardLimitPopup()
+    }
+
+    private func finalizeHardLimitWarningIndicator() {
+        hardLimitWarningIndicatorModel = nil
+        lastWarningIndicatorKey = nil
+        windowService.closeHardLimitWarningIndicator()
+    }
+
+    private func clearEndSessionState() {
+        pendingEndSessionID = nil
+        endSessionPresentationSource = nil
+        endSessionCommitMessage = ""
+        endSessionErrorMessage = nil
+        isSubmittingEndSession = false
+    }
+
+    private func requestEndSessionFocus() {
+        endSessionFocusRequest &+= 1
+    }
+
+    private func startHardLimitDecisionCountdown() {
+        hardLimitCountdownService.start { [weak self] in
+            guard let self, self.hardLimitPopupPhase == .decision else { return }
+            self.chooseHardLimitEnd()
+        }
+    }
+
+    private func defaultExtendChoice(for snapshot: TimerSnapshot) -> HardLimitExtendChoice {
+        switch TimerPresentation.from(snapshot).mode {
+        case .pomodoro:
+            return .session1
+        case .stopwatch, .timer:
+            return .minutes5
+        }
+    }
+
+    private func buildPomodoroExtendRequest(choice: HardLimitExtendChoice) -> CronaTimerExtendRequest? {
+        guard let sessions = choice.sessionValue, sessions > 0 else { return nil }
+        return CronaTimerExtendRequest(
+            additionalSeconds: 0,
+            additionalSessions: sessions,
+            hardLimitTotalSeconds: max(1, timerService.snapshot.hardLimitTotalSeconds),
+            hardLimitWorkSeconds: max(1, timerService.snapshot.hardLimitWorkSeconds),
+            hardLimitBreakSeconds: max(0, timerService.snapshot.hardLimitBreakSeconds),
+            hardLimitLongBreakSeconds: max(0, timerService.snapshot.hardLimitLongBreakSeconds),
+            hardLimitCyclesBeforeLongBreak: max(0, timerService.snapshot.hardLimitCyclesBeforeLongBreak)
+        )
+    }
+
+    private func buildHardLimitWarningIndicatorModel(snapshot: TimerSnapshot) -> HardLimitWarningIndicatorModel? {
+        let leadSeconds = CompanionPreferences.normalizedHardLimitWarningLeadSeconds(
+            preferences.preferences.hardLimitWarningLeadSeconds
+        )
+        let presentation = TimerPresentation.from(snapshot)
+        let remainingSeconds = max(0, presentation.displaySeconds)
+        guard remainingSeconds > 0, remainingSeconds <= leadSeconds else { return nil }
+
+        let sessionID = snapshot.sessionID ?? "unknown"
+        if
+            presentation.mode == .pomodoro,
+            let currentSegment = TimerSegmentKind(rawValue: snapshot.segmentType),
+            let nextSegment = TimerSegmentKind(rawValue: snapshot.nextSegmentType),
+            currentSegment != nextSegment
+        {
+            let kind: HardLimitWarningKind
+            let title: String
+
+            if currentSegment.isBreak, nextSegment == .work {
+                kind = .resume
+                title = "Focus Resumes"
+            } else if currentSegment == .work, nextSegment.isBreak {
+                kind = .breakStart
+                title = "Break Starting"
+            } else {
+                return nil
+            }
+
+            let id = "\(sessionID):\(kind.rawValue):\(snapshot.segmentType ?? "unknown"):\(snapshot.nextSegmentType ?? "unknown")"
+            return HardLimitWarningIndicatorModel(
+                id: id,
+                kind: kind,
+                title: title,
+                remainingText: String(format: "%02d", remainingSeconds)
+            )
+        }
+
+        let id = "\(sessionID):expiry:\(snapshot.segmentType ?? "unknown")"
+        return HardLimitWarningIndicatorModel(
+            id: id,
+            kind: .expiry,
+            title: "Session Ending",
+            remainingText: String(format: "%02d", remainingSeconds)
+        )
+    }
+}
+
+enum HardLimitPopupPhase: Equatable {
+    case decision
+    case endSession
+    case extend
+    case success
+}
+
+enum HardLimitExtendChoice: String, CaseIterable, Identifiable, Equatable {
+    case minutes1
+    case minutes5
+    case minutes15
+    case session1
+    case session2
+
+    static let defaultValue: HardLimitExtendChoice = .minutes5
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .minutes1: return "+1 min"
+        case .minutes5: return "+5 min"
+        case .minutes15: return "+15 min"
+        case .session1: return "+1 session"
+        case .session2: return "+2 sessions"
+        }
+    }
+
+    var secondsValue: Int? {
+        switch self {
+        case .minutes1: return 60
+        case .minutes5: return 300
+        case .minutes15: return 900
+        case .session1, .session2: return nil
+        }
+    }
+
+    var sessionValue: Int? {
+        switch self {
+        case .session1: return 1
+        case .session2: return 2
+        case .minutes1, .minutes5, .minutes15: return nil
+        }
+    }
+}
+
+struct HardLimitPopupSuccessModel: Equatable {
+    let remainingTimeText: String
+    let endTimeText: String
+}
+
+enum HardLimitWarningKind: String, Equatable {
+    case expiry
+    case breakStart
+    case resume
+
+    var symbolName: String {
+        switch self {
+        case .expiry:
+            return "hourglass.circle.fill"
+        case .breakStart:
+            return "cup.and.saucer.fill"
+        case .resume:
+            return "bolt.fill"
+        }
+    }
+
+    var tint: NSColor {
+        switch self {
+        case .expiry:
+            return .systemOrange
+        case .breakStart:
+            return .systemPink
+        case .resume:
+            return .systemYellow
+        }
+    }
+}
+
+struct HardLimitWarningIndicatorModel: Equatable {
+    let id: String
+    let kind: HardLimitWarningKind
+    let title: String
+    let remainingText: String
 }

@@ -9,6 +9,7 @@ struct CronaCompanionApp: App {
         let appState = CompanionAppState()
         self.appState = appState
         appDelegate.appState = appState
+        NSApp.applicationIconImage = CronaAppIcon.image
         NSApp.setActivationPolicy(.accessory)
         appState.start()
     }
@@ -16,8 +17,9 @@ struct CronaCompanionApp: App {
     var body: some Scene {
         Settings {
             SettingsRootView(appState: appState)
-                .frame(minWidth: 620, minHeight: 520)
+                .frame(minWidth: 860, minHeight: 620)
         }
+        .defaultSize(width: 900, height: 680)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

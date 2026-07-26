@@ -4,15 +4,14 @@ enum MenuBarTextFormatter {
     static func statusItemTitle(
         preferences: CompanionPreferences,
         connectionState: CompanionConnectionState,
-        timerSnapshot: TimerSnapshot
+        timerSnapshot: TimerSnapshot,
+        todayWorkedSeconds: Int? = nil
     ) -> String {
-        guard preferences.menuBarDisplayMode == .iconAndText else {
+        guard preferences.menuBarDisplayMode.showsText else {
             return ""
         }
 
-        guard connectionState == .connected else {
-            return ""
-        }
+        guard connectionState == .connected else { return "Offline" }
 
         switch timerSnapshot.state {
         case "running", "paused":
@@ -22,8 +21,25 @@ enum MenuBarTextFormatter {
                 showsSeconds: preferences.menuBarShowsSeconds
             )
         default:
-            return "Idle"
+            switch preferences.menuBarIdleTextMode {
+            case .idle:
+                return "Idle"
+            case .focusToday:
+                guard let todayWorkedSeconds else { return "Idle" }
+                return formatFocusDuration(seconds: todayWorkedSeconds)
+            }
         }
+    }
+
+    static func formatFocusDuration(seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3600
+        let minutes = (clampedSeconds % 3600) / 60
+
+        if hours > 0 {
+            return "\(hours)h\(minutes)m"
+        }
+        return "\(minutes)m"
     }
 
     static func formatElapsed(

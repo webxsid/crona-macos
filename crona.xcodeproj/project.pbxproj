@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F95F39D22FFF00050077CCE6 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = F95F39D12FFF00040077CCE6 /* AppIcon.icon */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		F95F39592FB8B2260077CCE6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -30,6 +34,7 @@
 		F95F39CE2FFF00010077CCE6 /* Config/Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Base.xcconfig; sourceTree = "<group>"; };
 		F95F39CF2FFF00020077CCE6 /* Config/Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Debug.xcconfig; sourceTree = "<group>"; };
 		F95F39D02FFF00030077CCE6 /* Config/Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Release.xcconfig; sourceTree = "<group>"; };
+		F95F39D12FFF00040077CCE6 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -78,6 +83,7 @@
 		F95F39402FB8B2240077CCE6 = {
 			isa = PBXGroup;
 			children = (
+				F95F39D12FFF00040077CCE6 /* AppIcon.icon */,
 				F95F39CE2FFF00010077CCE6 /* Config/Base.xcconfig */,
 				F95F39CF2FFF00020077CCE6 /* Config/Debug.xcconfig */,
 				F95F39D02FFF00030077CCE6 /* Config/Release.xcconfig */,
@@ -218,6 +224,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F95F39D22FFF00050077CCE6 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -33,6 +33,8 @@ final class HabitsService: ObservableObject {
     private let logger = Logger(subsystem: "com.crona.macos", category: "habits")
 
     @Published var snapshot = HabitsSnapshot()
+    @Published private(set) var actionInFlightHabitID: Int64?
+    @Published private(set) var actionInFlightStatus: String?
 
     init(daemonConnection: DaemonConnectionService) {
         self.daemonConnection = daemonConnection
@@ -88,25 +90,59 @@ final class HabitsService: ObservableObject {
             snapshot.isLoading = false
             snapshot.isConnected = false
             snapshot.lastRefreshError = error.localizedDescription
-            snapshot.items = []
         }
     }
 
-    func complete(_ habit: HabitRowModel) async {
+    func complete(_ habit: HabitRowModel, durationMinutes: Int? = nil) async {
+        await setStatus(
+            habit,
+            status: "completed",
+            durationMinutes: durationMinutes
+        )
+    }
+
+    func fail(_ habit: HabitRowModel) async {
+        await setStatus(habit, status: "failed", durationMinutes: nil)
+    }
+
+    private func setStatus(
+        _ habit: HabitRowModel,
+        status: String,
+        durationMinutes: Int?
+    ) async {
+        guard actionInFlightHabitID == nil else { return }
+        actionInFlightHabitID = habit.id
+        actionInFlightStatus = status
+        snapshot.lastRefreshError = nil
+
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
-            logger.debug("Completing habit id=\(habit.id, privacy: .public) date=\(date, privacy: .public)")
+            logger.debug("Setting habit id=\(habit.id, privacy: .public) status=\(status, privacy: .public) date=\(date, privacy: .public)")
             _ = try await daemonConnection.withClient {
-                try await $0.completeHabit(habitID: habit.id, date: date)
+                try await $0.completeHabit(
+                    habitID: habit.id,
+                    date: date,
+                    status: status,
+                    durationMinutes: durationMinutes
+                )
             }
             await refresh()
+            actionInFlightHabitID = nil
+            actionInFlightStatus = nil
         } catch {
-            logger.error("Habit completion failed for id=\(habit.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Habit status failed for id=\(habit.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            actionInFlightHabitID = nil
+            actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription
         }
     }
 
     func clearCompletion(_ habit: HabitRowModel) async {
+        guard actionInFlightHabitID == nil else { return }
+        actionInFlightHabitID = habit.id
+        actionInFlightStatus = "clear"
+        snapshot.lastRefreshError = nil
+
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
             logger.debug("Clearing habit completion id=\(habit.id, privacy: .public) date=\(date, privacy: .public)")
@@ -114,8 +150,12 @@ final class HabitsService: ObservableObject {
                 try await $0.uncompleteHabit(habitID: habit.id, date: date)
             }
             await refresh()
+            actionInFlightHabitID = nil
+            actionInFlightStatus = nil
         } catch {
             logger.error("Habit uncomplete failed for id=\(habit.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            actionInFlightHabitID = nil
+            actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription
         }
     }

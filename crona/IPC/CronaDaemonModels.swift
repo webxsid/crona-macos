@@ -1,5 +1,14 @@
 import Foundation
 
+enum CronaTimerHardLimitKind: String, Codable, Equatable {
+    case pomodoro
+    case countdown
+
+    static func normalized(_ rawValue: String?) -> CronaTimerHardLimitKind {
+        rawValue == CronaTimerHardLimitKind.countdown.rawValue ? .countdown : .pomodoro
+    }
+}
+
 struct CronaKernelInfo: Codable, Equatable {
     let pid: Int
     let port: Int?
@@ -74,6 +83,7 @@ struct CronaTimerState: Codable, Equatable {
     let nextSegmentType: String?
     let elapsedSeconds: Int?
     let hardLimitActive: Bool?
+    var hardLimitKind: String? = nil
     let hardLimitExpired: Bool?
     let hardLimitTotalSeconds: Int?
     let hardLimitRemainingSeconds: Int?
@@ -94,6 +104,7 @@ struct CronaTimerState: Codable, Equatable {
         case nextSegmentType = "nextSegmentType"
         case elapsedSeconds = "elapsedSeconds"
         case hardLimitActive = "hardLimitActive"
+        case hardLimitKind = "hardLimitKind"
         case hardLimitExpired = "hardLimitExpired"
         case hardLimitTotalSeconds = "hardLimitTotalSeconds"
         case hardLimitRemainingSeconds = "hardLimitRemainingSeconds"
@@ -128,6 +139,81 @@ struct CronaIssue: Codable, Equatable, Identifiable {
         case completedAt = "completedAt"
         case abandonedAt = "abandonedAt"
     }
+}
+
+enum CronaIssueStatus: String, Codable, CaseIterable, Equatable, Identifiable {
+    case backlog
+    case planned
+    case ready
+    case inProgress = "in_progress"
+    case blocked
+    case inReview = "in_review"
+    case done
+    case abandoned
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .backlog: return "Backlog"
+        case .planned: return "Planned"
+        case .ready: return "Ready"
+        case .inProgress: return "In Progress"
+        case .blocked: return "Blocked"
+        case .inReview: return "In Review"
+        case .done: return "Done"
+        case .abandoned: return "Abandoned"
+        }
+    }
+
+    var notePrompt: String? {
+        switch self {
+        case .blocked: return "Blocker reason"
+        case .inReview: return "Review note (optional)"
+        case .done: return "Completion note (optional)"
+        case .abandoned: return "Abandon reason"
+        default: return nil
+        }
+    }
+
+    var requiresNote: Bool {
+        self == .blocked || self == .abandoned
+    }
+
+    var systemImage: String {
+        switch self {
+        case .backlog: return "tray"
+        case .planned: return "calendar"
+        case .ready: return "checkmark.circle"
+        case .inProgress: return "play.circle"
+        case .blocked: return "exclamationmark.octagon"
+        case .inReview: return "eye"
+        case .done: return "checkmark.circle.fill"
+        case .abandoned: return "xmark.circle"
+        }
+    }
+}
+
+struct CronaIssueStatusTransitions: Codable, Equatable {
+    let id: Int64
+    let currentStatus: String
+    let allowedStatuses: [CronaIssueStatus]
+    let blockedReason: String?
+}
+
+struct CronaNumericIDRequest: Codable, Equatable {
+    let id: Int64
+}
+
+struct CronaChangeIssueStatusRequest: Codable, Equatable {
+    let id: Int64
+    let status: CronaIssueStatus
+    let note: String?
+}
+
+struct CronaSetIssueTodoRequest: Codable, Equatable {
+    let id: Int64
+    let date: String
 }
 
 struct CronaDailyIssueSummary: Codable, Equatable {
@@ -338,6 +424,7 @@ struct CronaTimerStartRequest: Codable, Equatable {
     let repoID: Int64?
     let streamID: Int64?
     let issueID: Int64?
+    var hardLimitKind: CronaTimerHardLimitKind? = nil
     let hardLimitTotalSeconds: Int?
     let hardLimitWorkSeconds: Int?
     let hardLimitBreakSeconds: Int?
@@ -348,6 +435,7 @@ struct CronaTimerStartRequest: Codable, Equatable {
         case repoID = "repoId"
         case streamID = "streamId"
         case issueID = "issueId"
+        case hardLimitKind = "hardLimitKind"
         case hardLimitTotalSeconds = "hardLimitTotalSeconds"
         case hardLimitWorkSeconds = "hardLimitWorkSeconds"
         case hardLimitBreakSeconds = "hardLimitBreakSeconds"

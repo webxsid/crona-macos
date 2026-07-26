@@ -13,7 +13,9 @@ struct TimerSnapshot: Equatable {
     var displayElapsedSeconds = 0
     var sessionStartTime: Date?
     var segmentStartTime: Date?
+    var segmentElapsedOffsetSeconds = 0
     var hardLimitActive = false
+    var hardLimitKind: CronaTimerHardLimitKind?
     var hardLimitExpired = false
     var hardLimitTotalSeconds = 0
     var hardLimitRemainingSeconds = 0
@@ -36,7 +38,11 @@ struct TimerSnapshot: Equatable {
             displayElapsedSeconds: state.elapsedSeconds ?? 0,
             sessionStartTime: state.sessionStartTime.flatMap(TimerService.parseDate),
             segmentStartTime: state.segmentStartTime.flatMap(TimerService.parseDate),
+            segmentElapsedOffsetSeconds: state.segmentElapsedOffsetSeconds ?? 0,
             hardLimitActive: state.hardLimitActive ?? false,
+            hardLimitKind: state.hardLimitActive == true
+                ? CronaTimerHardLimitKind.normalized(state.hardLimitKind)
+                : nil,
             hardLimitExpired: state.hardLimitExpired ?? false,
             hardLimitTotalSeconds: state.hardLimitTotalSeconds ?? 0,
             hardLimitRemainingSeconds: state.hardLimitRemainingSeconds ?? 0,
@@ -56,6 +62,45 @@ enum FocusTimerMode: String, Equatable {
     case timer
 }
 
+enum TimerSegmentKind: Equatable {
+    case work
+    case shortBreak
+    case longBreak
+
+    init?(rawValue: String?) {
+        switch rawValue {
+        case "work":
+            self = .work
+        case "short_break", "rest":
+            self = .shortBreak
+        case "long_break":
+            self = .longBreak
+        default:
+            return nil
+        }
+    }
+
+    var isBreak: Bool {
+        self != .work
+    }
+}
+
+struct TimerUpcomingSegment: Equatable {
+    let kind: TimerSegmentKind
+    let durationSeconds: Int
+
+    var title: String {
+        switch kind {
+        case .work:
+            return "Upcoming focus"
+        case .shortBreak:
+            return "Upcoming short break"
+        case .longBreak:
+            return "Upcoming long break"
+        }
+    }
+}
+
 struct TimerPresentation: Equatable {
     let mode: FocusTimerMode
     let countsDown: Bool
@@ -66,26 +111,33 @@ struct TimerPresentation: Equatable {
     let canPause: Bool
     let canResume: Bool
     let canEnd: Bool
-    let canExtend: Bool
-    let showsQuickExtend: Bool
     let currentFocusSeconds: Int
-    let upcomingBreakSeconds: Int?
+    let upcomingSegment: TimerUpcomingSegment?
 
     static func from(_ snapshot: TimerSnapshot) -> TimerPresentation {
         let mode: FocusTimerMode
         if !snapshot.hardLimitActive {
             mode = .stopwatch
-        } else if snapshot.hardLimitBreakSeconds > 0 || snapshot.hardLimitLongBreakSeconds > 0 || snapshot.hardLimitCyclesBeforeLongBreak > 0 {
-            mode = .pomodoro
-        } else {
+        } else if snapshot.hardLimitKind == .countdown {
             mode = .timer
+        } else {
+            mode = .pomodoro
         }
 
         let countsDown = snapshot.hardLimitActive
+        let segment = activeSegment(for: snapshot)
         let displaySeconds = max(0, snapshot.displayElapsedSeconds)
+        let displayDuration: Int
+        if mode == .timer {
+            displayDuration = snapshot.hardLimitTotalSeconds
+        } else if let segment {
+            displayDuration = segmentDuration(for: segment, snapshot: snapshot)
+        } else {
+            displayDuration = 0
+        }
         let progressFraction: Double?
-        if countsDown, snapshot.hardLimitTotalSeconds > 0 {
-            progressFraction = max(0, min(1, Double(displaySeconds) / Double(snapshot.hardLimitTotalSeconds)))
+        if countsDown, displayDuration > 0 {
+            progressFraction = max(0, min(1, Double(displaySeconds) / Double(displayDuration)))
         } else {
             progressFraction = nil
         }
@@ -96,11 +148,15 @@ struct TimerPresentation: Equatable {
             if snapshot.hardLimitExpired {
                 phaseTitle = "Session complete"
                 phaseSymbolName = "checkmark.circle"
-            } else if snapshot.segmentType == "rest" {
+            } else if snapshot.state == "ready" {
+                phaseTitle = segment?.isBreak == true ? "Break ready" : "Focus ready"
+                phaseSymbolName = segment?.isBreak == true ? "cup.and.saucer" : "bolt.fill"
+            } else if segment?.isBreak == true {
                 phaseTitle = "Break ends in"
                 phaseSymbolName = "cup.and.saucer"
             } else if mode == .pomodoro {
-                phaseTitle = "Break starts in"
+                let next = TimerSegmentKind(rawValue: snapshot.nextSegmentType)
+                phaseTitle = next?.isBreak == true ? "Break starts in" : "Focus ends in"
                 phaseSymbolName = "hourglass"
             } else {
                 phaseTitle = "Timer ends in"
@@ -111,13 +167,6 @@ struct TimerPresentation: Equatable {
             phaseSymbolName = snapshot.state == "paused" ? "pause.circle" : "bolt.fill"
         }
 
-        let upcomingBreakSeconds: Int?
-        if snapshot.hardLimitActive, snapshot.hardLimitBreakSeconds > 0 {
-            upcomingBreakSeconds = snapshot.segmentType == "rest" ? nil : snapshot.hardLimitBreakSeconds
-        } else {
-            upcomingBreakSeconds = nil
-        }
-
         return TimerPresentation(
             mode: mode,
             countsDown: countsDown,
@@ -125,14 +174,83 @@ struct TimerPresentation: Equatable {
             progressFraction: progressFraction,
             phaseTitle: phaseTitle,
             phaseSymbolName: phaseSymbolName,
-            canPause: snapshot.sessionID != nil && snapshot.state == "running",
-            canResume: snapshot.sessionID != nil && snapshot.state == "paused",
+            canPause: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "running",
+            canResume: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "paused",
             canEnd: snapshot.sessionID != nil,
-            canExtend: snapshot.hardLimitActive,
-            showsQuickExtend: snapshot.hardLimitActive && snapshot.state != "paused",
             currentFocusSeconds: currentFocusSeconds(for: snapshot),
-            upcomingBreakSeconds: upcomingBreakSeconds
+            upcomingSegment: upcomingSegment(for: snapshot, mode: mode)
         )
+    }
+
+    static func activeSegment(for snapshot: TimerSnapshot) -> TimerSegmentKind? {
+        if snapshot.state == "ready" {
+            return TimerSegmentKind(
+                rawValue: snapshot.readySegmentType ?? snapshot.nextSegmentType
+            )
+        }
+        return TimerSegmentKind(rawValue: snapshot.segmentType)
+    }
+
+    static func segmentDuration(
+        for segment: TimerSegmentKind,
+        snapshot: TimerSnapshot
+    ) -> Int {
+        switch segment {
+        case .work:
+            return snapshot.hardLimitWorkSeconds
+        case .shortBreak:
+            return snapshot.hardLimitBreakSeconds
+        case .longBreak:
+            return snapshot.hardLimitLongBreakSeconds > 0
+                ? snapshot.hardLimitLongBreakSeconds
+                : snapshot.hardLimitBreakSeconds
+        }
+    }
+
+    static func hardLimitDisplaySeconds(
+        for snapshot: TimerSnapshot,
+        at now: Date
+    ) -> Int {
+        guard !snapshot.hardLimitExpired else { return 0 }
+
+        if snapshot.hardLimitKind == .countdown {
+            let elapsedSinceApply = max(0, Int(now.timeIntervalSince(snapshot.snapshotAppliedAt)))
+            return max(0, snapshot.hardLimitRemainingSeconds - elapsedSinceApply)
+        }
+
+        guard let segment = activeSegment(for: snapshot) else {
+            return max(0, snapshot.hardLimitRemainingSeconds)
+        }
+        let duration = segmentDuration(for: segment, snapshot: snapshot)
+        guard duration > 0 else { return 0 }
+        guard snapshot.state != "ready" else { return duration }
+
+        let elapsed: Int
+        if let segmentStartTime = snapshot.segmentStartTime {
+            elapsed = max(0, Int(now.timeIntervalSince(segmentStartTime)))
+                + snapshot.segmentElapsedOffsetSeconds
+        } else {
+            let elapsedSinceApply = max(0, Int(now.timeIntervalSince(snapshot.snapshotAppliedAt)))
+            elapsed = snapshot.elapsedSeconds + elapsedSinceApply
+        }
+        return max(0, duration - min(duration, elapsed))
+    }
+
+    private static func upcomingSegment(
+        for snapshot: TimerSnapshot,
+        mode: FocusTimerMode
+    ) -> TimerUpcomingSegment? {
+        guard mode == .pomodoro, snapshot.state != "ready" else { return nil }
+        guard
+            let current = TimerSegmentKind(rawValue: snapshot.segmentType),
+            let next = TimerSegmentKind(rawValue: snapshot.nextSegmentType),
+            current != next
+        else {
+            return nil
+        }
+        let duration = segmentDuration(for: next, snapshot: snapshot)
+        guard duration > 0 else { return nil }
+        return TimerUpcomingSegment(kind: next, durationSeconds: duration)
     }
 
     private static func currentFocusSeconds(for snapshot: TimerSnapshot) -> Int {
@@ -140,11 +258,11 @@ struct TimerPresentation: Equatable {
             return max(0, snapshot.elapsedSeconds)
         }
 
-        if snapshot.segmentType == "rest" {
+        if TimerSegmentKind(rawValue: snapshot.segmentType)?.isBreak == true {
             return max(0, snapshot.hardLimitWorkSeconds)
         }
 
-        let worked = snapshot.hardLimitWorkSeconds - snapshot.hardLimitRemainingSeconds
+        let worked = snapshot.hardLimitWorkSeconds - snapshot.displayElapsedSeconds
         return max(0, min(snapshot.hardLimitWorkSeconds, worked))
     }
 }
@@ -261,13 +379,22 @@ final class TimerService: ObservableObject {
 
     private func updateDisplayElapsed() {
         guard snapshot.state == "running" else {
-            snapshot.displayElapsedSeconds = snapshot.hardLimitActive ? snapshot.hardLimitRemainingSeconds : snapshot.elapsedSeconds
+            if snapshot.hardLimitActive {
+                snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
+                    for: snapshot,
+                    at: Date()
+                )
+            } else {
+                snapshot.displayElapsedSeconds = snapshot.elapsedSeconds
+            }
             return
         }
 
         if snapshot.hardLimitActive {
-            let elapsedSinceApply = max(0, Int(Date().timeIntervalSince(snapshot.snapshotAppliedAt)))
-            snapshot.displayElapsedSeconds = max(0, snapshot.hardLimitRemainingSeconds - elapsedSinceApply)
+            snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
+                for: snapshot,
+                at: Date()
+            )
             return
         }
 

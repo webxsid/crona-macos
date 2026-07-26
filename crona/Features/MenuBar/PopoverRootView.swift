@@ -1,14 +1,30 @@
 import Combine
 import SwiftUI
 
+enum PopoverModalKind {
+    case statusNote
+    case endSession
+    case dueDate
+
+    var minimumHeight: CGFloat {
+        switch self {
+        case .statusNote: return 260
+        case .endSession: return 360
+        case .dueDate: return 430
+        }
+    }
+}
+
 struct PopoverRootView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 16) {
-                header
+        VStack(spacing: 16) {
+            header
 
+            if appState.hasActiveFocusSession {
+                NowTabView(appState: appState)
+            } else {
                 switch appState.selectedPopoverTab {
                 case .now:
                     NowTabView(appState: appState)
@@ -17,73 +33,120 @@ struct PopoverRootView: View {
                 case .stats:
                     StatsTabView(appState: appState)
                 }
-
-                if let error = appState.daemonConnection.lastErrorDescription,
-                    !error.isEmpty,
-                    appState.daemonConnection.connectionState == .connected
-                {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.yellow)
-                        Text(error)
-                            .lineLimit(2)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.72))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
-            .padding(18)
-            .frame(width: 420)
-            .background(
-                PopoverGlassBackground()
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .opacity(appState.isEndSessionSheetPresented ? 0.55 : 1)
-            .blur(radius: appState.isEndSessionSheetPresented ? 2.5 : 0)
-            .scaleEffect(appState.isEndSessionSheetPresented ? 0.985 : 1)
-            .allowsHitTesting(!appState.isEndSessionSheetPresented)
 
-            if appState.isEndSessionSheetPresented {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(.black.opacity(0.28))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 32, style: .continuous)
-                            .fill(.white.opacity(0.02))
-                    )
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if !appState.isSubmittingEndSession {
-                            appState.cancelEndSession()
-                        }
-                    }
-
-                VStack {
-                    Spacer(minLength: 0)
-                    EndSessionSheetView(appState: appState)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
-                        .zIndex(1)
-                    Spacer(minLength: 0)
+            if let error = appState.daemonConnection.lastErrorDescription,
+                !error.isEmpty,
+                appState.daemonConnection.connectionState == .connected
+            {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text(error)
+                        .lineLimit(2)
                 }
-                .frame(width: 420)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.72))
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(18)
+        .frame(width: 420)
+        .frame(minHeight: modalMinimumHeight)
+        .background(PopoverGlassBackground())
+        .opacity(hasPresentedModal ? 0.38 : 1)
+        .blur(radius: hasPresentedModal ? 3 : 0)
+        .scaleEffect(hasPresentedModal ? 0.985 : 1)
+        .allowsHitTesting(!hasPresentedModal)
+        .overlay {
+            if appState.isEndSessionSheetPresented {
+                PopoverModalScrim {
+                    if !appState.isSubmittingEndSession {
+                        appState.cancelEndSession()
+                    }
+                }
+
+                EndSessionSheetView(appState: appState)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.96).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
+            }
+        }
+        .overlay {
+            if appState.issueActionEditor != nil {
+                PopoverModalScrim {
+                    appState.cancelIssueActionEditor()
+                }
+
+                IssueActionEditorView(appState: appState)
+                    .padding(.horizontal, 28)
+                    .transition(
+                        .scale(scale: 0.96)
+                            .combined(with: .opacity)
+                    )
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         .animation(.easeInOut(duration: 0.16), value: appState.isEndSessionSheetPresented)
+        .animation(.easeInOut(duration: 0.16), value: appState.issueActionEditor)
+    }
+
+    private var hasPresentedModal: Bool {
+        appState.isEndSessionSheetPresented || appState.issueActionEditor != nil
+    }
+
+    private var modalMinimumHeight: CGFloat? {
+        if appState.isEndSessionSheetPresented {
+            return PopoverModalKind.endSession.minimumHeight
+        }
+        switch appState.issueActionEditor {
+        case .status:
+            return PopoverModalKind.statusNote.minimumHeight
+        case .dueDate:
+            return PopoverModalKind.dueDate.minimumHeight
+        case nil:
+            return nil
+        }
     }
 
     private var header: some View {
+        ZStack {
+            if !appState.hasActiveFocusSession {
+                SegmentedControl(
+                    selection: $appState.selectedPopoverTab,
+                    title: \.title
+                )
+                .frame(width: 210)
+                .onChange(of: appState.selectedPopoverTab) { _, newTab in
+                    appState.setSelectedPopoverTab(newTab)
+                }
+            }
 
-        SegmentedControl(
-            selection: $appState.selectedPopoverTab,
-            title: \.title
-        )
-        .frame(width: 210)
-        .onChange(of: appState.selectedPopoverTab) { _, newTab in
-            appState.setSelectedPopoverTab(newTab)
+            HStack {
+                Spacer()
+                SettingsLink {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        appState.dismissMenuBarPopup()
+                    }
+                )
+                .keyboardShortcut(",", modifiers: [.command])
+                .help("Open Settings")
+                .accessibilityLabel("Open Settings")
+            }
         }
-
+        .frame(maxWidth: .infinity, minHeight: 30)
     }
 }
 
@@ -148,8 +211,12 @@ struct ActiveTimerView: View {
 
             if let progress = presentation.progressFraction {
                 ReverseProgressBar(progress: progress)
-                    .frame(height: 10)
-                    .padding(.horizontal, 6)
+                    .frame(height: 6)
+                    .padding(.horizontal, 8)
+            }
+
+            if let endDate = TimerEndProjection.activeEndDate(snapshot: appState.timerService.snapshot) {
+                EndsAtRow(date: endDate)
             }
 
             if hasContext {
@@ -184,45 +251,43 @@ struct ActiveTimerView: View {
 
             HStack(spacing: 10) {
                 if presentation.canPause {
-                    actionPill("Pause", fill: Color.white.opacity(0.18)) { appState.pauseTimer() }
+                    actionPill(
+                        "Pause",
+                        fill: Color.white.opacity(0.18),
+                        shortcut: KeyboardShortcut("p", modifiers: []),
+                        shortcutLabel: "P"
+                    ) {
+                        appState.pauseTimer()
+                    }
                 }
                 if presentation.canResume {
-                    actionPill("Resume", fill: Color.white.opacity(0.18)) { appState.resumeTimer() }
+                    actionPill(
+                        "Resume",
+                        fill: Color.white.opacity(0.18),
+                        shortcut: KeyboardShortcut("r", modifiers: []),
+                        shortcutLabel: "R"
+                    ) {
+                        appState.resumeTimer()
+                    }
                 }
                 if presentation.canEnd {
-                    actionPill("End", fill: Color.white.opacity(0.08)) { appState.endTimer() }
-                }
-            }
-
-            if presentation.showsQuickExtend {
-                HStack(spacing: 10) {
-                    actionPill("+1m", fill: Color.white.opacity(0.08)) {
-                        appState.extendTimer(by: 60)
-                    }
-                    actionPill("+5m", fill: Color.white.opacity(0.08)) {
-                        appState.extendTimer(by: 300)
-                    }
-                    actionPill("+15m", fill: Color.white.opacity(0.08)) {
-                        appState.extendTimer(by: 900)
+                    actionPill(
+                        "End",
+                        fill: Color.white.opacity(0.08),
+                        shortcut: KeyboardShortcut("e", modifiers: []),
+                        shortcutLabel: "E"
+                    ) {
+                        appState.endTimer()
                     }
                 }
             }
 
-            VStack(spacing: 10) {
+            if let upcoming = presentation.upcomingSegment {
                 MetricStripCard(
-                    icon: "bolt.fill", tint: .yellow, title: "Current focus",
-                    value: shortDuration(presentation.currentFocusSeconds))
-                if let upcomingBreak = presentation.upcomingBreakSeconds {
-                    MetricStripCard(
-                        icon: "cup.and.saucer.fill", tint: .pink, title: "Upcoming break",
-                        value: shortDuration(upcomingBreak))
-                }
-                MetricStripCard(
-                    icon: appState.daemonConnection.connectionState == .connected
-                        ? "wifi" : "wifi.slash",
-                    tint: .gray,
-                    title: "Connection",
-                    value: connectionLabel(appState.daemonConnection.connectionState)
+                    icon: upcoming.kind == .work ? "bolt.fill" : "cup.and.saucer.fill",
+                    tint: upcoming.kind == .work ? .yellow : .pink,
+                    title: upcoming.title,
+                    value: shortDuration(upcoming.durationSeconds)
                 )
             }
         }
@@ -256,16 +321,6 @@ struct ActiveTimerView: View {
         MenuBarTextFormatter.formatElapsed(seconds: seconds, format: .expanded, showsSeconds: false)
     }
 
-    private func connectionLabel(_ state: CompanionConnectionState) -> String {
-        switch state {
-        case .connected: return "Connected"
-        case .connecting: return "Connecting"
-        case .disconnected: return "Disconnected"
-        case .incompatible: return "Incompatible"
-        case .error: return "Error"
-        case .idle: return "Idle"
-        }
-    }
 }
 
 struct IdleFocusView: View {
@@ -288,13 +343,32 @@ struct IdleFocusView: View {
                     subtitle: "No planned focus issues for today."
                 )
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(appState.dailyFocusService.snapshot.issues) { issue in
-                        FocusIssueRow(issue: issue) {
+                        FocusIssueRow(appState: appState, issue: issue) {
                             appState.selectFocusIssue(issue)
                         }
                     }
                 }
+            }
+
+            if let error = appState.issueActionsService.lastErrorMessage {
+                HStack(spacing: 7) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text(error)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button {
+                        appState.issueActionsService.clearError()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.72))
+                .padding(.horizontal, 4)
             }
         }
     }
@@ -304,6 +378,7 @@ struct FocusStartConfigView: View {
     @ObservedObject var appState: CompanionAppState
     let issue: DailyFocusIssue
     @StateObject private var editor: FocusStartConfigEditor
+    @State private var expandedControl: FocusConfigControl?
 
     init(appState: CompanionAppState, issue: DailyFocusIssue) {
         self.appState = appState
@@ -328,6 +403,7 @@ struct FocusStartConfigView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.8))
+                .keyboardShortcut(.cancelAction)
                 Spacer()
             }
 
@@ -356,106 +432,149 @@ struct FocusStartConfigView: View {
                         icon: "play.fill", tint: .green, title: "Open-ended focus",
                         value: "No hard limit")
                 case .pomodoro:
-                    ConfigMenuRow(
+                    ExpandablePresetRow(
                         icon: "bolt.fill",
                         tint: .yellow,
                         title: "Focus",
                         displayValue: editor.focusDisplay,
                         choices: FocusStartConfigState.focusChoices,
                         selection: editor.state.focusChoice,
-                        onSelect: editor.selectFocus
+                        isExpanded: expandedControl == .focus,
+                        customValue: $editor.state.customFocusMinutes,
+                        allowsZero: false,
+                        onToggle: { toggle(.focus) },
+                        onSelect: {
+                            editor.selectFocus($0)
+                            collapseUnlessCustom($0)
+                        }
                     )
-                    ConfigMenuRow(
+                    ExpandablePresetRow(
                         icon: "cup.and.saucer.fill",
                         tint: .pink,
                         title: "Short break",
                         displayValue: editor.breakDisplay,
                         choices: FocusStartConfigState.shortBreakChoices,
                         selection: editor.state.breakChoice,
-                        onSelect: editor.selectBreak
+                        isExpanded: expandedControl == .shortBreak,
+                        customValue: $editor.state.customBreakMinutes,
+                        allowsZero: true,
+                        onToggle: { toggle(.shortBreak) },
+                        onSelect: {
+                            editor.selectBreak($0)
+                            if $0 == .noBreak {
+                                expandedControl = nil
+                            } else {
+                                collapseUnlessCustom($0)
+                            }
+                        }
                     )
                     if editor.state.showsLongBreakControls {
-                        ConfigMenuRow(
+                        ExpandablePresetRow(
                             icon: "moon.zzz.fill",
                             tint: .purple,
                             title: "Long break",
                             displayValue: editor.longBreakDisplay,
                             choices: FocusStartConfigState.longBreakChoices,
                             selection: editor.state.longBreakChoice,
-                            onSelect: editor.selectLongBreak
+                            isExpanded: expandedControl == .longBreak,
+                            customValue: $editor.state.customLongBreakMinutes,
+                            allowsZero: true,
+                            onToggle: { toggle(.longBreak) },
+                            onSelect: {
+                                editor.selectLongBreak($0)
+                                if $0 == .noBreak {
+                                    expandedControl = nil
+                                } else {
+                                    collapseUnlessCustom($0)
+                                }
+                            }
                         )
                     }
                     if editor.state.showsCycleControls {
-                        NumberMenuRow(
+                        ExpandableNumberRow(
                             icon: "repeat.circle.fill",
                             tint: .orange,
                             title: "Cycles",
                             displayValue: "\(editor.state.effectivePomodoroCycles)",
                             values: Array(1...12),
                             selection: editor.state.pomodoroCycles,
-                            onSelect: { editor.state.pomodoroCycles = $0 }
+                            isExpanded: expandedControl == .cycles,
+                            onToggle: { toggle(.cycles) },
+                            onSelect: {
+                                editor.state.pomodoroCycles = $0
+                                expandedControl = nil
+                            }
                         )
                     }
                     if editor.state.showsLongBreakAfterControls {
-                        NumberMenuRow(
+                        ExpandableNumberRow(
                             icon: "arrow.trianglehead.2.clockwise.rotate.90.circle.fill",
                             tint: .mint,
                             title: "Long break after",
                             displayValue: "\(editor.state.effectiveCyclesBeforeLongBreak)",
                             values: Array(1...12),
                             selection: editor.state.pomodoroCyclesBeforeLongBreak,
-                            onSelect: { editor.state.pomodoroCyclesBeforeLongBreak = $0 }
+                            isExpanded: expandedControl == .longBreakAfter,
+                            onToggle: { toggle(.longBreakAfter) },
+                            onSelect: {
+                                editor.state.pomodoroCyclesBeforeLongBreak = $0
+                                expandedControl = nil
+                            }
                         )
                     }
                 case .timer:
-                    ConfigMenuRow(
+                    ExpandablePresetRow(
                         icon: "timer",
                         tint: .orange,
                         title: "Countdown",
                         displayValue: editor.countdownDisplay,
                         choices: FocusStartConfigState.countdownChoices,
                         selection: editor.state.countdownChoice,
-                        onSelect: editor.selectCountdown
+                        isExpanded: expandedControl == .countdown,
+                        customValue: $editor.state.customCountdownMinutes,
+                        allowsZero: false,
+                        onToggle: { toggle(.countdown) },
+                        onSelect: {
+                            editor.selectCountdown($0)
+                            collapseUnlessCustom($0)
+                        }
                     )
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: editor.state.breaksEnabled)
+            .animation(.easeInOut(duration: 0.2), value: editor.state.longBreakEnabled)
 
-            VStack(spacing: 10) {
-                switch editor.state.mode {
-                case .stopwatch:
-                    EmptyView()
-                case .pomodoro:
-                    if editor.state.showsCustomFocusField {
-                        CustomMinutesField(
-                            title: "Custom focus", value: $editor.state.customFocusMinutes)
-                    }
-                    if editor.state.showsCustomBreakField {
-                        CustomMinutesField(
-                            title: "Custom short break", value: $editor.state.customBreakMinutes,
-                            allowsZero: true)
-                    }
-                    if editor.state.showsCustomLongBreakField {
-                        CustomMinutesField(
-                            title: "Custom long break", value: $editor.state.customLongBreakMinutes,
-                            allowsZero: true)
-                    }
-                case .timer:
-                    if editor.state.showsCustomCountdownField {
-                        CustomMinutesField(
-                            title: "Custom duration", value: $editor.state.customCountdownMinutes)
-                    }
-                }
+            if let endDate = TimerEndProjection.startEndDate(config: editor.state) {
+                EndsAtRow(date: endDate)
             }
-            .tint(.white)
-            .foregroundStyle(.white)
 
             HStack {
                 Spacer()
-                actionPill("Start Focus", fill: Color.white.opacity(0.18)) {
+                actionPill(
+                    "Start Focus",
+                    fill: Color.white.opacity(0.18),
+                    shortcut: .defaultAction,
+                    shortcutLabel: "↩"
+                ) {
                     appState.startSelectedFocusSession(using: editor.state)
                 }
                 Spacer()
             }
+        }
+        .onChange(of: editor.state.mode) {
+            expandedControl = nil
+        }
+    }
+
+    private func toggle(_ control: FocusConfigControl) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            expandedControl = expandedControl == control ? nil : control
+        }
+    }
+
+    private func collapseUnlessCustom(_ choice: FocusPresetChoice) {
+        if choice != .custom {
+            expandedControl = nil
         }
     }
 }
@@ -466,97 +585,162 @@ struct StatsTabView: View {
     var body: some View {
         let snapshot = appState.popoverStatsService.snapshot
 
-        VStack(spacing: 14) {
-            if let score = snapshot.focusScore {
-                VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        statsDateArrow(systemName: "chevron.left") {
-                            appState.popoverStatsService.showPreviousDay()
-                        }
-
-                        Text(statsTitle(for: snapshot.date))
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(Color.white.opacity(0.06)))
-
-                        statsDateArrow(
-                            systemName: "chevron.right",
-                            isEnabled: appState.popoverStatsService.canShowNextDay()
-                        ) {
-                            appState.popoverStatsService.showNextDay()
-                        }
-                    }
-
-                    ScoreArcView(score: score.score)
-                        .frame(width: 190, height: 126)
-
-                    Text(snapshot.scoreMessage)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 18)
-                        .frame(maxWidth: .infinity)
-                        .background(cardBackground(stroke: Color.white.opacity(0.08)))
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                statsDateArrow(systemName: "chevron.left") {
+                    appState.popoverStatsService.showPreviousDay()
                 }
-            } else {
-                PlaceholderPanel(
-                    icon: "chart.xyaxis.line",
-                    title: "No stats yet",
-                    subtitle: "Start a focus session to populate today’s summary."
-                )
+
+                Text(statsTitle(for: snapshot.date))
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(glassCapsuleBackground())
+
+                statsDateArrow(
+                    systemName: "chevron.right",
+                    isEnabled: appState.popoverStatsService.canShowNextDay()
+                ) {
+                    appState.popoverStatsService.showNextDay()
+                }
             }
 
-            if let metrics = snapshot.todayMetrics, let score = snapshot.focusScore {
-                StatsCard(
-                    icon: "bolt.fill",
-                    iconColor: .yellow,
-                    title: "Focus Stats",
-                    rows: [
-                        ("Total focus time", compactDuration(metrics.workedSeconds)),
-                        ("Sessions", "\(metrics.sessionCount)"),
-                        ("Target", compactDuration(score.targetWorkedSeconds)),
-                    ]
-                )
+            ScrollView(.vertical) {
+                ZStack {
+                    VStack(spacing: 12) {
+                        if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
+                            scoreHero(score: score, message: snapshot.scoreMessage)
+                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
-                StatsCard(
-                    icon: "cup.and.saucer.fill",
-                    iconColor: .pink,
-                    title: "Break Stats",
-                    rows: [
-                        ("Total break time", compactDuration(metrics.restSeconds)),
-                        ("Score level", score.level.capitalized),
-                        (
-                            "Worked / Rest",
-                            ratioText(worked: metrics.workedSeconds, rest: metrics.restSeconds)
-                        ),
-                    ]
-                )
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.flexible(), spacing: 10),
+                                    GridItem(.flexible(), spacing: 10),
+                                ],
+                                spacing: 10
+                            ) {
+                                StatsMetricTile(
+                                    icon: "bolt.fill",
+                                    tint: .yellow,
+                                    title: "Focus",
+                                    value: compactDuration(metrics.workedSeconds)
+                                )
+                                StatsMetricTile(
+                                    icon: "cup.and.saucer.fill",
+                                    tint: .pink,
+                                    title: "Breaks",
+                                    value: compactDuration(metrics.restSeconds)
+                                )
+                                StatsMetricTile(
+                                    icon: "rectangle.stack.fill",
+                                    tint: .orange,
+                                    title: "Sessions",
+                                    value: "\(metrics.sessionCount)"
+                                )
+                                StatsMetricTile(
+                                    icon: "scope",
+                                    tint: .mint,
+                                    title: "Target",
+                                    value: compactDuration(score.targetWorkedSeconds)
+                                )
+                            }
 
-                StatsCard(
-                    icon: "checkmark.circle.fill",
-                    iconColor: .green,
-                    title: "Issue Stats",
-                    rows: [
-                        ("Completed", "\(metrics.completedIssues)"),
-                        ("Abandoned", "\(metrics.abandonedIssues)"),
-                        ("Planned today", "\(metrics.totalIssues)"),
-                    ]
-                )
+                            FocusRestBalanceView(
+                                workedSeconds: metrics.workedSeconds,
+                                restSeconds: metrics.restSeconds
+                            )
+
+                            StatsOutcomeCard(
+                                icon: "checkmark.circle.fill",
+                                tint: .green,
+                                title: "Issues",
+                                values: [
+                                    ("Completed", metrics.completedIssues),
+                                    ("Planned", metrics.totalIssues),
+                                    ("Abandoned", metrics.abandonedIssues),
+                                ]
+                            )
+
+                            StatsOutcomeCard(
+                                icon: "checklist.checked",
+                                tint: .cyan,
+                                title: "Habits",
+                                values: [
+                                    ("Done", metrics.habitCompletedCount),
+                                    ("Due", metrics.habitDueCount),
+                                    ("Failed", metrics.habitFailedCount),
+                                ]
+                            )
+                        } else if !snapshot.isLoading {
+                            PlaceholderPanel(
+                                icon: "chart.xyaxis.line",
+                                title: "No stats yet",
+                                subtitle: "Start a focus session to populate this day’s summary."
+                            )
+                        }
+
+                        if let error = snapshot.lastErrorDescription, !error.isEmpty {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 4)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.2), value: snapshot.date)
+                    .animation(.easeOut(duration: 0.2), value: snapshot.focusScore?.score)
+
+                    if snapshot.isLoading && snapshot.focusScore == nil {
+                        PlaceholderPanel(
+                            icon: "arrow.triangle.2.circlepath",
+                            title: "Loading stats",
+                            subtitle: "Refreshing this day from the daemon."
+                        )
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: 480)
+            .overlay(alignment: .topTrailing) {
+                if snapshot.isLoading && snapshot.focusScore != nil {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(8)
+                }
             }
         }
     }
 
-    private func compactDuration(_ seconds: Int) -> String {
-        MenuBarTextFormatter.formatElapsed(seconds: seconds, format: .expanded, showsSeconds: false)
+    private func scoreHero(
+        score: CronaFocusScoreSummary,
+        message: String
+    ) -> some View {
+        HStack(spacing: 18) {
+            CompactScoreRing(score: score.score)
+                .frame(width: 104, height: 104)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(score.level.capitalized)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.66))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .background(cardBackground(stroke: Color.white.opacity(0.1), cornerRadius: 26))
     }
 
-    private func ratioText(worked: Int, rest: Int) -> String {
-        guard worked > 0 else { return "0%" }
-        let ratio = Int((Double(rest) / Double(worked)) * 100)
-        return "\(ratio)%"
+    private func compactDuration(_ seconds: Int) -> String {
+        MenuBarTextFormatter.formatElapsed(seconds: seconds, format: .expanded, showsSeconds: false)
     }
 
     private func statsTitle(for date: String) -> String {
@@ -603,8 +787,149 @@ struct StatsTabView: View {
     }
 }
 
+private struct CompactScoreRing: View {
+    let score: Int
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.08), lineWidth: 9)
+
+            Circle()
+                .trim(from: 0, to: min(1, max(0, Double(score) / 100)))
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.82), Color.yellow.opacity(0.72)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(lineWidth: 9, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 0) {
+                Text("\(score)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text("score")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .foregroundStyle(.white)
+        }
+        .animation(.easeOut(duration: 0.35), value: score)
+    }
+}
+
+private struct StatsMetricTile: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+                Spacer()
+            }
+
+            Text(value)
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .background(cardBackground(stroke: tint.opacity(0.14), cornerRadius: 20))
+    }
+}
+
+private struct FocusRestBalanceView: View {
+    let workedSeconds: Int
+    let restSeconds: Int
+
+    var body: some View {
+        let total = max(1, workedSeconds + restSeconds)
+        let focusFraction = Double(workedSeconds) / Double(total)
+
+        VStack(spacing: 10) {
+            HStack {
+                Label("Focus balance", systemImage: "circle.lefthalf.filled")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+                Spacer()
+                Text("\(Int(focusFraction * 100))% focus")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
+
+            GeometryReader { geometry in
+                Capsule()
+                    .fill(Color.pink.opacity(0.18))
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.56))
+                            .frame(width: geometry.size.width * focusFraction)
+                    }
+            }
+            .frame(height: 6)
+        }
+        .padding(16)
+        .background(cardBackground(stroke: Color.white.opacity(0.07), cornerRadius: 20))
+    }
+}
+
+private struct StatsOutcomeCard: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let values: [(String, Int)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            HStack(spacing: 0) {
+                ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                    VStack(spacing: 4) {
+                        Text("\(value.1)")
+                            .font(.title3.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .contentTransition(.numericText())
+                        Text(value.0)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.52))
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    if index < values.count - 1 {
+                        Divider()
+                            .overlay(Color.white.opacity(0.08))
+                            .frame(height: 30)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(cardBackground(stroke: tint.opacity(0.16), cornerRadius: 22))
+    }
+}
+
 struct HabitsTabView: View {
     @ObservedObject var appState: CompanionAppState
+    @State private var loggingHabitID: Int64?
+    @State private var logMinutes = 1
 
     var body: some View {
         let snapshot = appState.habitsService.snapshot
@@ -639,15 +964,44 @@ struct HabitsTabView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(snapshot.items) { habit in
-                        HabitRow(habit: habit) {
-                            if habit.supportsClearAction {
-                                appState.clearHabitCompletion(habit)
-                            } else {
-                                appState.completeHabit(habit)
-                            }
-                        }
+                        HabitRow(
+                            habit: habit,
+                            isWorking: appState.habitsService.actionInFlightHabitID == habit.id,
+                            activeAction: appState.habitsService.actionInFlightHabitID == habit.id
+                                ? appState.habitsService.actionInFlightStatus : nil,
+                            actionsDisabled: appState.habitsService.actionInFlightHabitID != nil,
+                            isLogging: loggingHabitID == habit.id,
+                            logMinutes: $logMinutes,
+                            onComplete: { appState.completeHabit(habit) },
+                            onBeginLog: {
+                                logMinutes = max(1, habit.targetMinutes ?? 1)
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    loggingHabitID = habit.id
+                                }
+                            },
+                            onSubmitLog: {
+                                appState.logHabit(habit, durationMinutes: logMinutes)
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    loggingHabitID = nil
+                                }
+                            },
+                            onCancelLog: {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    loggingHabitID = nil
+                                }
+                            },
+                            onFail: { appState.failHabit(habit) },
+                            onClear: { appState.clearHabitCompletion(habit) }
+                        )
                     }
                 }
+            }
+
+            if let error = snapshot.lastRefreshError, !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.9))
+                    .padding(.horizontal, 4)
             }
         }
     }
@@ -672,8 +1026,8 @@ struct PlaceholderPanel: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: 132)
-        .padding(18)
-        .background(cardBackground(stroke: Color.white.opacity(0.08)))
+        .padding(20)
+        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 24))
     }
 }
 
@@ -748,7 +1102,7 @@ struct EndSessionSheetView: View {
                             Text("End Session")
                         }
                     }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.return, modifiers: [.command])
                     .buttonStyle(.borderedProminent)
                     .disabled(appState.isSubmittingEndSession)
                 }
@@ -761,6 +1115,11 @@ struct EndSessionSheetView: View {
         .fixedSize(horizontal: false, vertical: true)
         .shadow(color: .black.opacity(0.34), radius: 32, y: 22)
         .onAppear {
+            DispatchQueue.main.async {
+                isCommitFieldFocused = true
+            }
+        }
+        .onChange(of: appState.endSessionFocusRequest) {
             DispatchQueue.main.async {
                 isCommitFieldFocused = true
             }
@@ -791,89 +1150,35 @@ struct MetricStripCard: View {
                 .foregroundStyle(.white)
                 .font(.headline)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(cardBackground(stroke: Color.clear))
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(cardBackground(stroke: Color.white.opacity(0.05), cornerRadius: 22))
     }
 }
 
-struct StatsCard: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let rows: [(String, String)]
+struct EndsAtRow: View {
+    let date: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                } icon: {
-                    Image(systemName: icon)
-                        .foregroundStyle(.black)
-                        .frame(width: 22, height: 22)
-                        .background(Circle().fill(iconColor))
-                }
-                Spacer()
-            }
+        HStack(spacing: 10) {
+            Image(systemName: "clock.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.58))
 
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack {
-                    Text(row.0)
-                        .foregroundStyle(.white.opacity(0.72))
-                    Spacer()
-                    Text(row.1)
-                        .foregroundStyle(.white)
-                        .fontWeight(.semibold)
-                }
-            }
-        }
-        .padding(16)
-        .background(cardBackground(stroke: iconColor.opacity(0.25)))
-    }
-}
+            Text("Ends At")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.72))
 
-struct ScoreArcView: View {
-    let score: Int
+            Spacer()
 
-    var body: some View {
-        ZStack {
-            ArcTrack(color: Color.white.opacity(0.12), start: 0.16, end: 0.84, lineWidth: 12)
-            ArcTrack(color: .yellow, start: 0.16, end: 0.84, lineWidth: 10)
-            ArcTrack(
-                color: .pink, start: 0.24, end: max(0.24, 0.24 + (0.44 * CGFloat(score) / 100.0)),
-                lineWidth: 10)
-
-            Text("\(score)")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+            Text(TimerEndTimeFormatter.string(from: date))
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
                 .foregroundStyle(.white)
-                .offset(y: 18)
         }
-    }
-}
-
-private struct ArcTrack: View {
-    let color: Color
-    let start: CGFloat
-    let end: CGFloat
-    let lineWidth: CGFloat
-
-    var body: some View {
-        GeometryReader { geometry in
-            Path { path in
-                let rect = geometry.frame(in: .local)
-                path.addArc(
-                    center: CGPoint(x: rect.midX, y: rect.maxY),
-                    radius: min(rect.width / 2, rect.height),
-                    startAngle: .degrees(Double(180 * (1 + start))),
-                    endAngle: .degrees(Double(180 * (1 + end))),
-                    clockwise: false
-                )
-            }
-            .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 42)
+        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 16))
     }
 }
 
@@ -882,25 +1187,48 @@ struct ReverseProgressBar: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let shape = Capsule()
+            let clampedProgress = max(0, min(1, progress))
+
             ZStack(alignment: .trailing) {
-                Capsule()
-                    .fill(Color.white.opacity(0.08))
-                Capsule()
+                shape
+                    .fill(Color.white.opacity(0.045))
+
+                Rectangle()
                     .fill(
                         LinearGradient(
-                            colors: [.pink, .yellow],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                            colors: [
+                                Color.white.opacity(0.22),
+                                Color.white.opacity(0.46),
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
                         )
                     )
-                    .frame(width: geometry.size.width * max(0, min(1, progress)))
-                    .animation(.linear(duration: 0.2), value: progress)
+                    .frame(width: geometry.size.width * clampedProgress)
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.16),
+                        Color.clear,
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 2)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
+            .clipShape(shape)
+            .overlay(
+                shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 0.5)
+            )
+            .animation(.easeOut(duration: 0.24), value: clampedProgress)
         }
     }
 }
 
 struct FocusIssueRow: View {
+    @ObservedObject var appState: CompanionAppState
     let issue: DailyFocusIssue
     let onStart: () -> Void
 
@@ -925,18 +1253,110 @@ struct FocusIssueRow: View {
                 }
             }
             Spacer()
-            Button(action: onStart) {
-                Label("Start", systemImage: "play.fill")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.white.opacity(0.14)))
+            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 90)
+            } else {
+                Button(action: onStart) {
+                    Label("Start", systemImage: "play.fill")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 90)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
+                        .background(glassCapsuleBackground(emphasis: 0.18))
+                }
+                .buttonStyle(GlassPressButtonStyle())
             }
-            .buttonStyle(.plain)
         }
-        .padding(14)
-        .background(cardBackground(stroke: Color.white.opacity(0.08)))
+        .padding(16)
+        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 24))
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .contextMenu {
+            statusMenu
+            dueDateMenu
+        }
+        .disabled(isWorking)
+    }
+
+    @ViewBuilder
+    private var statusMenu: some View {
+        Menu {
+            if let transitions = appState.issueActionsService.transitionsByIssueID[issue.id] {
+                if let blockedReason = transitions.blockedReason {
+                    Text(blockedReason)
+                } else if transitions.allowedStatuses.isEmpty {
+                    Text("No available transitions")
+                } else {
+                    ForEach(transitions.allowedStatuses) { status in
+                        Button {
+                            appState.requestIssueStatusChange(issue: issue, status: status)
+                        } label: {
+                            Label(status.title, systemImage: status.systemImage)
+                        }
+                    }
+                }
+            } else {
+                Text("Loading statuses…")
+            }
+        } label: {
+            Label("Change Status", systemImage: "arrow.triangle.branch")
+        }
+    }
+
+    @ViewBuilder
+    private var dueDateMenu: some View {
+        Menu {
+            Button {
+                appState.setIssueDueDate(issue, date: anchorDate)
+            } label: {
+                Label("Today", systemImage: "calendar")
+            }
+
+            if let tomorrow = CronaCalendarDate.adding(days: 1, to: anchorDate) {
+                Button {
+                    appState.setIssueDueDate(issue, date: tomorrow)
+                } label: {
+                    Label("Tomorrow", systemImage: "sunrise")
+                }
+            }
+
+            if let nextWeek = CronaCalendarDate.adding(days: 7, to: anchorDate) {
+                Button {
+                    appState.setIssueDueDate(issue, date: nextWeek)
+                } label: {
+                    Label("Next Week", systemImage: "calendar.badge.plus")
+                }
+            }
+
+            Divider()
+
+            Button {
+                appState.presentCustomDueDate(for: issue)
+            } label: {
+                Label("Choose Date…", systemImage: "calendar.circle")
+            }
+
+            if issue.todoForDate != nil {
+                Button(role: .destructive) {
+                    appState.clearIssueDueDate(issue)
+                } label: {
+                    Label("Clear Due Date", systemImage: "calendar.badge.minus")
+                }
+            }
+        } label: {
+            Label("Due Date", systemImage: "calendar")
+        }
+    }
+
+    private var anchorDate: String {
+        let value = appState.dailyFocusService.snapshot.date
+        return value.isEmpty ? DailyFocusService.todayString() : value
+    }
+
+    private var isWorking: Bool {
+        appState.issueActionsService.actionInFlightIssueID == issue.id
     }
 
     private var metaLine: String {
@@ -959,51 +1379,263 @@ struct FocusIssueRow: View {
     }
 }
 
-struct HabitRow: View {
-    let habit: HabitRowModel
-    let action: () -> Void
+struct IssueActionEditorView: View {
+    @ObservedObject var appState: CompanionAppState
+    @FocusState private var noteIsFocused: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            statusBadge
+        VStack(alignment: .leading, spacing: 16) {
+            switch appState.issueActionEditor {
+            case let .status(issue, status):
+                statusEditor(issue: issue, status: status)
+            case let .dueDate(issue):
+                dueDateEditor(issue: issue)
+            case nil:
+                EmptyView()
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: 350)
+        .background(PopoverDialogBackground(cornerRadius: 28))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.5), radius: 28, y: 16)
+        .onAppear {
+            if case .status = appState.issueActionEditor {
+                DispatchQueue.main.async {
+                    noteIsFocused = true
+                }
+            }
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(habit.name)
+    @ViewBuilder
+    private func statusEditor(
+        issue: DailyFocusIssue,
+        status: CronaIssueStatus
+    ) -> some View {
+        editorHeader(
+            title: status.title,
+            subtitle: issue.title,
+            systemImage: status.systemImage
+        )
+
+        TextField(
+            status.notePrompt ?? "Note",
+            text: $appState.issueActionNote,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .lineLimit(3...5)
+        .focused($noteIsFocused)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.black.opacity(0.48))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    noteIsFocused ? Color.accentColor.opacity(0.72) : .white.opacity(0.16),
+                    lineWidth: noteIsFocused ? 1.2 : 0.7
+                )
+        )
+
+        editorError
+        editorActions(
+            submitTitle: "Change Status",
+            submitDisabled: status.requiresNote
+                && appState.issueActionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
+    }
+
+    @ViewBuilder
+    private func dueDateEditor(issue: DailyFocusIssue) -> some View {
+        editorHeader(
+            title: "Choose Due Date",
+            subtitle: issue.title,
+            systemImage: "calendar"
+        )
+
+        DatePicker(
+            "Due date",
+            selection: $appState.issueActionDate,
+            displayedComponents: .date
+        )
+        .datePickerStyle(.graphical)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
+
+        editorError
+        editorActions(submitTitle: "Set Due Date", submitDisabled: false)
+    }
+
+    @ViewBuilder
+    private var editorError: some View {
+        if let error = appState.issueActionsService.lastErrorMessage {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.yellow)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func editorHeader(
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.yellow)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
                     .font(.headline)
                     .foregroundStyle(.white)
-                    .lineLimit(2)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(1)
+            }
+        }
+    }
 
-                HStack(spacing: 12) {
-                    metaLabel(icon: "folder.fill", text: habit.repoName)
-                    metaLabel(icon: "arrow.triangle.branch", text: habit.streamName)
-                    if let detailText {
-                        metaLabel(icon: "clock.fill", text: detailText)
+    private func editorActions(
+        submitTitle: String,
+        submitDisabled: Bool
+    ) -> some View {
+        HStack {
+            Button("Cancel") {
+                appState.cancelIssueActionEditor()
+            }
+            .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            Button(submitTitle) {
+                appState.submitIssueActionEditor()
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(
+                submitDisabled
+                    || appState.issueActionsService.actionInFlightIssueID != nil
+            )
+        }
+    }
+}
+
+struct HabitRow: View {
+    let habit: HabitRowModel
+    let isWorking: Bool
+    let activeAction: String?
+    let actionsDisabled: Bool
+    let isLogging: Bool
+    @Binding var logMinutes: Int
+    let onComplete: () -> Void
+    let onBeginLog: () -> Void
+    let onSubmitLog: () -> Void
+    let onCancelLog: () -> Void
+    let onFail: () -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        VStack(spacing: isLogging ? 10 : 0) {
+            HStack(spacing: 12) {
+                statusBadge
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(habit.name)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+
+                    HStack(spacing: 12) {
+                        metaLabel(icon: "folder.fill", text: habit.repoName)
+                        metaLabel(icon: "arrow.triangle.branch", text: habit.streamName)
+                        if let detailText {
+                            metaLabel(icon: "clock.fill", text: detailText)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                if habit.supportsClearAction {
+                    habitActionButton(
+                        title: "Clear",
+                        symbol: "arrow.uturn.backward",
+                        tint: .white,
+                        actionID: "clear",
+                        action: onClear
+                    )
+                } else if !isLogging {
+                    HStack(spacing: 7) {
+                        habitActionButton(
+                            title: "Fail",
+                            symbol: "xmark",
+                            tint: .red,
+                            actionID: "failed",
+                            action: onFail
+                        )
+                        habitActionButton(
+                            title: usesDurationLogging ? "Log" : "Complete",
+                            symbol: usesDurationLogging ? "clock.fill" : "checkmark",
+                            tint: .green,
+                            actionID: "completed",
+                            action: usesDurationLogging ? onBeginLog : onComplete
+                        )
                     }
                 }
             }
 
-            Spacer()
-
-            Button(action: action) {
-                Label(actionTitle, systemImage: actionSymbolName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.white.opacity(0.14)))
+            if isLogging {
+                InlineHabitLogEditor(
+                    value: $logMinutes,
+                    onCancel: onCancelLog,
+                    onSubmit: onSubmitLog
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .buttonStyle(.plain)
         }
-        .padding(14)
-        .background(cardBackground(stroke: statusColor.opacity(0.28)))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+        .background(cardBackground(stroke: statusColor.opacity(0.2), cornerRadius: 19))
     }
 
-    private var actionTitle: String {
-        habit.supportsClearAction ? "Clear" : "Complete"
+    private func habitActionButton(
+        title: String,
+        symbol: String?,
+        tint: Color,
+        actionID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if isWorking && activeAction == actionID {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if let symbol {
+                    Image(systemName: symbol)
+                        .font(.caption.weight(.bold))
+                }
+                Text(title)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(actionsDisabled && !isWorking ? 0.42 : 0.9))
+            .padding(.horizontal, 10)
+            .frame(minHeight: 32)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(tint.opacity(title == "Complete" || title == "Log" ? 0.16 : 0.08))
+                    .strokeBorder(tint.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(GlassPressButtonStyle())
+        .disabled(actionsDisabled)
     }
 
-    private var actionSymbolName: String {
-        habit.supportsClearAction ? "arrow.uturn.backward" : "checkmark"
+    private var usesDurationLogging: Bool {
+        (habit.targetMinutes ?? 0) > 0
     }
 
     private var detailText: String? {
@@ -1053,6 +1685,114 @@ struct HabitRow: View {
         }
         .font(.caption)
         .foregroundStyle(.white.opacity(0.62))
+    }
+}
+
+private struct InlineHabitLogEditor: View {
+    @Binding var value: Int
+    let onCancel: () -> Void
+    let onSubmit: () -> Void
+    @FocusState private var isFocused: Bool
+    @State private var draft = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Time logged")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.62))
+
+            Spacer()
+
+            stepButton("minus") {
+                setValue(max(1, value - 5))
+            }
+
+            HStack(spacing: 3) {
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .focused($isFocused)
+                    .frame(width: 36)
+                    .onChange(of: draft) {
+                        let digits = draft.filter(\.isNumber)
+                        if digits != draft {
+                            draft = digits
+                        } else if let parsed = Int(digits) {
+                            value = max(1, parsed)
+                        }
+                    }
+                    .onSubmit(onSubmit)
+                Text("min")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.black.opacity(0.18))
+                    .strokeBorder(Color.white.opacity(isFocused ? 0.22 : 0.08), lineWidth: 1)
+            )
+
+            stepButton("plus") {
+                setValue(value + 5)
+            }
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.58))
+            .keyboardShortcut(.cancelAction)
+
+            Button(action: onSubmit) {
+                Image(systemName: "checkmark")
+                    .fontWeight(.bold)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Color.green.opacity(0.2)))
+            }
+            .buttonStyle(GlassPressButtonStyle())
+            .foregroundStyle(.white)
+            .keyboardShortcut(.defaultAction)
+            .help("Log \(value) minutes")
+        }
+        .padding(.top, 9)
+        .overlay(alignment: .top) {
+            Divider()
+                .overlay(Color.white.opacity(0.07))
+        }
+        .onAppear {
+            draft = "\(value)"
+            DispatchQueue.main.async {
+                isFocused = true
+            }
+        }
+        .onChange(of: value) {
+            if Int(draft) != value {
+                draft = "\(value)"
+            }
+        }
+    }
+
+    private func setValue(_ newValue: Int) {
+        value = max(1, newValue)
+        draft = "\(value)"
+    }
+
+    private func stepButton(
+        _ symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.bold))
+                .frame(width: 27, height: 27)
+                .background(Circle().fill(Color.white.opacity(0.07)))
+        }
+        .buttonStyle(GlassPressButtonStyle())
+        .foregroundStyle(.white.opacity(0.8))
     }
 }
 
@@ -1122,179 +1862,369 @@ final class FocusStartConfigEditor: ObservableObject {
     }
 }
 
-struct ConfigMenuRow: View {
+private enum FocusConfigControl {
+    case focus
+    case shortBreak
+    case longBreak
+    case cycles
+    case longBreakAfter
+    case countdown
+}
+
+struct ExpandablePresetRow: View {
     let icon: String
     let tint: Color
     let title: String
     let displayValue: String
     let choices: [FocusPresetChoice]
     let selection: FocusPresetChoice
+    let isExpanded: Bool
+    @Binding var customValue: Int
+    let allowsZero: Bool
+    let onToggle: () -> Void
     let onSelect: (FocusPresetChoice) -> Void
 
     var body: some View {
-        HStack {
-            Label {
-                Text(title)
-                    .foregroundStyle(.white)
-                    .font(.headline)
-            } icon: {
-                Image(systemName: icon)
-                    .foregroundStyle(.black)
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(tint))
-            }
-            Spacer()
-            Menu {
-                ForEach(choices) { choice in
-                    Button {
-                        onSelect(choice)
-                    } label: {
-                        if choice == selection {
-                            Label(choice.title, systemImage: "checkmark")
-                        } else {
-                            Text(choice.title)
+        VStack(spacing: 0) {
+            configDisclosureHeader(
+                icon: icon,
+                tint: tint,
+                title: title,
+                displayValue: displayValue,
+                isExpanded: isExpanded,
+                action: onToggle
+            )
+
+            if isExpanded {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+                    .padding(.horizontal, 14)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 72), spacing: 8)],
+                    spacing: 8
+                ) {
+                    ForEach(choices) { choice in
+                        configOptionButton(
+                            title: choice.title,
+                            isSelected: choice == selection
+                        ) {
+                            onSelect(choice)
                         }
                     }
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(displayValue)
-                        .foregroundStyle(.white)
-                        .font(.headline)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
+                .padding(12)
+
+                if selection == .custom {
+                    InlineMinutesEditor(value: $customValue, allowsZero: allowsZero)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(cardBackground(stroke: Color.clear))
+        .background(cardBackground(
+            stroke: Color.white.opacity(isExpanded ? 0.14 : 0.05),
+            cornerRadius: 22
+        ))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: isExpanded)
     }
 }
 
-struct NumberMenuRow: View {
+struct ExpandableNumberRow: View {
     let icon: String
     let tint: Color
     let title: String
     let displayValue: String
     let values: [Int]
     let selection: Int
+    let isExpanded: Bool
+    let onToggle: () -> Void
     let onSelect: (Int) -> Void
 
     var body: some View {
-        HStack {
-            Label {
-                Text(title)
-                    .foregroundStyle(.white)
-                    .font(.headline)
-            } icon: {
-                Image(systemName: icon)
-                    .foregroundStyle(.black)
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(tint))
-            }
-            Spacer()
-            Menu {
-                ForEach(values, id: \.self) { value in
-                    Button {
-                        onSelect(value)
-                    } label: {
-                        if value == selection {
-                            Label("\(value)", systemImage: "checkmark")
-                        } else {
-                            Text("\(value)")
+        VStack(spacing: 0) {
+            configDisclosureHeader(
+                icon: icon,
+                tint: tint,
+                title: title,
+                displayValue: displayValue,
+                isExpanded: isExpanded,
+                action: onToggle
+            )
+
+            if isExpanded {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+                    .padding(.horizontal, 14)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 48), spacing: 8)],
+                    spacing: 8
+                ) {
+                    ForEach(values, id: \.self) { value in
+                        configOptionButton(
+                            title: "\(value)",
+                            isSelected: value == selection
+                        ) {
+                            onSelect(value)
                         }
                     }
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(displayValue)
-                        .foregroundStyle(.white)
-                        .font(.headline)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
-                }
+                .padding(12)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(cardBackground(stroke: Color.clear))
+        .background(cardBackground(
+            stroke: Color.white.opacity(isExpanded ? 0.14 : 0.05),
+            cornerRadius: 22
+        ))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: isExpanded)
     }
 }
 
-struct CustomMinutesField: View {
-    let title: String
+private struct InlineMinutesEditor: View {
     @Binding var value: Int
-    var allowsZero = false
+    let allowsZero: Bool
+    @FocusState private var isFocused: Bool
+    @State private var draft = ""
 
     var body: some View {
-        HStack {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.8))
+        HStack(spacing: 12) {
+            Text("Custom")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.72))
+
             Spacer()
-            TextField(
-                "Minutes",
-                value: Binding(
-                    get: { value },
-                    set: { value = max(allowsZero ? 0 : 1, $0) }
-                ),
-                format: .number
+
+            minuteStepButton(systemName: "minus") {
+                setValue(max(minimum, value - 5))
+            }
+
+            HStack(spacing: 4) {
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .font(.headline.monospacedDigit())
+                    .focused($isFocused)
+                    .frame(width: 42)
+                    .accessibilityLabel("Custom duration in minutes")
+                    .onChange(of: draft) {
+                        let digits = draft.filter(\.isNumber)
+                        if digits != draft {
+                            draft = digits
+                            return
+                        }
+                        if let parsed = Int(digits) {
+                            value = max(minimum, parsed)
+                        }
+                    }
+                    .onSubmit {
+                        setValue(max(minimum, Int(draft) ?? minimum))
+                    }
+                Text("min")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.black.opacity(0.18))
+                    .strokeBorder(
+                        Color.white.opacity(isFocused ? 0.24 : 0.08),
+                        lineWidth: 1
+                    )
             )
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 84)
+
+            minuteStepButton(systemName: "plus") {
+                setValue(value + 5)
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+        )
+        .onAppear {
+            draft = "\(value)"
+            DispatchQueue.main.async {
+                isFocused = true
+            }
+        }
+        .onChange(of: value) {
+            if Int(draft) != value {
+                draft = "\(value)"
+            }
+        }
+    }
+
+    private var minimum: Int { allowsZero ? 0 : 1 }
+
+    private func setValue(_ newValue: Int) {
+        value = max(minimum, newValue)
+        draft = "\(value)"
+    }
+
+    private func minuteStepButton(
+        systemName: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.82))
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.white.opacity(0.08)))
+        }
+        .buttonStyle(GlassPressButtonStyle())
+        .accessibilityLabel(systemName == "plus" ? "Add five minutes" : "Remove five minutes")
     }
 }
 
-private func actionPill(_ title: String, fill: Color, action: @escaping () -> Void) -> some View {
+private func configDisclosureHeader(
+    icon: String,
+    tint: Color,
+    title: String,
+    displayValue: String,
+    isExpanded: Bool,
+    action: @escaping () -> Void
+) -> some View {
     Button(action: action) {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(
-                Capsule()
-                    .fill(fill)
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                    )
-            )
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.black)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(tint))
+
+            Text(title)
+                .foregroundStyle(.white)
+                .font(.headline)
+
+            Spacer()
+
+            Text(displayValue)
+                .foregroundStyle(.white)
+                .font(.headline.monospacedDigit())
+
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white.opacity(0.52))
+                .rotationEffect(.degrees(isExpanded ? 180 : 0))
+        }
+        .contentShape(Rectangle())
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
     }
     .buttonStyle(.plain)
 }
 
-private func cardBackground(stroke: Color) -> some View {
-    RoundedRectangle(cornerRadius: 18, style: .continuous)
+private func configOptionButton(
+    title: String,
+    isSelected: Bool,
+    action: @escaping () -> Void
+) -> some View {
+    Button(action: action) {
+        HStack(spacing: 5) {
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.caption2.weight(.bold))
+            }
+            Text(title)
+                .lineLimit(1)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.white.opacity(isSelected ? 0.14 : 0.05))
+                .strokeBorder(Color.white.opacity(isSelected ? 0.16 : 0.05), lineWidth: 1)
+        )
+    }
+    .buttonStyle(GlassPressButtonStyle())
+}
+
+func actionPill(
+    _ title: String,
+    fill: Color,
+    shortcut: KeyboardShortcut? = nil,
+    shortcutLabel: String? = nil,
+    action: @escaping () -> Void
+) -> some View {
+    Button(action: action) {
+        HStack(spacing: 7) {
+            Text(title)
+            if let shortcutLabel {
+                Text(shortcutLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.46))
+            }
+        }
+        .font(.headline)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
+        .background(
+            glassCapsuleBackground(emphasis: 0.16)
+        )
+    }
+    .buttonStyle(GlassPressButtonStyle())
+    .modifier(OptionalKeyboardShortcut(shortcut: shortcut))
+}
+
+private struct OptionalKeyboardShortcut: ViewModifier {
+    let shortcut: KeyboardShortcut?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(shortcut)
+        } else {
+            content
+        }
+    }
+}
+
+func cardBackground(stroke: Color, cornerRadius: CGFloat = 20) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+    return shape
         .fill(
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.22),
-                    Color.white.opacity(0.045),
+                    Color.white.opacity(0.085),
+                    Color.black.opacity(0.2),
+                    Color.white.opacity(0.03),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            shape
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.02),
+                            Color.clear,
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        )
+        .overlay(
+            shape
                 .strokeBorder(stroke, lineWidth: 1)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            shape
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.12),
+                            Color.white.opacity(0.16),
                             Color.white.opacity(0.02),
                         ],
                         startPoint: .top,
@@ -1303,54 +2233,139 @@ private func cardBackground(stroke: Color) -> some View {
                     lineWidth: 0.5
                 )
         )
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 6)
 }
 
-private struct PopoverGlassBackground: View {
+struct PopoverGlassBackground: View {
     var body: some View {
-        let shellShape = RoundedRectangle(cornerRadius: 32, style: .continuous)
+        let shellShape = RoundedRectangle(cornerRadius: 36, style: .continuous)
 
-        shellShape
-            .fill(Color.clear)
-            .overlay(
-                shellShape
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.18), radius: 22, y: 14)
+        ZStack {
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, emphasized: true)
+                .clipShape(shellShape)
+
+            shellShape
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.black.opacity(0.16),
+                            Color.white.opacity(0.02),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            shellShape
+                .fill(Color.black.opacity(0.14))
+
+            shellShape
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.9)
+
+            shellShape
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.18),
+                            Color.white.opacity(0.03),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
+        }
+        .shadow(color: .black.opacity(0.24), radius: 24, y: 16)
     }
+}
+
+private struct GlassPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .brightness(configuration.isPressed ? -0.03 : 0)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
+}
+
+private func glassCapsuleBackground(emphasis: Double = 0.12) -> some View {
+    Capsule()
+        .fill(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(emphasis),
+                    Color.white.opacity(max(0.04, emphasis * 0.45)),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
+        )
 }
 
 private struct SheetGlassBackground: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        PopoverDialogBackground(cornerRadius: 28)
+    }
+}
 
-        shape
-            .fill(
+private struct PopoverModalScrim: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 36, style: .continuous)
+            .fill(.black.opacity(0.56))
+            .overlay(
+                RoundedRectangle(cornerRadius: 36, style: .continuous)
+                    .fill(.white.opacity(0.015))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onDismiss)
+    }
+}
+
+private struct PopoverDialogBackground: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        ZStack {
+            VisualEffectView(
+                material: .popover,
+                blendingMode: .withinWindow,
+                emphasized: true
+            )
+
+            shape.fill(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.17, green: 0.17, blue: 0.18).opacity(0.96),
-                        Color(red: 0.13, green: 0.13, blue: 0.14).opacity(0.94),
+                        Color(red: 0.19, green: 0.19, blue: 0.20).opacity(0.96),
+                        Color(red: 0.105, green: 0.105, blue: 0.115).opacity(0.97),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-            .overlay(
-                shape
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+
+            shape.strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8)
+
+            shape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.22),
+                        Color.white.opacity(0.035),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 0.6
             )
-            .overlay(
-                shape
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.14),
-                                Color.white.opacity(0.03),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.5
-                    )
-            )
+        }
+        .clipShape(shape)
     }
 }

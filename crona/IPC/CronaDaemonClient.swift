@@ -140,6 +140,40 @@ final class CronaDaemonClient {
         try await request(method: "issue.today_summary")
     }
 
+    func issueStatusTransitions(issueID: Int64) async throws -> CronaIssueStatusTransitions {
+        try await request(
+            method: "issue.status_transitions",
+            params: AnyEncodable(CronaNumericIDRequest(id: issueID))
+        )
+    }
+
+    func changeIssueStatus(
+        issueID: Int64,
+        status: CronaIssueStatus,
+        note: String?
+    ) async throws -> CronaIssue {
+        try await request(
+            method: "issue.change_status",
+            params: AnyEncodable(
+                CronaChangeIssueStatusRequest(id: issueID, status: status, note: note)
+            )
+        )
+    }
+
+    func setIssueTodo(issueID: Int64, date: String) async throws -> CronaIssue {
+        try await request(
+            method: "issue.set_todo",
+            params: AnyEncodable(CronaSetIssueTodoRequest(id: issueID, date: date))
+        )
+    }
+
+    func clearIssueTodo(issueID: Int64) async throws -> CronaIssue {
+        try await request(
+            method: "issue.clear_todo",
+            params: AnyEncodable(CronaNumericIDRequest(id: issueID))
+        )
+    }
+
     func dailyPlanGet(date: String) async throws -> CronaDailyPlan {
         try await request(method: "daily_plan.get", params: AnyEncodable(CronaDailyPlanQuery(date: date)))
     }

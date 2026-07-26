@@ -7,34 +7,62 @@ where T.AllCases: RandomAccessCollection {
     let title: (T) -> String
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ForEach(Array(T.allCases)) { item in
+                let isSelected = selection == item
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
                         selection = item
                     }
                 } label: {
-                    Text(title(item))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(selection == item ? .primary : .secondary)
+                    let label = title(item)
+
+                    Text(label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isSelected ? .white : Color.white.opacity(0.6))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 8)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .background {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(
-                            selection == item
-                                ? Color.white.opacity(0.12)
-                                : .clear
-                        )
+                    segmentBackground(isSelected: isSelected)
                 }
             }
         }
-        .padding(3)
+        .padding(4)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.05))
+            Capsule()
+                .fill(Color.white.opacity(0.065))
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+                }
         )
+    }
+
+    @ViewBuilder
+    private func segmentBackground(isSelected: Bool) -> some View {
+        if isSelected {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.2),
+                            Color.white.opacity(0.1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                }
+                .shadow(color: .black.opacity(0.14), radius: 8, y: 5)
+        } else {
+            Capsule()
+                .fill(Color.clear)
+        }
     }
 }
