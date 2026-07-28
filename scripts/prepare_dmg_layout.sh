@@ -15,7 +15,7 @@ cp "${BACKGROUND_SOURCE}" "${BACKGROUND_PATH}"
 chflags hidden "${BACKGROUND_DIR}" || true
 chflags hidden "${BACKGROUND_PATH}" || true
 
-osascript <<EOF
+if ! osascript <<EOF
 tell application "Finder"
     set dmgFolder to POSIX file "${MOUNT_POINT}" as alias
     set backgroundImage to POSIX file "${BACKGROUND_PATH}" as text
@@ -33,7 +33,11 @@ tell application "Finder"
     set arrangement of iconOptions to not arranged
     set icon size of iconOptions to 128
     set text size of iconOptions to 13
-    set background picture of iconOptions to file backgroundImage
+    try
+        set background picture of iconOptions to file backgroundImage
+    on error errMsg number errNum
+        do shell script "printf '%s\\n' " & quoted form of ("prepare_dmg_layout: background assignment failed (" & errNum & "): " & errMsg) & " >&2"
+    end try
 
     set position of item "Crona.app" of containerWindow to {170, 235}
     set position of item "Applications" of containerWindow to {530, 235}
@@ -44,3 +48,6 @@ tell application "Finder"
     delay 2
 end tell
 EOF
+then
+    echo "prepare_dmg_layout: Finder layout step failed; continuing without custom DMG layout" >&2
+fi
