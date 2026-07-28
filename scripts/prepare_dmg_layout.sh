@@ -18,7 +18,7 @@ chflags hidden "${BACKGROUND_PATH}" || true
 osascript <<EOF
 tell application "Finder"
     set dmgFolder to POSIX file "${MOUNT_POINT}" as alias
-    set backgroundImage to POSIX file "${BACKGROUND_PATH}" as alias
+    set backgroundImage to POSIX file "${BACKGROUND_PATH}" as text
     open dmgFolder
     delay 1
 
@@ -33,7 +33,7 @@ tell application "Finder"
     set arrangement of iconOptions to not arranged
     set icon size of iconOptions to 128
     set text size of iconOptions to 13
-    set background picture of iconOptions to backgroundImage
+    set background picture of iconOptions to file backgroundImage
 
     set position of item "Crona.app" of containerWindow to {170, 235}
     set position of item "Applications" of containerWindow to {530, 235}
