@@ -14,8 +14,8 @@
           "position" : {
             "scale" : 0.7,
             "translation-in-points" : [
-              -159.0078125,
-              -173.9453125
+              -116.64477035601408,
+              -134.1417338581498
             ]
           }
         },
@@ -40,7 +40,7 @@
           "image-name" : "Crona C 4.svg",
           "name" : "Crona C 4",
           "position" : {
-            "scale" : 0.45,
+            "scale" : 0.4,
             "translation-in-points" : [
               0,
               0

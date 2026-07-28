@@ -7,12 +7,15 @@ struct BreakScreenRootView: View {
     let isPrimary: Bool
 
     private var service: BreakScreenService { appState.breakScreenService }
-    private var presentation: TimerPresentation {
-        TimerPresentation.from(service.snapshot)
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            content(at: timeline.date)
+        }
     }
 
-    var body: some View {
-        ZStack {
+    private func content(at now: Date) -> some View {
+        let presentation = TimerPresentation.from(service.snapshot, at: now)
+        return ZStack {
             BreakScreenBackgroundView(
                 preferences: service.currentPreferences,
                 screen: screen
@@ -35,18 +38,18 @@ struct BreakScreenRootView: View {
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
 
-                    Text("Ends at \(endDate.formatted(date: .omitted, time: .shortened))")
+                    Text("Ends at \(endDate(presentation: presentation, now: now).formatted(date: .omitted, time: .shortened))")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white.opacity(0.58))
                 }
 
-                progressBar
+                progressBar(presentation: presentation)
                     .frame(maxWidth: 460)
 
                 contextBlock
 
                 if isPrimary {
-                    actionArea
+                    actionArea(now: now)
                         .frame(maxWidth: 360)
                 }
 
@@ -63,11 +66,11 @@ struct BreakScreenRootView: View {
         service.segment ?? TimerPresentation.activeSegment(for: service.snapshot)
     }
 
-    private var endDate: Date {
-        Date().addingTimeInterval(TimeInterval(max(0, presentation.displaySeconds)))
+    private func endDate(presentation: TimerPresentation, now: Date) -> Date {
+        now.addingTimeInterval(TimeInterval(max(0, presentation.displaySeconds)))
     }
 
-    private var progressBar: some View {
+    private func progressBar(presentation: TimerPresentation) -> some View {
         GeometryReader { proxy in
             let progress = max(0, min(1, presentation.progressFraction ?? 0))
             ZStack(alignment: .leading) {
@@ -107,7 +110,7 @@ struct BreakScreenRootView: View {
     }
 
     @ViewBuilder
-    private var actionArea: some View {
+    private func actionArea(now: Date) -> some View {
         if service.phase == .recovery {
             VStack(spacing: 12) {
                 Text("Crona couldn’t continue the timer.")
@@ -130,14 +133,15 @@ struct BreakScreenRootView: View {
                     .buttonStyle(BreakScreenPrimaryButtonStyle())
                     .disabled(!service.canSkip)
             case .strict:
+                let remaining = service.strictDelayRemaining(at: now)
                 Button(
-                    service.strictDelayRemaining > 0
-                        ? "Skip in \(service.strictDelayRemaining)s"
+                    remaining > 0
+                        ? "Skip in \(remaining)s"
                         : "Skip Break",
                     action: service.skipBreak
                 )
                 .buttonStyle(BreakScreenPrimaryButtonStyle())
-                .disabled(!service.canSkip)
+                .disabled(!service.canSkip(at: now))
             case .hard:
                 Label("Your break ends automatically", systemImage: "lock.fill")
                     .font(.subheadline.weight(.medium))
@@ -214,6 +218,66 @@ struct BreakScreenBackgroundView: View {
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
+
+#if DEBUG
+struct DeveloperBreakScreenRootView: View {
+    @ObservedObject var appState: CompanionAppState
+    let screen: NSScreen
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            ZStack {
+                BreakScreenBackgroundView(
+                    preferences: appState.preferences.preferences,
+                    screen: screen
+                )
+
+                VStack(spacing: 28) {
+                    Spacer()
+
+                    Image(systemName: "cup.and.saucer.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    VStack(spacing: 10) {
+                        Text("Short Break")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.72))
+                        Text("05:00")
+                            .font(.system(size: 86, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                        Text("Ends at \(timeline.date.addingTimeInterval(300).formatted(date: .omitted, time: .shortened))")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.58))
+                    }
+
+                    Capsule()
+                        .fill(.white.opacity(0.46))
+                        .frame(width: 460, height: 5)
+
+                    VStack(spacing: 8) {
+                        Text("Developer preview")
+                            .font(.title3.weight(.semibold))
+                        Text("Crona • Focus")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.54))
+                    }
+
+                    Button("Dismiss Preview") {
+                        appState.dismissDeveloperPreviews()
+                    }
+                    .buttonStyle(BreakScreenSecondaryButtonStyle())
+
+                    Spacer()
+                }
+                .padding(48)
+                .foregroundStyle(.white)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+#endif
 
 private struct BreakScreenPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

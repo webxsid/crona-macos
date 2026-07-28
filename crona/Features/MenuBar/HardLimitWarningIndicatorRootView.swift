@@ -8,26 +8,15 @@ struct HardLimitWarningIndicatorRootView: View {
             let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
 
             ZStack {
-                shape
-                    .fill(.clear)
-                    .background(
-                        VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, emphasized: true)
-                            .clipShape(shape)
-                    )
-
-                shape
-                    .fill(Color.black.opacity(0.16))
-
-                shape
-                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
+                PopoverGlassBackground(cornerRadius: 20)
 
                 HStack(spacing: 10) {
                     Circle()
                         .fill(Color(nsColor: model.kind.tint))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 24, height: 24)
                         .overlay {
                             Image(systemName: model.kind.symbolName)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.black)
                         }
 
@@ -39,15 +28,18 @@ struct HardLimitWarningIndicatorRootView: View {
                     Spacer(minLength: 4)
 
                     Text(model.remainingText)
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
             }
-            .frame(width: 190)
+            .frame(width: 184)
             .clipShape(shape)
+            .opacity(appState.isHardLimitWarningIndicatorAnimatingIn ? 1 : 0.02)
+            .blur(radius: appState.isHardLimitWarningIndicatorAnimatingIn ? 0 : 16)
+            .animation(.easeOut(duration: 0.16), value: appState.isHardLimitWarningIndicatorAnimatingIn)
         }
     }
 }

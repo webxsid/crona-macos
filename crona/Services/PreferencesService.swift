@@ -60,6 +60,41 @@ enum BreakScreenGradientPreset: String, Codable, Equatable, CaseIterable, Identi
     var title: String { rawValue.capitalized }
 }
 
+enum CompanionPopupPosition: String, Codable, Equatable, CaseIterable, Identifiable {
+    case topLeft
+    case topCenter
+    case topRight
+    case bottomLeft
+    case bottomCenter
+    case bottomRight
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .topLeft: return "Top Left"
+        case .topCenter: return "Top Center"
+        case .topRight: return "Top Right"
+        case .bottomLeft: return "Bottom Left"
+        case .bottomCenter: return "Bottom Center"
+        case .bottomRight: return "Bottom Right"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        switch value {
+        case Self.topLeft.rawValue, "left": self = .topLeft
+        case Self.topCenter.rawValue, "top", "center": self = .topCenter
+        case Self.topRight.rawValue, "right": self = .topRight
+        case Self.bottomLeft.rawValue: self = .bottomLeft
+        case Self.bottomCenter.rawValue, "bottom": self = .bottomCenter
+        case Self.bottomRight.rawValue: self = .bottomRight
+        default: self = .topCenter
+        }
+    }
+}
+
 struct CompanionRGBAColor: Codable, Equatable {
     var red: Double
     var green: Double
@@ -114,16 +149,28 @@ enum MenuBarIdleTextMode: String, Codable, Equatable, CaseIterable, Identifiable
 
 enum MenuBarTimeFormat: String, Codable, Equatable, CaseIterable, Identifiable {
     case clock
-    case expanded
+    case adaptive
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .clock:
-            return "HH:MM:SS"
-        case .expanded:
-            return "HhMmSs"
+            return "Clock"
+        case .adaptive:
+            return "Adaptive"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        switch value {
+        case Self.clock.rawValue:
+            self = .clock
+        case Self.adaptive.rawValue, "expanded":
+            self = .adaptive
+        default:
+            self = .clock
         }
     }
 }
@@ -131,15 +178,22 @@ enum MenuBarTimeFormat: String, Codable, Equatable, CaseIterable, Identifiable {
 struct CompanionPreferences: Codable, Equatable {
     static let hardLimitWarningLeadTimeOptions = [10, 20, 30]
     static let breakScreenStrictDelayOptions = [5, 10, 15, 30, 60]
+    static let smartPauseIdleOptions = [30, 60, 120, 300, 600]
 
     var launchAtLogin = false
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
-    var menuBarShowsSeconds = true
+    var smartPauseEnabled = false
+    var smartPauseOnLock = true
+    var smartPauseOnDisplaySleep = true
+    var smartPauseOnInactivity = true
+    var smartPauseIdleSeconds = 120
     var showHardLimitActionPopups = true
     var showHardLimitWarningIndicator = true
     var hardLimitWarningLeadSeconds = 10
+    var showInactivityActionPopups = true
+    var inactivityPopupPosition: CompanionPopupPosition = .topCenter
     var breakScreenEnabled = false
     var breakScreenMode: BreakScreenMode = .easy
     var breakScreenStrictDelaySeconds = 15
@@ -162,6 +216,12 @@ struct CompanionPreferences: Codable, Equatable {
             abs($0 - value) < abs($1 - value)
         } ?? 15
     }
+
+    static func normalizedSmartPauseIdleSeconds(_ value: Int) -> Int {
+        smartPauseIdleOptions.min {
+            abs($0 - value) < abs($1 - value)
+        } ?? 120
+    }
 }
 
 extension CompanionPreferences {
@@ -170,10 +230,16 @@ extension CompanionPreferences {
         case menuBarDisplayMode
         case menuBarIdleTextMode
         case menuBarTimeFormat
-        case menuBarShowsSeconds
+        case smartPauseEnabled
+        case smartPauseOnLock
+        case smartPauseOnDisplaySleep
+        case smartPauseOnInactivity
+        case smartPauseIdleSeconds
         case showHardLimitActionPopups
         case showHardLimitWarningIndicator
         case hardLimitWarningLeadSeconds
+        case showInactivityActionPopups
+        case inactivityPopupPosition
         case breakScreenEnabled
         case breakScreenMode
         case breakScreenStrictDelaySeconds
@@ -198,9 +264,21 @@ extension CompanionPreferences {
         menuBarTimeFormat =
             try values.decodeIfPresent(MenuBarTimeFormat.self, forKey: .menuBarTimeFormat)
             ?? .clock
-        menuBarShowsSeconds =
-            try values.decodeIfPresent(Bool.self, forKey: .menuBarShowsSeconds)
+        smartPauseEnabled =
+            try values.decodeIfPresent(Bool.self, forKey: .smartPauseEnabled)
+            ?? false
+        smartPauseOnLock =
+            try values.decodeIfPresent(Bool.self, forKey: .smartPauseOnLock)
             ?? true
+        smartPauseOnDisplaySleep =
+            try values.decodeIfPresent(Bool.self, forKey: .smartPauseOnDisplaySleep)
+            ?? true
+        smartPauseOnInactivity =
+            try values.decodeIfPresent(Bool.self, forKey: .smartPauseOnInactivity)
+            ?? true
+        smartPauseIdleSeconds =
+            try values.decodeIfPresent(Int.self, forKey: .smartPauseIdleSeconds)
+            ?? 120
         showHardLimitActionPopups =
             try values.decodeIfPresent(Bool.self, forKey: .showHardLimitActionPopups)
             ?? true
@@ -210,6 +288,12 @@ extension CompanionPreferences {
         hardLimitWarningLeadSeconds =
             try values.decodeIfPresent(Int.self, forKey: .hardLimitWarningLeadSeconds)
             ?? 10
+        showInactivityActionPopups =
+            try values.decodeIfPresent(Bool.self, forKey: .showInactivityActionPopups)
+            ?? true
+        inactivityPopupPosition =
+            try values.decodeIfPresent(CompanionPopupPosition.self, forKey: .inactivityPopupPosition)
+            ?? .topCenter
         breakScreenEnabled =
             try values.decodeIfPresent(Bool.self, forKey: .breakScreenEnabled)
             ?? false
@@ -241,10 +325,16 @@ extension CompanionPreferences {
         try values.encode(menuBarDisplayMode, forKey: .menuBarDisplayMode)
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)
-        try values.encode(menuBarShowsSeconds, forKey: .menuBarShowsSeconds)
+        try values.encode(smartPauseEnabled, forKey: .smartPauseEnabled)
+        try values.encode(smartPauseOnLock, forKey: .smartPauseOnLock)
+        try values.encode(smartPauseOnDisplaySleep, forKey: .smartPauseOnDisplaySleep)
+        try values.encode(smartPauseOnInactivity, forKey: .smartPauseOnInactivity)
+        try values.encode(smartPauseIdleSeconds, forKey: .smartPauseIdleSeconds)
         try values.encode(showHardLimitActionPopups, forKey: .showHardLimitActionPopups)
         try values.encode(showHardLimitWarningIndicator, forKey: .showHardLimitWarningIndicator)
         try values.encode(hardLimitWarningLeadSeconds, forKey: .hardLimitWarningLeadSeconds)
+        try values.encode(showInactivityActionPopups, forKey: .showInactivityActionPopups)
+        try values.encode(inactivityPopupPosition, forKey: .inactivityPopupPosition)
         try values.encode(breakScreenEnabled, forKey: .breakScreenEnabled)
         try values.encode(breakScreenMode, forKey: .breakScreenMode)
         try values.encode(breakScreenStrictDelaySeconds, forKey: .breakScreenStrictDelaySeconds)
@@ -281,6 +371,10 @@ final class PreferencesService: ObservableObject {
             normalized.breakScreenStrictDelaySeconds =
                 CompanionPreferences.normalizedBreakScreenStrictDelaySeconds(
                     decoded.breakScreenStrictDelaySeconds
+                )
+            normalized.smartPauseIdleSeconds =
+                CompanionPreferences.normalizedSmartPauseIdleSeconds(
+                    decoded.smartPauseIdleSeconds
                 )
             self.preferences = normalized
         } else {

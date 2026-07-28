@@ -84,34 +84,48 @@ final class BreakScreenService: ObservableObject {
     var currentPreferences: CompanionPreferences { preferences.preferences }
 
     var canSkip: Bool {
+        canSkip(at: Date())
+    }
+
+    func canSkip(at now: Date) -> Bool {
         switch currentPreferences.breakScreenMode {
         case .easy:
             return phase == .active
         case .strict:
-            return phase == .active && strictDelayRemaining == 0
+            return phase == .active && strictDelayRemaining(at: now) == 0
         case .hard:
             return false
         }
     }
 
     var strictDelayRemaining: Int {
+        strictDelayRemaining(at: Date())
+    }
+
+    func strictDelayRemaining(at now: Date) -> Int {
         guard currentPreferences.breakScreenMode == .strict else { return 0 }
         return Self.strictDelayRemaining(
             snapshot: snapshot,
             segment: segment,
-            delaySeconds: currentPreferences.breakScreenStrictDelaySeconds
+            delaySeconds: currentPreferences.breakScreenStrictDelaySeconds,
+            now: now
         )
     }
 
     static func strictDelayRemaining(
         snapshot: TimerSnapshot,
         segment: TimerSegmentKind?,
-        delaySeconds: Int
+        delaySeconds: Int,
+        now: Date = Date()
     ) -> Int {
         let duration = segment.map {
             TimerPresentation.segmentDuration(for: $0, snapshot: snapshot)
         } ?? 0
-        let elapsed = max(0, duration - snapshot.displayElapsedSeconds)
+        let remaining = TimerPresentation.projectedDisplaySeconds(
+            for: snapshot,
+            at: now
+        )
+        let elapsed = max(0, duration - remaining)
         return max(0, delaySeconds - elapsed)
     }
 

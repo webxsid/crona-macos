@@ -11,18 +11,67 @@ enum NativeAlertDeliveryState: String {
     case failed
 }
 
+enum CompanionAlertRouting {
+    static let timerCompletionKinds: Set<String> = [
+        "timer.work_complete",
+        "timer.break_complete"
+    ]
+
+    static let reminderKinds: Set<String> = [
+        "checkin.reminder",
+        "daily_plan.reminder"
+    ]
+
+    static let checkInReminderCategory = "crona.reminder.check-in"
+    static let dailyPlanReminderCategory = "crona.reminder.daily-plan"
+    static let exportCompletedCategory = "crona.export.completed"
+
+    static func isTimerCompletion(kind: String) -> Bool {
+        timerCompletionKinds.contains(kind)
+    }
+
+    static func isReminder(kind: String) -> Bool {
+        reminderKinds.contains(kind)
+    }
+
+    static func isExportCompleted(kind: String) -> Bool {
+        kind == "export.completed"
+    }
+
+    static func shouldOpenTUI(kind: String) -> Bool {
+        isReminder(kind: kind)
+    }
+
+    static func reminderCategoryIdentifier(for kind: String) -> String {
+        switch kind {
+        case "daily_plan.reminder":
+            return dailyPlanReminderCategory
+        default:
+            return checkInReminderCategory
+        }
+    }
+}
+
 @MainActor
 final class NotificationService: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     private enum Category {
         static let open = "crona.open"
         static let startBreak = "crona.timer.start-break"
         static let resumeFocus = "crona.timer.resume-focus"
+        static let checkInReminder = CompanionAlertRouting.checkInReminderCategory
+        static let dailyPlanReminder = CompanionAlertRouting.dailyPlanReminderCategory
+        static let exportCompleted = CompanionAlertRouting.exportCompletedCategory
     }
 
     private enum Action {
         static let open = "crona.action.open"
         static let startBreak = "crona.action.start-break"
         static let resumeFocus = "crona.action.resume-focus"
+        static let openCheckIn = "crona.action.open-check-in"
+        static let openDailyPlan = "crona.action.open-daily-plan"
+        static let openExport = "crona.action.export.open"
+        static let revealExport = "crona.action.export.reveal"
+        static let dismiss = "crona.action.dismiss"
     }
 
     private let center: UNUserNotificationCenter
@@ -34,7 +83,9 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private var appActivationObserver: NSObjectProtocol?
     private var activeSound: NSSound?
     private var onOpenCrona: (() -> Void)?
+    private var onOpenTUI: (() -> Void)?
     private var onAdvanceTimer: ((String) -> Void)?
+    private var onFocusInactivity: ((CronaAlertDelivery) async -> Bool)?
     private var shouldSilenceAlert: ((String) -> Bool)?
 
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
@@ -52,12 +103,16 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     func configure(
         daemonConnection: DaemonConnectionService,
         onOpenCrona: @escaping () -> Void,
+        onOpenTUI: @escaping () -> Void,
         onAdvanceTimer: @escaping (String) -> Void,
+        onFocusInactivity: @escaping (CronaAlertDelivery) async -> Bool,
         shouldSilenceAlert: @escaping (String) -> Bool
     ) {
         self.daemonConnection = daemonConnection
         self.onOpenCrona = onOpenCrona
+        self.onOpenTUI = onOpenTUI
         self.onAdvanceTimer = onAdvanceTimer
+        self.onFocusInactivity = onFocusInactivity
         self.shouldSilenceAlert = shouldSilenceAlert
     }
 
@@ -197,6 +252,36 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         let silence = shouldSilenceAlert?(delivery.alert.kind) == true
         let notificationCenterCanPlaySound = soundSetting == .enabled
 
+        if CompanionAlertRouting.isTimerCompletion(kind: delivery.alert.kind) {
+            if delivery.deliverNotification {
+                onOpenCrona?()
+            }
+            if delivery.playSound && !silence {
+                soundAccepted = playSound(for: delivery.alert.soundPreset)
+            } else if delivery.playSound && silence {
+                soundAccepted = true
+            }
+            notificationAccepted = true
+            await acknowledge(
+                delivery: delivery,
+                client: client,
+                notificationAccepted: notificationAccepted,
+                soundAccepted: soundAccepted
+            )
+            return
+        }
+
+        if delivery.alert.kind == "focus.inactivity",
+            await onFocusInactivity?(delivery) == true
+        {
+            notificationAccepted = true
+            if delivery.playSound {
+                soundAccepted = playSound(for: delivery.alert.soundPreset)
+            }
+            await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted)
+            return
+        }
+
         if delivery.deliverNotification {
             do {
                 let content = notificationContent(
@@ -227,6 +312,15 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             soundAccepted = playSound(for: delivery.alert.soundPreset)
         }
 
+        await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted)
+    }
+
+    private func acknowledge(
+        delivery: CronaAlertDelivery,
+        client: CronaDaemonClient,
+        notificationAccepted: Bool,
+        soundAccepted: Bool
+    ) async {
         do {
             _ = try await client.acknowledgeAlertDelivery(
                 CronaAlertDeliveryAck(
@@ -256,6 +350,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             "kind": delivery.alert.kind,
             "expectedReadySegmentType":
                 delivery.actions?.first?.expectedReadySegmentType ?? "",
+            "actionPath": delivery.actions?.first?.path ?? "",
             "silenceForeground": silencePresentation
         ]
         if delivery.playSound && attachSound {
@@ -271,6 +366,18 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     }
 
     private func categoryIdentifier(for delivery: CronaAlertDelivery) -> String {
+        if CompanionAlertRouting.isReminder(kind: delivery.alert.kind) {
+            return CompanionAlertRouting.reminderCategoryIdentifier(for: delivery.alert.kind)
+        }
+        if CompanionAlertRouting.isExportCompleted(kind: delivery.alert.kind) {
+            let hasFileAction = delivery.actions?.contains(where: { action in
+                let path = (action.path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return !path.isEmpty
+            }) == true
+            if hasFileAction {
+                return Category.exportCompleted
+            }
+        }
         guard let action = delivery.actions?.first else { return Category.open }
         switch action.expectedReadySegmentType {
         case "short_break", "long_break":
@@ -292,6 +399,27 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             identifier: Action.resumeFocus,
             title: "Resume Focus"
         )
+        let openCheckIn = UNNotificationAction(
+            identifier: Action.openCheckIn,
+            title: "Open Check-In"
+        )
+        let openDailyPlan = UNNotificationAction(
+            identifier: Action.openDailyPlan,
+            title: "Open Daily Plan"
+        )
+        let openExport = UNNotificationAction(
+            identifier: Action.openExport,
+            title: "Open File"
+        )
+        let revealExport = UNNotificationAction(
+            identifier: Action.revealExport,
+            title: "Reveal in Finder"
+        )
+        let dismiss = UNNotificationAction(
+            identifier: Action.dismiss,
+            title: "Dismiss",
+            options: [.destructive]
+        )
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: Category.open,
@@ -307,6 +435,21 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                 identifier: Category.resumeFocus,
                 actions: [resumeFocus, open],
                 intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Category.checkInReminder,
+                actions: [openCheckIn, dismiss],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Category.dailyPlanReminder,
+                actions: [openDailyPlan, dismiss],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Category.exportCompleted,
+                actions: [openExport, revealExport, dismiss],
+                intentIdentifiers: []
             )
         ])
     }
@@ -314,6 +457,9 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private func threadIdentifier(for kind: String) -> String {
         if kind.hasPrefix("timer.") || kind.hasPrefix("focus.") {
             return "focus"
+        }
+        if kind.hasPrefix("export.") {
+            return "exports"
         }
         if kind.hasPrefix("update.") { return "updates" }
         if kind.contains("reminder") { return "reminders" }
@@ -371,16 +517,72 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         let expected =
             response.notification.request.content.userInfo["expectedReadySegmentType"]
             as? String
+        let actionPath = response.notification.request.content.userInfo["actionPath"] as? String
+        let kind = response.notification.request.content.userInfo["kind"] as? String ?? ""
         await MainActor.run { [weak self] in
             guard let self else { return }
+            if CompanionAlertRouting.isExportCompleted(kind: kind) {
+                switch response.actionIdentifier {
+                case Action.openExport, UNNotificationDefaultActionIdentifier:
+                    if let url = exportActionURL(for: actionPath) {
+                        openExportFile(url)
+                    } else {
+                        onOpenCrona?()
+                    }
+                case Action.revealExport:
+                    if let url = exportActionURL(for: actionPath) {
+                        revealExportFile(url)
+                    } else {
+                        onOpenCrona?()
+                    }
+                case Action.dismiss, UNNotificationDismissActionIdentifier:
+                    break
+                default:
+                    if let url = exportActionURL(for: actionPath) {
+                        openExportFile(url)
+                    } else {
+                        onOpenCrona?()
+                    }
+                }
+                return
+            }
             switch response.actionIdentifier {
             case Action.startBreak, Action.resumeFocus:
                 if let expected, !expected.isEmpty {
                     onAdvanceTimer?(expected)
                 }
+            case Action.openDailyPlan:
+                onOpenTUI?()
+            case Action.openCheckIn, Action.open, UNNotificationDefaultActionIdentifier:
+                if CompanionAlertRouting.shouldOpenTUI(kind: kind) {
+                    onOpenTUI?()
+                } else {
+                    onOpenCrona?()
+                }
+            case Action.dismiss, UNNotificationDismissActionIdentifier:
+                break
             default:
-                onOpenCrona?()
+                if CompanionAlertRouting.shouldOpenTUI(kind: kind) {
+                    onOpenTUI?()
+                } else {
+                    onOpenCrona?()
+                }
             }
         }
+    }
+
+    private func exportActionURL(for rawPath: String?) -> URL? {
+        guard let rawPath else { return nil }
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    private func openExportFile(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
+    private func revealExportFile(_ url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }

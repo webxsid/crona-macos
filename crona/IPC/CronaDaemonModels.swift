@@ -65,6 +65,7 @@ nonisolated struct CronaAlertDeliveryAction: Codable, Equatable {
     let id: String
     let title: String
     let expectedReadySegmentType: String?
+    let path: String?
 }
 
 nonisolated struct CronaAlertRequest: Codable, Equatable {

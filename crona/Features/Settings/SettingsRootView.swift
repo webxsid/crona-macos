@@ -37,7 +37,7 @@ struct SettingsRootView: View {
 
                     SettingsSidebarSection(
                         title: "Focus",
-                        items: [.breakScreen, .notifications, .stats],
+                        items: [.smartPause, .breakScreen, .notifications],
                         selected: appState.selectedSettingsDestination,
                         onSelect: appState.setSelectedSettingsDestination
                     )
@@ -55,6 +55,15 @@ struct SettingsRootView: View {
                         selected: appState.selectedSettingsDestination,
                         onSelect: appState.setSelectedSettingsDestination
                     )
+
+#if DEBUG
+                    SettingsSidebarSection(
+                        title: "Developer",
+                        items: [.developer],
+                        selected: appState.selectedSettingsDestination,
+                        onSelect: appState.setSelectedSettingsDestination
+                    )
+#endif
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, SettingsChromeMetrics.sidebarTrafficLightClearance)
@@ -84,6 +93,10 @@ struct SettingsRootView: View {
                         SettingsPane(subtitle: "Keep the right amount of focus in sight.") {
                             MenuBarSettingsView(appState: appState)
                         }
+                    case .smartPause:
+                        SettingsPane(subtitle: "Keep stopwatch time aligned with the time you are actually at your Mac.") {
+                            SmartPauseSettingsView(appState: appState)
+                        }
                     case .breakScreen:
                         SettingsPane(subtitle: "Step away when a pomodoro break begins.") {
                             BreakScreenSettingsView(appState: appState)
@@ -91,10 +104,6 @@ struct SettingsRootView: View {
                     case .notifications:
                         SettingsPane(subtitle: "Decide when Crona should get your attention.") {
                             NotificationSettingsView(appState: appState)
-                        }
-                    case .stats:
-                        SettingsPane(subtitle: "A clear view of the focus time Crona has recorded.") {
-                            StatsSettingsView(appState: appState)
                         }
                     case .runtime:
                         SettingsPane(subtitle: "See where Crona is running and reconnect when needed.") {
@@ -112,6 +121,12 @@ struct SettingsRootView: View {
                         SettingsPane(subtitle: "Crona for macOS, at a glance.") {
                             AboutSettingsView(appState: appState)
                         }
+#if DEBUG
+                    case .developer:
+                        SettingsPane(subtitle: "Preview companion presenters without changing the daemon or starting a session.") {
+                            DeveloperSettingsView(appState: appState)
+                        }
+#endif
                     }
                 }
                 .padding(.horizontal, 22)
@@ -287,6 +302,13 @@ private struct GeneralSettingsView: View {
 private struct MenuBarSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
+    private var previewIconState: MenuBarIconState {
+        MenuBarIconState.resolve(
+            connectionState: appState.popoverModel.connectionState,
+            timerSnapshot: appState.popoverModel.timerSnapshot
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             SettingsCard("Preview") {
@@ -298,10 +320,12 @@ private struct MenuBarSettingsView: View {
                     HStack(spacing: 8) {
                         Spacer()
                         if appState.preferences.preferences.menuBarDisplayMode.showsIcon {
-                            Image(nsImage: CronaAppIcon.image)
-                                .resizable()
-                                .interpolation(.high)
-                                .frame(width: 18, height: 18)
+                            if let image = MenuBarIconProvider.image(for: previewIconState) {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .interpolation(.high)
+                                    .frame(width: 18, height: 18)
+                            }
                         }
                         if appState.preferences.preferences.menuBarDisplayMode.showsText {
                             Text(previewStatus)
@@ -347,25 +371,10 @@ private struct MenuBarSettingsView: View {
                         }
                     }
 
-                    SettingsPickerRow(
-                        title: "Timer Style",
-                        subtitle: "Choose how active session time is written.",
+                    TimerDisplayStyleRow(
                         selection: Binding(
                             get: { appState.preferences.preferences.menuBarTimeFormat },
                             set: { appState.preferences.preferences.menuBarTimeFormat = $0 }
-                        )
-                    ) {
-                        ForEach(MenuBarTimeFormat.allCases) { format in
-                            Text(format.title).tag(format)
-                        }
-                    }
-
-                    SettingsToggleRow(
-                        title: "Show Seconds",
-                        subtitle: "Keep the active timer precise down to the second.",
-                        isOn: Binding(
-                            get: { appState.preferences.preferences.menuBarShowsSeconds },
-                            set: { appState.preferences.preferences.menuBarShowsSeconds = $0 }
                         )
                     )
                 }
@@ -386,6 +395,89 @@ private struct MenuBarSettingsView: View {
             timerSnapshot: appState.timerService.snapshot,
             todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds
         )
+    }
+}
+
+private struct SmartPauseSettingsView: View {
+    @ObservedObject var appState: CompanionAppState
+
+    private var preferences: CompanionPreferences {
+        appState.preferences.preferences
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SettingsCard("Smart Pause") {
+                SettingsToggleRow(
+                    title: "Pause Automatically",
+                    subtitle: "Pause a running stopwatch when you step away from your Mac.",
+                    isOn: binding(\.smartPauseEnabled)
+                )
+            }
+
+            SettingsCard("When You Step Away") {
+                Group {
+                    SettingsToggleRow(
+                        title: "Mac Is Locked",
+                        subtitle: "Pause immediately when your user session moves to the Lock Screen.",
+                        isOn: binding(\.smartPauseOnLock)
+                    )
+
+                    SettingsToggleRow(
+                        title: "Display Goes to Sleep",
+                        subtitle: "Pause immediately when your Mac turns its displays off.",
+                        isOn: binding(\.smartPauseOnDisplaySleep)
+                    )
+
+                    SettingsToggleRow(
+                        title: "No Keyboard or Mouse Input",
+                        subtitle: "Pause only after there has been no input for the selected time.",
+                        isOn: binding(\.smartPauseOnInactivity)
+                    )
+
+                    if preferences.smartPauseOnInactivity {
+                        SettingsPickerRow(
+                            title: "No-Input Delay",
+                            subtitle: "This delay applies only to keyboard and mouse inactivity.",
+                            selection: binding(\.smartPauseIdleSeconds)
+                        ) {
+                            ForEach(CompanionPreferences.smartPauseIdleOptions, id: \.self) { seconds in
+                                Text(Self.durationTitle(seconds)).tag(seconds)
+                            }
+                        }
+                    }
+                }
+                .disabled(!preferences.smartPauseEnabled)
+                .opacity(preferences.smartPauseEnabled ? 1 : 0.55)
+            }
+
+            SettingsCard("When You Return") {
+                SettingsValueRow(
+                    title: "Resume Automatically",
+                    subtitle: "Crona resumes only when it initiated the pause and every pause condition has cleared.",
+                    value: "On"
+                )
+            }
+
+            settingsFootnote(
+                "Smart Pause applies only to Stopwatch sessions. Pomodoro and countdown timers keep their existing behavior."
+            )
+        }
+    }
+
+    private func binding<Value>(_ keyPath: WritableKeyPath<CompanionPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { appState.preferences.preferences[keyPath: keyPath] },
+            set: { appState.preferences.preferences[keyPath: keyPath] = $0 }
+        )
+    }
+
+    private static func durationTitle(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "\(seconds) seconds"
+        }
+        let minutes = seconds / 60
+        return "\(minutes) \(minutes == 1 ? "minute" : "minutes")"
     }
 }
 
@@ -410,7 +502,7 @@ private struct BreakScreenSettingsView: View {
             }
 
             SettingsCard("Enforcement") {
-                HStack(spacing: 10) {
+                SettingsActionGroup {
                     ForEach(BreakScreenMode.allCases) { mode in
                         BreakScreenModeCard(
                             mode: mode,
@@ -607,7 +699,7 @@ private struct NotificationSettingsView: View {
                     value: deliveryStatusText
                 )
 
-                HStack(spacing: 10) {
+                SettingsActionGroup {
                     SettingsActionButton("Allow Notifications", systemImage: "bell.badge.fill") {
                         appState.requestNotificationAuthorization()
                     }
@@ -753,6 +845,30 @@ private struct NotificationSettingsView: View {
                     }
                 }
                 .disabled(settings == nil || settings?.inactivityAlertsEnabled == false)
+
+                SettingsToggleRow(
+                    title: "Show Action Popup",
+                    subtitle: "Open a small desktop prompt when that reminder fires.",
+                    isOn: Binding(
+                        get: { appState.preferences.preferences.showInactivityActionPopups },
+                        set: {
+                            appState.preferences.preferences.showInactivityActionPopups = $0
+                        }
+                    )
+                )
+                .disabled(settings == nil || settings?.inactivityAlertsEnabled == false)
+
+                InactivityPopupPositionRow(
+                    selection: Binding(
+                        get: { appState.preferences.preferences.inactivityPopupPosition },
+                        set: { appState.preferences.preferences.inactivityPopupPosition = $0 }
+                    )
+                )
+                .disabled(
+                    settings == nil
+                        || settings?.inactivityAlertsEnabled == false
+                        || !appState.preferences.preferences.showInactivityActionPopups
+                )
             }
 
             SettingsCard("Focus Boundaries") {
@@ -829,63 +945,51 @@ private struct NotificationSettingsView: View {
     }
 }
 
-private struct StatsSettingsView: View {
+#if DEBUG
+private struct DeveloperSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        let snapshot = appState.popoverStatsService.snapshot
-
         VStack(alignment: .leading, spacing: 18) {
-            SettingsCard("Focus Score") {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(snapshot.date.isEmpty ? "Unavailable" : snapshot.date)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(snapshot.focusScore.map { "\($0.score)" } ?? "—")
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
-                        Text(snapshot.focusScore?.level.capitalized ?? "Unavailable")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-
-                Text(snapshot.scoreMessage)
-                    .font(.footnote)
+            SettingsCard("Presentation Lab") {
+                Text("These previews use local fixtures only. They never start, pause, extend, or end a daemon session.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-            }
+                    .padding(.vertical, 10)
 
-            if let metrics = snapshot.todayMetrics, let score = snapshot.focusScore {
-                SettingsCard("Session Summary") {
-                    SettingsValueRow(
-                        title: "Focus Time",
-                        subtitle: "Time spent in focused sessions.",
-                        value: MenuBarTextFormatter.formatElapsed(seconds: metrics.workedSeconds, format: .expanded, showsSeconds: false)
-                    )
-                    SettingsValueRow(
-                        title: "Break Time",
-                        subtitle: "Time Crona recorded between focus blocks.",
-                        value: MenuBarTextFormatter.formatElapsed(seconds: metrics.restSeconds, format: .expanded, showsSeconds: false)
-                    )
-                    SettingsValueRow(
-                        title: "Sessions",
-                        subtitle: "Focus sessions completed on this day.",
-                        value: "\(metrics.sessionCount)"
-                    )
-                    SettingsValueRow(
-                        title: "Target",
-                        subtitle: "The focus goal behind this score.",
-                        value: MenuBarTextFormatter.formatElapsed(seconds: score.targetWorkedSeconds, format: .expanded, showsSeconds: false)
-                    )
+                SettingsActionGroup {
+                    SettingsActionButton("Hard Limit Flow", systemImage: "hourglass.circle") {
+                        appState.showDeveloperHardLimitPreview()
+                    }
+                    SettingsActionButton("Inactivity Prompt", systemImage: "timer.circle", prominent: false) {
+                        appState.showDeveloperInactivityPreview()
+                    }
+                }
+
+                SettingsActionGroup {
+                    SettingsActionButton("Warning Indicator", systemImage: "exclamationmark.circle", prominent: false) {
+                        appState.showDeveloperWarningPreview()
+                    }
+                    SettingsActionButton("Focus Resumed", systemImage: "play.circle", prominent: false) {
+                        appState.showDeveloperSmartPauseResumePreview()
+                    }
+                    SettingsActionButton("Break Screen", systemImage: "moon.stars", prominent: false) {
+                        appState.showDeveloperBreakScreenPreview()
+                    }
                 }
             }
-        }
-        .onAppear {
-            Task { await appState.popoverStatsService.refresh() }
+
+            SettingsCard("Cleanup") {
+                SettingsActionGroup {
+                    SettingsActionButton("Dismiss All Previews", systemImage: "xmark.circle", prominent: false) {
+                        appState.dismissDeveloperPreviews()
+                    }
+                }
+            }
         }
     }
 }
+#endif
 
 private struct RuntimeSettingsView: View {
     @ObservedObject var appState: CompanionAppState
@@ -908,8 +1012,10 @@ private struct RuntimeSettingsView: View {
                 value: appState.daemonConnection.kernelInfo?.endpoint ?? appState.kernelDiscovery.loadedRuntime.resolvedDiscovery?.endpoint ?? "Unavailable"
             )
 
-            SettingsActionButton("Reconnect", systemImage: "arrow.clockwise") {
-                appState.manualReconnect()
+            SettingsActionGroup {
+                SettingsActionButton("Reconnect", systemImage: "arrow.clockwise") {
+                    appState.manualReconnect()
+                }
             }
         }
     }
@@ -954,7 +1060,7 @@ private struct DiagnosticsSettingsView: View {
             }
 
             SettingsCard("Actions") {
-                HStack(spacing: 12) {
+                SettingsActionGroup {
                     SettingsActionButton("Copy Diagnostics", systemImage: "doc.on.doc", prominent: false) {
                         appState.diagnosticsService.copyToPasteboard()
                     }
@@ -1046,7 +1152,7 @@ private struct UpdatesSettingsView: View {
             }
 
             SettingsCard("Check Now") {
-                HStack(spacing: 12) {
+                SettingsActionGroup {
                     SettingsActionButton(
                         service.hasAvailableUpdate ? "View Update" : "Check for Updates",
                         systemImage: service.hasAvailableUpdate
@@ -1058,10 +1164,7 @@ private struct UpdatesSettingsView: View {
                     .disabled(!service.canCheckForUpdates)
 
                     if let releaseNotesURL = service.snapshot.releaseNotesURL {
-                        Link(destination: releaseNotesURL) {
-                            Label("Release Notes", systemImage: "doc.text")
-                                .font(.subheadline.weight(.semibold))
-                        }
+                        SettingsActionLink(title: "Release Notes", systemImage: "doc.text", destination: releaseNotesURL)
                     }
                 }
 
@@ -1132,6 +1235,7 @@ private struct AboutSettingsView: View {
                     value: appState.daemonConnection.kernelInfo?.runningChannel ?? "Unknown"
                 )
             }
+
         }
     }
 }
@@ -1165,6 +1269,89 @@ private struct SettingsCard<Content: View>: View {
                     )
             )
         }
+    }
+}
+
+private struct TimerDisplayStyleRow: View {
+    let selection: Binding<MenuBarTimeFormat>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Timer Display")
+                    .font(.subheadline.weight(.medium))
+                Text("Choose how an active timer fits into the menu bar.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
+            HStack(spacing: 10) {
+                styleButton(
+                    .clock,
+                    detail: "A precise digital clock.",
+                    preview: "04:07  ·  1:04:07"
+                )
+                styleButton(
+                    .adaptive,
+                    detail: "Compact until the final minute.",
+                    preview: "1h4m  ·  4m  ·  42s"
+                )
+            }
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.3)
+        }
+    }
+
+    private func styleButton(
+        _ style: MenuBarTimeFormat,
+        detail: String,
+        preview: String
+    ) -> some View {
+        Button {
+            selection.wrappedValue = style
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(style.title)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: selection.wrappedValue == style
+                        ? "checkmark.circle.fill"
+                        : "circle")
+                        .foregroundStyle(selection.wrappedValue == style ? Color.accentColor : .secondary)
+                }
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(preview)
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(selection.wrappedValue == style
+                        ? Color.accentColor.opacity(0.12)
+                        : Color.primary.opacity(0.045))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(
+                                selection.wrappedValue == style
+                                    ? Color.accentColor.opacity(0.55)
+                                    : Color.primary.opacity(0.07),
+                                lineWidth: 0.8
+                            )
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(style.title) timer display")
+        .accessibilityAddTraits(selection.wrappedValue == style ? .isSelected : [])
     }
 }
 
@@ -1228,6 +1415,75 @@ private struct SettingsPickerRow<SelectionValue: Hashable, Content: View>: View 
     }
 }
 
+private struct InactivityPopupPositionRow: View {
+    let selection: Binding<CompanionPopupPosition>
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Popup Position")
+                    .font(.subheadline.weight(.medium))
+                Text("Choose where the reminder appears on screen.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 16)
+            placementGrid
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.3)
+        }
+    }
+
+    private var placementGrid: some View {
+        VStack(spacing: 26) {
+            positionRow([.topLeft, .topCenter, .topRight])
+            positionRow([.bottomLeft, .bottomCenter, .bottomRight])
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 156, height: 82)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.75)
+                )
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Inactivity popup position")
+    }
+
+    private func positionRow(_ positions: [CompanionPopupPosition]) -> some View {
+        HStack(spacing: 20) {
+            ForEach(positions) { position in
+                Button {
+                    selection.wrappedValue = position
+                } label: {
+                    Circle()
+                        .fill(selection.wrappedValue == position ? Color.accentColor : Color.secondary.opacity(0.5))
+                        .frame(width: 9, height: 9)
+                        .overlay {
+                            if selection.wrappedValue == position {
+                                Circle()
+                                    .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 4)
+                                    .scaleEffect(1.7)
+                            }
+                        }
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(position.title)
+                .accessibilityAddTraits(selection.wrappedValue == position ? .isSelected : [])
+            }
+        }
+    }
+}
+
 private struct SettingsValueRow: View {
     let title: String
     let subtitle: String
@@ -1279,22 +1535,59 @@ private struct SettingsActionButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .frame(minHeight: 32)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 38)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(prominent ? Color.accentColor : Color.primary.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(prominent ? Color.primary.opacity(0.16) : Color.primary.opacity(0.075))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    prominent ? Color.white.opacity(0.16) : Color.primary.opacity(0.09),
+                                    prominent ? Color.primary.opacity(0.2) : Color.primary.opacity(0.11),
                                     lineWidth: 0.75
                                 )
                         )
                 )
-                .foregroundStyle(prominent ? Color.white : Color.primary)
+                .foregroundStyle(Color.primary)
         }
+        .buttonStyle(SettingsPressButtonStyle())
+    }
+}
+
+private struct SettingsActionGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 10) {
+            content
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct SettingsActionLink: View {
+    let title: String
+    let systemImage: String
+    let destination: URL
+
+    var body: some View {
+        Link(destination: destination) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 38)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.075))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.11), lineWidth: 0.75)
+                        )
+                )
+        }
+        .foregroundStyle(Color.primary)
         .buttonStyle(SettingsPressButtonStyle())
     }
 }
@@ -1388,13 +1681,16 @@ private extension SettingsDestination {
         switch self {
         case .general: return "General"
         case .menuBar: return "Menu Bar"
+        case .smartPause: return "Smart Pause"
         case .breakScreen: return "Break Screen"
         case .notifications: return "Notifications"
-        case .stats: return "Stats"
         case .runtime: return "Runtime"
         case .diagnostics: return "Diagnostics"
         case .updates: return "Updates"
         case .about: return "About"
+#if DEBUG
+        case .developer: return "Dev"
+#endif
         }
     }
 
@@ -1402,13 +1698,16 @@ private extension SettingsDestination {
         switch self {
         case .general: return "gearshape.fill"
         case .menuBar: return "menubar.rectangle"
+        case .smartPause: return "pause.circle.fill"
         case .breakScreen: return "moon.stars.fill"
         case .notifications: return "bell.fill"
-        case .stats: return "chart.line.uptrend.xyaxis"
         case .runtime: return "bolt.horizontal.circle.fill"
         case .diagnostics: return "stethoscope"
         case .updates: return "arrow.triangle.2.circlepath.circle.fill"
         case .about: return "info.circle.fill"
+#if DEBUG
+        case .developer: return "hammer.fill"
+#endif
         }
     }
 }

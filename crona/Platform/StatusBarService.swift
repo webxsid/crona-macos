@@ -1,5 +1,32 @@
 import AppKit
+import Combine
+import OSLog
 import SwiftUI
+
+@MainActor
+final class PopupDisplayClock: ObservableObject {
+    @Published private(set) var now = Date()
+    private var timer: Timer?
+    var isRunning: Bool { timer != nil }
+
+    func start() {
+        guard timer == nil else { return }
+        now = Date()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.now = Date()
+            }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
 
 enum StatusPopupSizing {
     static let minimumHeight: CGFloat = 180
@@ -7,6 +34,64 @@ enum StatusPopupSizing {
 
     static func resolvedHeight(for measuredHeight: CGFloat) -> CGFloat {
         min(maximumHeight, max(minimumHeight, ceil(measuredHeight)))
+    }
+}
+
+struct StatusPopupLayoutKey: Equatable {
+    let connectionState: CompanionConnectionState
+    let selectedTab: PopoverTab
+    let hasActiveSession: Bool
+    let hasSelectedIssue: Bool
+    let hasContext: Bool
+    let hasUpcomingSegment: Bool
+    let dailyIssueCount: Int
+    let habitsItemCount: Int
+    let habitsIsLoading: Bool
+    let habitsHasError: Bool
+    let habitActionInFlightID: Int64?
+    let statsDate: String
+    let statsIsLoading: Bool
+    let statsHasError: Bool
+    let statsHasScore: Bool
+    let modalKind: PopoverModalKind?
+    let showsUpdate: Bool
+
+    init(
+        connectionState: CompanionConnectionState,
+        selectedTab: PopoverTab,
+        hasActiveSession: Bool,
+        hasSelectedIssue: Bool,
+        hasContext: Bool,
+        hasUpcomingSegment: Bool,
+        dailyIssueCount: Int = 0,
+        habitsItemCount: Int = 0,
+        habitsIsLoading: Bool = false,
+        habitsHasError: Bool = false,
+        habitActionInFlightID: Int64? = nil,
+        statsDate: String = "",
+        statsIsLoading: Bool = false,
+        statsHasError: Bool = false,
+        statsHasScore: Bool = false,
+        modalKind: PopoverModalKind?,
+        showsUpdate: Bool
+    ) {
+        self.connectionState = connectionState
+        self.selectedTab = selectedTab
+        self.hasActiveSession = hasActiveSession
+        self.hasSelectedIssue = hasSelectedIssue
+        self.hasContext = hasContext
+        self.hasUpcomingSegment = hasUpcomingSegment
+        self.dailyIssueCount = dailyIssueCount
+        self.habitsItemCount = habitsItemCount
+        self.habitsIsLoading = habitsIsLoading
+        self.habitsHasError = habitsHasError
+        self.habitActionInFlightID = habitActionInFlightID
+        self.statsDate = statsDate
+        self.statsIsLoading = statsIsLoading
+        self.statsHasError = statsHasError
+        self.statsHasScore = statsHasScore
+        self.modalKind = modalKind
+        self.showsUpdate = showsUpdate
     }
 }
 
@@ -22,16 +107,25 @@ enum StatusItemClickIntent: Equatable {
 @MainActor
 final class StatusBarService: NSObject {
     private weak var appState: CompanionAppState?
+    private let signposter = OSSignposter(
+        subsystem: "com.crona.macos",
+        category: "status-popup"
+    )
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var popupPanel: StatusPopupPanel?
     private var hostingController: NSHostingController<PopoverRootView>?
+    private let popupDisplayClock = PopupDisplayClock()
+    private var statusDisplayTimer: Timer?
+    private var statusDisplayInterval: TimeInterval?
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
     private var lastRenderedTitle = ""
     private var lastRenderedDisplayMode: MenuBarDisplayMode?
+    private var lastRenderedIconState: MenuBarIconState?
     private var pendingUpdate = false
     private var animationGeneration = 0
+    private var lastLayoutKey: StatusPopupLayoutKey?
     private lazy var contextMenu = makeContextMenu()
     private weak var appUpdateMenuItem: NSMenuItem?
 
@@ -61,7 +155,7 @@ final class StatusBarService: NSObject {
 
     func refreshPopupLayout() {
         guard let panel = popupPanel, panel.isVisible else { return }
-        resizePanelToFit(panel, animated: true)
+        resizePanelToFit(panel, animated: true, force: false)
     }
 
     func dismissPopup(animated: Bool = true, completion: (() -> Void)? = nil) {
@@ -73,6 +167,7 @@ final class StatusBarService: NSObject {
         animationGeneration &+= 1
         let generation = animationGeneration
         stopDismissalMonitoring()
+        popupDisplayClock.stop()
         panel.makeFirstResponder(nil)
 
         guard animated else {
@@ -108,19 +203,23 @@ final class StatusBarService: NSObject {
         showPopup()
     }
 
-    private func applyStatusItemUpdate() {
+    private func applyStatusItemUpdate(now: Date = Date()) {
         guard let button = statusItem.button, let appState else { return }
         let model = appState.popoverModel
         let nextTitle = MenuBarTextFormatter.statusItemTitle(
             preferences: appState.preferences.preferences,
             connectionState: model.connectionState,
             timerSnapshot: model.timerSnapshot,
-            todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds
+            todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds,
+            now: now
         )
         let displayMode = appState.preferences.preferences.menuBarDisplayMode
+        let iconState = MenuBarIconState.resolve(
+            connectionState: model.connectionState,
+            timerSnapshot: model.timerSnapshot
+        )
 
         if lastRenderedDisplayMode != displayMode {
-            button.image = displayMode.showsIcon ? Self.statusItemIcon() : nil
             switch displayMode {
             case .iconOnly:
                 button.imagePosition = .imageOnly
@@ -132,26 +231,23 @@ final class StatusBarService: NSObject {
             lastRenderedDisplayMode = displayMode
         }
 
+        if displayMode.showsIcon {
+            if lastRenderedIconState != iconState || button.image == nil {
+                button.image = MenuBarIconProvider.image(for: iconState)
+                lastRenderedIconState = iconState
+            }
+        } else {
+            button.image = nil
+            lastRenderedIconState = nil
+        }
+        button.setAccessibilityLabel(iconState.accessibilityDescription)
+        button.toolTip = iconState.accessibilityDescription
+
         if lastRenderedTitle != nextTitle {
             button.title = nextTitle
             lastRenderedTitle = nextTitle
         }
-    }
-
-    private static func statusItemIcon() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let icon = NSImage(size: size, flipped: false) { rect in
-            CronaAppIcon.image.draw(
-                in: rect,
-                from: .zero,
-                operation: .sourceOver,
-                fraction: 1
-            )
-            return true
-        }
-        icon.isTemplate = false
-        icon.accessibilityDescription = "Crona"
-        return icon
+        reconcileStatusDisplayTimer()
     }
 
     @objc
@@ -262,10 +358,13 @@ final class StatusBarService: NSObject {
 
     private func showPopup() {
         guard let panel = popupPanel, let button = statusItem.button else { return }
+        let interval = signposter.beginInterval("Open Popup")
+        defer { signposter.endInterval("Open Popup", interval) }
         animationGeneration &+= 1
         let generation = animationGeneration
+        popupDisplayClock.start()
 
-        resizePanelToFit(panel, animated: false)
+        resizePanelToFit(panel, animated: false, force: true)
         let restingOrigin = Self.popupOrigin(
             iconRect: statusIconScreenRect(for: button),
             menuBarBottomY: button.window?.frame.minY ?? button.window?.screen?.visibleFrame.maxY ?? 0,
@@ -298,7 +397,12 @@ final class StatusBarService: NSObject {
     private func makePopupPanel(appState: CompanionAppState) {
         guard popupPanel == nil else { return }
 
-        let controller = NSHostingController(rootView: PopoverRootView(appState: appState))
+        let controller = NSHostingController(
+            rootView: PopoverRootView(
+                appState: appState,
+                displayClock: popupDisplayClock
+            )
+        )
         let panel = StatusPopupPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 620),
             styleMask: [.borderless, .fullSizeContentView],
@@ -320,15 +424,63 @@ final class StatusBarService: NSObject {
 
         hostingController = controller
         popupPanel = panel
-        resizePanelToFit(panel, animated: false)
+        resizePanelToFit(panel, animated: false, force: true)
     }
 
-    private func resizePanelToFit(_ panel: NSPanel, animated: Bool) {
-        guard let hostingController else { return }
+    private func reconcileStatusDisplayTimer() {
+        guard let appState else { return }
+        let preferences = appState.preferences.preferences
+        let snapshot = appState.timerService.snapshot
+        let shouldTick = preferences.menuBarDisplayMode.showsText
+            && snapshot.sessionID != nil
+            && snapshot.state == "running"
+        let displaySeconds = TimerPresentation.projectedDisplaySeconds(
+            for: snapshot,
+            at: Date()
+        )
+        let interval: TimeInterval? = shouldTick
+            ? MenuBarTextFormatter.nextRefreshInterval(
+                seconds: displaySeconds,
+                style: preferences.menuBarTimeFormat,
+                countsDown: snapshot.hardLimitActive
+            )
+            : nil
+
+        guard interval != statusDisplayInterval else { return }
+        statusDisplayTimer?.invalidate()
+        statusDisplayTimer = nil
+        statusDisplayInterval = interval
+        guard let interval else { return }
+
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.statusDisplayTimer = nil
+                self.statusDisplayInterval = nil
+                self.applyStatusItemUpdate(now: Date())
+                self.reconcileStatusDisplayTimer()
+            }
+        }
+        timer.tolerance = interval == 1 ? 0.1 : 1
+        RunLoop.main.add(timer, forMode: .common)
+        statusDisplayTimer = timer
+    }
+
+    private func resizePanelToFit(
+        _ panel: NSPanel,
+        animated: Bool,
+        force: Bool
+    ) {
+        guard let hostingController, let appState else { return }
+        let layoutKey = Self.layoutKey(for: appState)
+        guard force || layoutKey != lastLayoutKey else { return }
+        let interval = signposter.beginInterval("Measure Popup")
+        defer { signposter.endInterval("Measure Popup", interval) }
         let measured = hostingController.sizeThatFits(
             in: NSSize(width: 420, height: 800)
         )
         let height = StatusPopupSizing.resolvedHeight(for: measured.height)
+        lastLayoutKey = layoutKey
         guard abs(panel.frame.height - height) > 0.5 else { return }
 
         var frame = panel.frame
@@ -344,6 +496,48 @@ final class StatusBarService: NSObject {
         } else {
             panel.setFrame(frame, display: true)
         }
+    }
+
+    static func layoutKey(for appState: CompanionAppState) -> StatusPopupLayoutKey {
+        let snapshot = appState.timerService.snapshot
+        let presentation = TimerPresentation.from(snapshot)
+        let modalKind: PopoverModalKind?
+        if appState.isEndSessionSheetPresented {
+            modalKind = .endSession
+        } else {
+            switch appState.issueActionEditor {
+            case .status:
+                modalKind = .statusNote
+            case .dueDate:
+                modalKind = .dueDate
+            case nil:
+                modalKind = nil
+            }
+        }
+
+        return StatusPopupLayoutKey(
+            connectionState: appState.daemonConnection.connectionState,
+            selectedTab: appState.selectedPopoverTab,
+            hasActiveSession: appState.hasActiveFocusSession,
+            hasSelectedIssue: appState.selectedFocusIssue != nil,
+            hasContext: appState.contextService.snapshot.issueTitle != nil
+                || appState.contextService.snapshot.repoName != nil
+                || appState.contextService.snapshot.streamName != nil,
+            hasUpcomingSegment: presentation.upcomingSegment != nil,
+            dailyIssueCount: appState.dailyFocusService.snapshot.issues.count,
+            habitsItemCount: appState.habitsService.snapshot.items.count,
+            habitsIsLoading: appState.habitsService.snapshot.isLoading,
+            habitsHasError: appState.habitsService.snapshot.lastRefreshError != nil,
+            habitActionInFlightID: appState.habitsService.actionInFlightHabitID,
+            statsDate: appState.popoverStatsService.snapshot.date,
+            statsIsLoading: appState.popoverStatsService.snapshot.isLoading,
+            statsHasError: appState.popoverStatsService.snapshot.lastErrorDescription != nil,
+            statsHasScore: appState.popoverStatsService.snapshot.focusScore != nil
+                || appState.popoverStatsService.snapshot.todayMetrics != nil,
+            modalKind: modalKind,
+            showsUpdate: appState.appUpdateService.hasAvailableUpdate
+                && !appState.isUpdatePresentationBlocked
+        )
     }
 
     private func statusIconScreenRect(for button: NSStatusBarButton) -> NSRect {

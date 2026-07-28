@@ -414,7 +414,11 @@ enum TimerEndProjection {
         guard snapshot.sessionID != nil, snapshot.hardLimitActive else {
             return nil
         }
-        return now.addingTimeInterval(TimeInterval(max(0, snapshot.displayElapsedSeconds)))
+        let remaining = TimerPresentation.projectedDisplaySeconds(
+            for: snapshot,
+            at: now
+        )
+        return now.addingTimeInterval(TimeInterval(remaining))
     }
 
     static func extensionEndDate(
@@ -437,7 +441,10 @@ enum TimerEndProjection {
         }
 
         guard addedSeconds > 0 else { return nil }
-        let remaining = max(0, snapshot.displayElapsedSeconds)
+        let remaining = TimerPresentation.projectedDisplaySeconds(
+            for: snapshot,
+            at: now
+        )
         return now.addingTimeInterval(TimeInterval(remaining + addedSeconds))
     }
 }

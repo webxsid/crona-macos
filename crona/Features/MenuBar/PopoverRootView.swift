@@ -1,7 +1,8 @@
+import AppKit
 import Combine
 import SwiftUI
 
-enum PopoverModalKind {
+enum PopoverModalKind: Equatable {
     case statusNote
     case endSession
     case dueDate
@@ -17,6 +18,7 @@ enum PopoverModalKind {
 
 struct PopoverRootView: View {
     @ObservedObject var appState: CompanionAppState
+    let displayClock: PopupDisplayClock
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -48,11 +50,17 @@ struct PopoverRootView: View {
             }
 
             if appState.hasActiveFocusSession {
-                NowTabView(appState: appState)
+                NowTabView(
+                    appState: appState,
+                    displayClock: displayClock
+                )
             } else {
                 switch appState.selectedPopoverTab {
                 case .now:
-                    NowTabView(appState: appState)
+                    NowTabView(
+                        appState: appState,
+                        displayClock: displayClock
+                    )
                 case .habits:
                     HabitsTabView(appState: appState)
                 case .stats:
@@ -75,7 +83,7 @@ struct PopoverRootView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(18)
+        .padding(14)
         .frame(width: 420)
         .frame(minHeight: modalMinimumHeight)
         .background(PopoverGlassBackground())
@@ -203,6 +211,7 @@ struct PopoverRootView: View {
 
 struct NowTabView: View {
     @ObservedObject var appState: CompanionAppState
+    let displayClock: PopupDisplayClock
 
     var body: some View {
         Group {
@@ -212,7 +221,10 @@ struct NowTabView: View {
                     appState.timerService.snapshot.state != "idle",
                     appState.timerService.snapshot.state != "disconnected"
                 {
-                    ActiveTimerView(appState: appState)
+                    ActiveTimerView(
+                        appState: appState,
+                        displayClock: displayClock
+                    )
                 } else if let issue = appState.selectedFocusIssue {
                     FocusStartConfigView(appState: appState, issue: issue)
                 } else {
@@ -238,9 +250,14 @@ struct NowTabView: View {
 
 struct ActiveTimerView: View {
     @ObservedObject var appState: CompanionAppState
+    @ObservedObject var displayClock: PopupDisplayClock
 
     var body: some View {
-        let presentation = TimerPresentation.from(appState.timerService.snapshot)
+        let now = displayClock.now
+        let presentation = TimerPresentation.from(
+            appState.timerService.snapshot,
+            at: now
+        )
 
         VStack(spacing: 16) {
             VStack(spacing: 10) {
@@ -266,7 +283,10 @@ struct ActiveTimerView: View {
                     .padding(.horizontal, 8)
             }
 
-            if let endDate = TimerEndProjection.activeEndDate(snapshot: appState.timerService.snapshot) {
+            if let endDate = TimerEndProjection.activeEndDate(
+                snapshot: appState.timerService.snapshot,
+                now: now
+            ) {
                 EndsAtRow(date: endDate)
             }
 
@@ -361,15 +381,11 @@ struct ActiveTimerView: View {
     }
 
     private func timeText(for presentation: TimerPresentation) -> String {
-        MenuBarTextFormatter.formatElapsed(
-            seconds: presentation.displaySeconds,
-            format: appState.preferences.preferences.menuBarTimeFormat,
-            showsSeconds: appState.preferences.preferences.menuBarShowsSeconds
-        )
+        MenuBarTextFormatter.formatClock(seconds: presentation.displaySeconds)
     }
 
     private func shortDuration(_ seconds: Int) -> String {
-        MenuBarTextFormatter.formatElapsed(seconds: seconds, format: .expanded, showsSeconds: false)
+        MenuBarTextFormatter.formatCompactDuration(seconds: seconds)
     }
 
 }
@@ -791,7 +807,7 @@ struct StatsTabView: View {
     }
 
     private func compactDuration(_ seconds: Int) -> String {
-        MenuBarTextFormatter.formatElapsed(seconds: seconds, format: .expanded, showsSeconds: false)
+        MenuBarTextFormatter.formatCompactDuration(seconds: seconds)
     }
 
     private func statsTitle(for date: String) -> String {
@@ -1387,8 +1403,7 @@ struct FocusIssueRow: View {
     }
 
     private var metaLine: String {
-        let worked = MenuBarTextFormatter.formatElapsed(
-            seconds: issue.workedSeconds, format: .expanded, showsSeconds: false)
+        let worked = MenuBarTextFormatter.formatCompactDuration(seconds: issue.workedSeconds)
         if let estimate = issue.estimateMinutes, estimate > 0 {
             return "\(worked) / \(estimate)m"
         }
@@ -2263,47 +2278,109 @@ func cardBackground(stroke: Color, cornerRadius: CGFloat = 20) -> some View {
         .shadow(color: .black.opacity(0.12), radius: 10, y: 6)
 }
 
+@MainActor
+final class SystemGlassSettings: ObservableObject {
+    static let shared = SystemGlassSettings()
+
+    @Published private(set) var reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+
+    private var observer: NSObjectProtocol?
+
+    private init() {
+        observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: NSWorkspace.shared,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            }
+        }
+    }
+
+    deinit {
+        if let observer {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
+}
+
 struct PopoverGlassBackground: View {
+    var cornerRadius: CGFloat = 36
+    @ObservedObject private var systemGlass = SystemGlassSettings.shared
+
     var body: some View {
-        let shellShape = RoundedRectangle(cornerRadius: 36, style: .continuous)
+        let shellShape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         ZStack {
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, emphasized: true)
-                .clipShape(shellShape)
-
-            shellShape
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.black.opacity(0.16),
-                            Color.white.opacity(0.02),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            if systemGlass.reduceTransparency {
+                shellShape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.17, green: 0.17, blue: 0.19),
+                                Color(red: 0.11, green: 0.11, blue: 0.12),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
+
+                shellShape
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.6)
+
+                shellShape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.05),
+                                Color.clear,
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            } else if #available(macOS 26.0, *) {
+                Color.clear
+                    .glassEffect(.regular, in: shellShape)
+
+                shellShape
+                    .strokeBorder(Color.white.opacity(0.045), lineWidth: 0.35)
+            } else {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, emphasized: false)
+                    .clipShape(shellShape)
+
+                shellShape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.11),
+                                Color.white.opacity(0.025),
+                                Color.black.opacity(0.05),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                shellShape
+                    .fill(Color.black.opacity(0.055))
+
+                shellShape
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.12),
+                                Color.white.opacity(0.025),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.35
                 )
-
-            shellShape
-                .fill(Color.black.opacity(0.14))
-
-            shellShape
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.9)
-
-            shellShape
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.18),
-                            Color.white.opacity(0.03),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
+            }
         }
-        .shadow(color: .black.opacity(0.24), radius: 24, y: 16)
+        .shadow(color: systemGlass.reduceTransparency ? .black.opacity(0.08) : .black.opacity(0.045), radius: 14, y: 7)
     }
 }
 
@@ -2317,21 +2394,58 @@ private struct GlassPressButtonStyle: ButtonStyle {
 }
 
 private func glassCapsuleBackground(emphasis: Double = 0.12) -> some View {
-    Capsule()
-        .fill(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(emphasis),
-                    Color.white.opacity(max(0.04, emphasis * 0.45)),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
-        )
+    GlassCapsuleBackground(emphasis: emphasis)
+}
+
+private struct GlassCapsuleBackground: View {
+    let emphasis: Double
+    @ObservedObject private var systemGlass = SystemGlassSettings.shared
+
+    var body: some View {
+        let shape = Capsule()
+
+        Group {
+            if systemGlass.reduceTransparency {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.12),
+                                Color.white.opacity(0.04),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        shape
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+            } else if #available(macOS 26.0, *) {
+                Color.clear
+                    .glassEffect(.clear.tint(.white.opacity(max(0.08, emphasis))), in: shape)
+                    .overlay(
+                        shape.strokeBorder(Color.white.opacity(0.05), lineWidth: 0.35)
+                    )
+            } else {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(emphasis),
+                                Color.white.opacity(max(0.04, emphasis * 0.45)),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        shape
+                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
+                    )
+            }
+        }
+    }
 }
 
 private struct SheetGlassBackground: View {
@@ -2357,41 +2471,77 @@ private struct PopoverModalScrim: View {
 
 private struct PopoverDialogBackground: View {
     let cornerRadius: CGFloat
+    @ObservedObject private var systemGlass = SystemGlassSettings.shared
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         ZStack {
-            VisualEffectView(
-                material: .popover,
-                blendingMode: .withinWindow,
-                emphasized: true
-            )
+            if systemGlass.reduceTransparency {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.18, green: 0.18, blue: 0.20),
+                                Color(red: 0.12, green: 0.12, blue: 0.13),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
 
-            shape.fill(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.19, green: 0.19, blue: 0.20).opacity(0.96),
-                        Color(red: 0.105, green: 0.105, blue: 0.115).opacity(0.97),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                shape
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.6)
+
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.055),
+                                Color.clear,
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            } else if #available(macOS 26.0, *) {
+                Color.clear
+                    .glassEffect(.regular.interactive(false), in: shape)
+
+                shape
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.4)
+            } else {
+                VisualEffectView(
+                    material: .popover,
+                    blendingMode: .withinWindow,
+                    emphasized: true
                 )
-            )
 
-            shape.strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8)
+                shape.fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.black.opacity(0.10),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
-            shape.strokeBorder(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.22),
-                        Color.white.opacity(0.035),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
-                lineWidth: 0.6
-            )
+                shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
+
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.24),
+                            Color.white.opacity(0.05),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
+            }
         }
         .clipShape(shape)
     }

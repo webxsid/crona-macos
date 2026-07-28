@@ -10,7 +10,6 @@ struct TimerSnapshot: Equatable {
     var nextSegmentType: String?
     var readySegmentType: String?
     var elapsedSeconds = 0
-    var displayElapsedSeconds = 0
     var sessionStartTime: Date?
     var segmentStartTime: Date?
     var segmentElapsedOffsetSeconds = 0
@@ -35,7 +34,6 @@ struct TimerSnapshot: Equatable {
             nextSegmentType: state.nextSegmentType,
             readySegmentType: state.readySegmentType,
             elapsedSeconds: state.elapsedSeconds ?? 0,
-            displayElapsedSeconds: state.elapsedSeconds ?? 0,
             sessionStartTime: state.sessionStartTime.flatMap(TimerService.parseDate),
             segmentStartTime: state.segmentStartTime.flatMap(TimerService.parseDate),
             segmentElapsedOffsetSeconds: state.segmentElapsedOffsetSeconds ?? 0,
@@ -114,7 +112,7 @@ struct TimerPresentation: Equatable {
     let currentFocusSeconds: Int
     let upcomingSegment: TimerUpcomingSegment?
 
-    static func from(_ snapshot: TimerSnapshot) -> TimerPresentation {
+    static func from(_ snapshot: TimerSnapshot, at now: Date = Date()) -> TimerPresentation {
         let mode: FocusTimerMode
         if !snapshot.hardLimitActive {
             mode = .stopwatch
@@ -126,7 +124,7 @@ struct TimerPresentation: Equatable {
 
         let countsDown = snapshot.hardLimitActive
         let segment = activeSegment(for: snapshot)
-        let displaySeconds = max(0, snapshot.displayElapsedSeconds)
+        let displaySeconds = projectedDisplaySeconds(for: snapshot, at: now)
         let displayDuration: Int
         if mode == .timer {
             displayDuration = snapshot.hardLimitTotalSeconds
@@ -177,7 +175,10 @@ struct TimerPresentation: Equatable {
             canPause: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "running",
             canResume: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "paused",
             canEnd: snapshot.sessionID != nil,
-            currentFocusSeconds: currentFocusSeconds(for: snapshot),
+            currentFocusSeconds: currentFocusSeconds(
+                for: snapshot,
+                displaySeconds: displaySeconds
+            ),
             upcomingSegment: upcomingSegment(for: snapshot, mode: mode)
         )
     }
@@ -231,9 +232,27 @@ struct TimerPresentation: Equatable {
                 + snapshot.segmentElapsedOffsetSeconds
         } else {
             let elapsedSinceApply = max(0, Int(now.timeIntervalSince(snapshot.snapshotAppliedAt)))
-            elapsed = snapshot.elapsedSeconds + elapsedSinceApply
+            return min(
+                duration,
+                max(0, snapshot.hardLimitRemainingSeconds - elapsedSinceApply)
+            )
         }
         return max(0, duration - min(duration, elapsed))
+    }
+
+    static func projectedDisplaySeconds(
+        for snapshot: TimerSnapshot,
+        at now: Date
+    ) -> Int {
+        if snapshot.hardLimitActive {
+            return hardLimitDisplaySeconds(for: snapshot, at: now)
+        }
+
+        guard snapshot.state == "running" else {
+            return max(0, snapshot.elapsedSeconds)
+        }
+        let elapsedSinceApply = max(0, Int(now.timeIntervalSince(snapshot.snapshotAppliedAt)))
+        return max(0, snapshot.elapsedSeconds + elapsedSinceApply)
     }
 
     private static func upcomingSegment(
@@ -253,7 +272,10 @@ struct TimerPresentation: Equatable {
         return TimerUpcomingSegment(kind: next, durationSeconds: duration)
     }
 
-    private static func currentFocusSeconds(for snapshot: TimerSnapshot) -> Int {
+    private static func currentFocusSeconds(
+        for snapshot: TimerSnapshot,
+        displaySeconds: Int
+    ) -> Int {
         if !snapshot.hardLimitActive {
             return max(0, snapshot.elapsedSeconds)
         }
@@ -262,7 +284,7 @@ struct TimerPresentation: Equatable {
             return max(0, snapshot.hardLimitWorkSeconds)
         }
 
-        let worked = snapshot.hardLimitWorkSeconds - snapshot.displayElapsedSeconds
+        let worked = snapshot.hardLimitWorkSeconds - displaySeconds
         return max(0, min(snapshot.hardLimitWorkSeconds, worked))
     }
 }
@@ -270,9 +292,10 @@ struct TimerPresentation: Equatable {
 @MainActor
 final class TimerService: ObservableObject {
     private let daemonConnection: DaemonConnectionService
-    private var timer: Timer?
     private var eventObserver: NSObjectProtocol?
     private var connectObserver: NSObjectProtocol?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshPending = false
     private let logger = Logger(subsystem: "com.crona.macos", category: "timer")
 
     @Published var snapshot = TimerSnapshot()
@@ -295,11 +318,12 @@ final class TimerService: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.logger.debug("Timer refresh triggered by daemon connect")
-            Task { await self?.refresh() }
+            Task { @MainActor [weak self] in
+                self?.requestRefresh()
+            }
         }
 
-        startDisplayTicker()
-        Task { await refresh() }
+        requestRefresh()
     }
 
     deinit {
@@ -309,7 +333,7 @@ final class TimerService: ObservableObject {
         if let connectObserver {
             NotificationCenter.default.removeObserver(connectObserver)
         }
-        timer?.invalidate()
+        refreshTask?.cancel()
     }
 
     func refresh() async {
@@ -323,18 +347,18 @@ final class TimerService: ObservableObject {
         }
     }
 
-    func pauseTimer() async {
-        do {
-            let state = try await daemonConnection.withClient { try await $0.timerPause() }
-            apply(state)
-        } catch {}
+    @discardableResult
+    func pauseTimer() async throws -> TimerSnapshot {
+        let state = try await daemonConnection.withClient { try await $0.timerPause() }
+        apply(state)
+        return snapshot
     }
 
-    func resumeTimer() async {
-        do {
-            let state = try await daemonConnection.withClient { try await $0.timerResume() }
-            apply(state)
-        } catch {}
+    @discardableResult
+    func resumeTimer() async throws -> TimerSnapshot {
+        let state = try await daemonConnection.withClient { try await $0.timerResume() }
+        apply(state)
+        return snapshot
     }
 
     @discardableResult
@@ -364,7 +388,7 @@ final class TimerService: ObservableObject {
         switch event.type {
         case _ where Self.shouldRefresh(for: event.type):
             logger.debug("Timer refresh triggered by event: \(event.type, privacy: .public)")
-            Task { await refresh() }
+            requestRefresh()
         default:
             break
         }
@@ -373,45 +397,22 @@ final class TimerService: ObservableObject {
     private func apply(_ state: CronaTimerState) {
         logger.debug("Applying timer state: state=\(state.state, privacy: .public) sessionId=\(state.sessionID ?? "nil", privacy: .public) issueId=\(String(state.issueID ?? -1), privacy: .public) elapsed=\(state.elapsedSeconds ?? 0, privacy: .public)")
         snapshot = .from(state)
-        updateDisplayElapsed()
     }
 
-    private func startDisplayTicker() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateDisplayElapsed()
-            }
-        }
-    }
-
-    private func updateDisplayElapsed() {
-        guard snapshot.state == "running" else {
-            if snapshot.hardLimitActive {
-                snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
-                    for: snapshot,
-                    at: Date()
-                )
-            } else {
-                snapshot.displayElapsedSeconds = snapshot.elapsedSeconds
-            }
+    private func requestRefresh() {
+        guard refreshTask == nil else {
+            refreshPending = true
             return
         }
 
-        if snapshot.hardLimitActive {
-            snapshot.displayElapsedSeconds = TimerPresentation.hardLimitDisplaySeconds(
-                for: snapshot,
-                at: Date()
-            )
-            return
+        refreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            repeat {
+                refreshPending = false
+                await refresh()
+            } while refreshPending && !Task.isCancelled
+            refreshTask = nil
         }
-
-        guard let segmentStartTime = snapshot.segmentStartTime else {
-            snapshot.displayElapsedSeconds = snapshot.elapsedSeconds
-            return
-        }
-
-        let offset = snapshot.elapsedSeconds - max(0, Int(Date().timeIntervalSince(segmentStartTime)))
-        snapshot.displayElapsedSeconds = max(0, Int(Date().timeIntervalSince(segmentStartTime)) + max(0, offset))
     }
 
     static func parseDate(_ value: String) -> Date? {
