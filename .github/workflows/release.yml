@@ -173,9 +173,10 @@ jobs:
             "${RUNNER_TEMP}/Crona.xcarchive/dSYMs/crona.app.dSYM" \
             "${RUNNER_TEMP}/${DSYM_NAME}"
 
-          python3 -m pip install --user "dmgbuild==1.6.7"
-          PYTHON_USER_BASE="$(python3 -m site --user-base)"
-          "${PYTHON_USER_BASE}/bin/dmgbuild" \
+          DMG_VENV="${RUNNER_TEMP}/dmgbuild-venv"
+          python3 -m venv "${DMG_VENV}"
+          "${DMG_VENV}/bin/python" -m pip install "dmgbuild==1.6.7"
+          "${DMG_VENV}/bin/dmgbuild" \
             -s scripts/dmgbuild_settings.py \
             -D app="${RUNNER_TEMP}/export/crona.app" \
             -D background="${GITHUB_WORKSPACE}/assets/release/dmg-background.png" \
