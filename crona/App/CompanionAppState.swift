@@ -1210,7 +1210,7 @@ final class CompanionAppState: ObservableObject {
     private func reconcileInactivityPopupPresentation() {
         guard inactivityPopupPhase != nil else { return }
 
-        if developerPreviewKind == .inactivity {
+        if isInactivityDeveloperPreviewActive {
             windowService.updateInactivityPopup()
             return
         }
@@ -1236,6 +1236,14 @@ final class CompanionAppState: ObservableObject {
         }
 
         windowService.updateInactivityPopup()
+    }
+
+    private var isInactivityDeveloperPreviewActive: Bool {
+#if DEBUG
+        developerPreviewKind == .inactivity
+#else
+        false
+#endif
     }
 
     private func reconcileHardLimitWarningIndicatorPresentation() {
