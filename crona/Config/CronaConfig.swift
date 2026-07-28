@@ -24,8 +24,8 @@ struct CronaConfig {
         discoveryFilePath: "",
         runtimeDirectoryPath: "",
         defaultSocketPath: "",
-        defaultKernelExecutable: "crona-kernel",
-        defaultDevKernelExecutable: "crona-kernel-dev"
+        defaultKernelExecutable: "crona-daemon",
+        defaultDevKernelExecutable: "crona-daemon-dev"
     )
 
     var discoveryMissingMessage: String {

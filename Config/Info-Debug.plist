@@ -37,9 +37,9 @@
 	<key>CRONA_RUNTIME_DIR</key>
 	<string>~/Library/Application Support/Crona Dev</string>
 	<key>CRONA_KERNEL_EXECUTABLE</key>
-	<string>crona-kernel</string>
+	<string>crona-daemon</string>
 	<key>CRONA_KERNEL_DEV_EXECUTABLE</key>
-	<string>crona-kernel-dev</string>
+	<string>crona-daemon-dev</string>
 	<key>CRONA_POSTHOG_API_KEY</key>
 	<string>$(CRONA_POSTHOG_API_KEY)</string>
 	<key>CRONA_RELEASE_CHANNEL</key>

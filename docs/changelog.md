@@ -1,0 +1,39 @@
+# Changelog
+
+All notable changes to **Crona for macOS** are documented here.
+
+## Unreleased
+
+### Added
+
+- A dedicated documentation set for the macOS client, covering installation, runtime behavior, development, release process, and troubleshooting.
+
+### Changed
+
+- Daemon startup now treats discovery as a hint instead of a guarantee and can launch the daemon when discovery is missing or stale.
+- Daemon launch resolution now follows the core Crona project's candidate order, including repo-local dev binaries and repo-local `go run` fallback.
+- Repeated daemon launch failures now latch the companion into the existing connection error state instead of reconnecting indefinitely.
+
+## [1.0.0-beta.4] - 2026-07-28
+
+Crona for macOS v1.0.0-beta.4 hardens daemon startup and recovery, smooths the popup surfaces, and establishes the first complete docs and release-notes structure for the repo.
+
+### Added
+
+- A top-level `README`, project `LICENSE`, docs index, and dedicated install, runtime, development, release, troubleshooting, and changelog documents for the macOS client.
+- Public release-notes files under `docs/release-notes/` so macOS releases can ship curated release bodies instead of generated GitHub notes.
+- Targeted tests covering daemon launch resolution, launch-failure latching, and manual reconnect recovery.
+
+### Changed
+
+- Popup presentation now uses smoother entry and exit transitions for centered, edge, and corner popup surfaces.
+- The hard-limit popup positioning and popup shadow treatment have been refined to remove the visible offset and sharp edge artifacts.
+- Default daemon binary names now use `crona-daemon` and `crona-daemon-dev`.
+- Daemon launch resolution now mirrors the core Crona project by checking sibling binaries, installed binaries, repo-local `bin/` outputs, and repo-local `go run` fallback for development.
+- The release workflow now prefers `docs/release-notes/<tag>.md` when publishing GitHub releases, while still falling back to generated notes if no curated file exists.
+
+### Fixed
+
+- Missing or stale discovery no longer leaves the companion passively disconnected when the daemon can be launched locally.
+- Failed daemon launches now enter the existing error state and stop background retries until the user manually reconnects.
+- GUI launch environments that do not expose Homebrew paths no longer cause false-positive daemon launch attempts through `/usr/bin/env`.

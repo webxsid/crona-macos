@@ -14,9 +14,15 @@ enum CompanionConnectionState: String, Equatable {
 @MainActor
 final class DaemonConnectionService: ObservableObject {
     private let kernelDiscovery: KernelDiscoveryService
+    private let daemonLaunchService: DaemonLaunchService
+    private let clientFactory: (String) -> CronaDaemonClient
+    private let reconnectInterval: Duration
+    private let postLaunchRetryDelay: Duration
     private var connectionTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var isAttemptingConnection = false
+    private var launchFailureLatched = false
+    private var attemptedDaemonLaunchEndpoints: Set<String> = []
 
     @Published var connectionState: CompanionConnectionState = .idle
     @Published var kernelInfo: CronaKernelInfo?
@@ -28,8 +34,18 @@ final class DaemonConnectionService: ObservableObject {
     @Published private(set) var client: CronaDaemonClient?
     private let logger = Logger(subsystem: "com.crona.macos", category: "connection")
 
-    init(kernelDiscovery: KernelDiscoveryService) {
+    init(
+        kernelDiscovery: KernelDiscoveryService,
+        daemonLaunchService: DaemonLaunchService? = nil,
+        clientFactory: ((String) -> CronaDaemonClient)? = nil,
+        reconnectInterval: Duration = .seconds(2),
+        postLaunchRetryDelay: Duration = .milliseconds(350)
+    ) {
         self.kernelDiscovery = kernelDiscovery
+        self.daemonLaunchService = daemonLaunchService ?? DaemonLaunchService()
+        self.clientFactory = clientFactory ?? { CronaDaemonClient(endpoint: $0) }
+        self.reconnectInterval = reconnectInterval
+        self.postLaunchRetryDelay = postLaunchRetryDelay
     }
 
     func start() {
@@ -46,10 +62,15 @@ final class DaemonConnectionService: ObservableObject {
     }
 
     func manualReconnect() {
-        eventTask?.cancel()
+        stop()
+        clearLatchedLaunchFailure()
         client = nil
+        kernelInfo = nil
+        health = nil
+        alertStatus = nil
+        lastErrorDescription = nil
         connectionState = .disconnected
-        Task { await connectOnce(force: true) }
+        start()
     }
 
     func sendTestNotification() async {
@@ -123,19 +144,27 @@ final class DaemonConnectionService: ObservableObject {
     }
 
     private func runConnectionLoop() async {
+        defer { connectionTask = nil }
         while !Task.isCancelled {
+            if launchFailureLatched {
+                logger.debug("Connection loop stopped after daemon launch failure")
+                return
+            }
+
             if connectionState == .connected, eventTask != nil {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: reconnectInterval)
                 continue
             }
 
             await connectOnce()
             if Task.isCancelled { break }
-            try? await Task.sleep(for: .seconds(2))
+            if launchFailureLatched { return }
+            try? await Task.sleep(for: reconnectInterval)
         }
     }
 
     private func connectOnce(force: Bool = false) async {
+        guard !launchFailureLatched || force else { return }
         guard force || (!isAttemptingConnection && connectionState != .connected) else {
             return
         }
@@ -148,10 +177,15 @@ final class DaemonConnectionService: ObservableObject {
         logger.debug("Connecting to daemon. force=\(force, privacy: .public)")
 
         guard let discovery = runtime.resolvedDiscovery else {
+            if await attemptDaemonLaunchIfNeeded(runtime: runtime, discovery: nil, after: nil) {
+                return
+            }
             client = nil
-            connectionState = .disconnected
-            lastErrorDescription = runtime.config.discoveryMissingMessage
-            logger.error("Daemon discovery missing: \(runtime.config.discoveryMissingMessage, privacy: .public)")
+            connectionState = launchFailureLatched ? .error : .disconnected
+            if !launchFailureLatched {
+                lastErrorDescription = runtime.config.discoveryMissingMessage
+                logger.error("Daemon discovery missing: \(runtime.config.discoveryMissingMessage, privacy: .public)")
+            }
             return
         }
 
@@ -163,7 +197,7 @@ final class DaemonConnectionService: ObservableObject {
             return
         }
 
-        let client = CronaDaemonClient(endpoint: discovery.endpoint)
+        let client = clientFactory(discovery.endpoint)
         do {
             let health = try await client.healthGet()
             let info = try await client.kernelInfoGet()
@@ -188,9 +222,18 @@ final class DaemonConnectionService: ObservableObject {
             self.connectionState = .connected
             self.lastReconnectAt = Date()
             self.lastErrorDescription = nil
+            self.clearLatchedLaunchFailure()
+            self.attemptedDaemonLaunchEndpoints.remove(discovery.endpoint)
             NotificationCenter.default.post(name: .cronaDaemonDidConnect, object: nil)
             await subscribeToEvents(using: client)
         } catch {
+            if await attemptDaemonLaunchIfNeeded(
+                runtime: runtime,
+                discovery: discovery,
+                after: error
+            ) {
+                return
+            }
             self.client = nil
             self.connectionState = .disconnected
             self.lastErrorDescription = error.localizedDescription
@@ -223,6 +266,46 @@ final class DaemonConnectionService: ObservableObject {
                 }
             }
         }
+    }
+
+    private func attemptDaemonLaunchIfNeeded(
+        runtime: LoadedCronaRuntime,
+        discovery: CronaResolvedKernelDiscovery?,
+        after error: Error?
+    ) async -> Bool {
+        guard connectionState == .connecting else { return false }
+        let launchAttemptKey = discovery?.endpoint ?? "runtime:\(runtime.config.runtimeDirectoryPath)"
+        guard attemptedDaemonLaunchEndpoints.insert(launchAttemptKey).inserted else { return false }
+
+        do {
+            try daemonLaunchService.launch(runtime: runtime, discovery: discovery)
+            clearLatchedLaunchFailure()
+            logger.log("Daemon recovery launched local daemon and will retry.")
+            try? await Task.sleep(for: postLaunchRetryDelay)
+            await connectOnce(force: true)
+            return true
+        } catch {
+            latchLaunchFailure(message: error.localizedDescription)
+            logger.error(
+                "Daemon recovery launch failed. trigger_error=\(String(describing: error), privacy: .public) launch_error=\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    private func clearLatchedLaunchFailure() {
+        launchFailureLatched = false
+        attemptedDaemonLaunchEndpoints.removeAll()
+    }
+
+    private func latchLaunchFailure(message: String) {
+        launchFailureLatched = true
+        client = nil
+        kernelInfo = nil
+        health = nil
+        alertStatus = nil
+        connectionState = .error
+        lastErrorDescription = message
     }
 }
 

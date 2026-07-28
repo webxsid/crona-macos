@@ -1,0 +1,116 @@
+# Release
+
+## Overview
+
+Crona for macOS is released independently from the core Crona daemon and TUI.
+
+The release workflow is defined in [`.github/workflows/release.yml`](../.github/workflows/release.yml). It builds a universal macOS app, signs it with Developer ID, notarizes it, packages DMG and ZIP artifacts, publishes a GitHub release, and updates the Sparkle appcast on GitHub Pages.
+
+Curated release bodies live in:
+
+- `docs/release-notes/<tag>.md`
+
+If the matching file exists, the release workflow publishes that body instead of generated GitHub notes.
+
+## Channels
+
+- stable tags use `vX.Y.Z`
+- beta tags use `vX.Y.Z-beta.N`
+- beta installations receive beta and stable releases
+- stable installations receive stable releases only
+- moving from beta to stable does not downgrade the installed app
+
+The signed Sparkle appcast is published at:
+
+- <https://webxsid.github.io/crona-macos/appcast.xml>
+
+## Release Artifacts
+
+Every stable and beta GitHub release publishes:
+
+- `Crona-<version>-macOS.dmg`
+- `Crona-<version>-macOS.zip`
+- `Crona-<version>-dSYMs.zip`
+- `checksums.txt`
+
+The DMG is the manual install artifact. The ZIP is consumed by Sparkle.
+
+## One-Time Repository Setup
+
+Enable GitHub Pages with GitHub Actions as the source.
+
+Repository variable:
+
+- `SPARKLE_PUBLIC_ED_KEY`
+
+Repository secrets:
+
+- `DEVELOPER_ID_APPLICATION_P12_BASE64`
+- `DEVELOPER_ID_APPLICATION_PASSWORD`
+- `RELEASE_KEYCHAIN_PASSWORD`
+- `APPLE_NOTARY_API_KEY_P8`
+- `APPLE_NOTARY_KEY_ID`
+- `APPLE_NOTARY_ISSUER_ID`
+- `SPARKLE_EDDSA_PRIVATE_KEY`
+
+Generate the Sparkle key pair once with Sparkle's `generate_keys` tool. Store the public key in the repository variable and the private key in the repository secret. Keep the same key for future releases.
+
+## Cutting a Release
+
+1. Set `MARKETING_VERSION` to the tag's numeric `X.Y.Z` portion.
+2. Increment `CURRENT_PROJECT_VERSION`.
+3. Run the macOS test suite in `Release`.
+4. Commit the version metadata.
+5. Create and push the tag.
+
+Example tags:
+
+- `v1.2.3`
+- `v1.2.3-beta.1`
+
+The workflow validates:
+
+- tag format
+- `MARKETING_VERSION` matches the base version
+- `CURRENT_PROJECT_VERSION` is numeric
+- `CURRENT_PROJECT_VERSION` is newer than the latest appcast build
+- Sparkle public key exists and decodes correctly
+
+## Packaging and Signing
+
+The workflow:
+
+- resolves Swift package dependencies
+- imports the Developer ID certificate into a temporary keychain
+- archives a universal app for `arm64` and `x86_64`
+- injects `CRONA_RELEASE_CHANNEL` and full `CRONA_RELEASE_VERSION`
+- exports the signed app
+- notarizes and staples the app
+- builds the Sparkle ZIP, DMG, and dSYM archive
+- signs, notarizes, staples, mounts, and validates the DMG
+
+Validation includes:
+
+- code signature integrity
+- notarization tickets
+- universal architectures
+- bundle identifier `com.webxsid.crona`
+- `CFBundleShortVersionString`
+- embedded `CRONA_RELEASE_VERSION`
+- embedded `SUPublicEDKey`
+- DMG contents and `/Applications` symlink
+
+## Local Validation
+
+You can validate a release DMG locally with:
+
+```sh
+codesign --verify --strict --verbose=2 Crona-<version>-macOS.dmg
+xcrun stapler validate Crona-<version>-macOS.dmg
+spctl --assess --type open --context context:primary-signature --verbose=2 \
+  Crona-<version>-macOS.dmg
+```
+
+## Distribution Notes
+
+Homebrew distribution remains limited to the Crona terminal utility. The native macOS app is distributed through the DMG and updated through Sparkle.
