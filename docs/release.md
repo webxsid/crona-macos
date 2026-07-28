@@ -86,7 +86,7 @@ The workflow:
 - injects `CRONA_RELEASE_CHANNEL` and full `CRONA_RELEASE_VERSION`
 - exports the signed app
 - notarizes and staples the app
-- builds the Sparkle ZIP, DMG, and dSYM archive
+- builds the Sparkle ZIP, a branded drag-install DMG, and dSYM archive
 - signs, notarizes, staples, mounts, and validates the DMG
 
 Validation includes:
@@ -98,7 +98,7 @@ Validation includes:
 - `CFBundleShortVersionString`
 - embedded `CRONA_RELEASE_VERSION`
 - embedded `SUPublicEDKey`
-- DMG contents and `/Applications` symlink
+- DMG contents, `/Applications` symlink, and branded Finder presentation
 
 ## Local Validation
 

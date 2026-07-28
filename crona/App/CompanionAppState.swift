@@ -1027,6 +1027,7 @@ final class CompanionAppState: ObservableObject {
                     self?.reconcileHardLimitWarningIndicatorPresentation()
                     self?.reconcileInactivityPopupPresentation()
                     self?.notificationService.reconcileDelivery()
+                    self?.windowService.refreshApplicationActivationPolicy()
                 }
                 .store(in: &cancellables)
         }

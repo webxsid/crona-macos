@@ -181,6 +181,7 @@ struct CompanionPreferences: Codable, Equatable {
     static let smartPauseIdleOptions = [30, 60, 120, 300, 600]
 
     var launchAtLogin = false
+    var hideDockIconWhenNoWindowsOpen = true
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
@@ -227,6 +228,7 @@ struct CompanionPreferences: Codable, Equatable {
 extension CompanionPreferences {
     private enum CodingKeys: String, CodingKey {
         case launchAtLogin
+        case hideDockIconWhenNoWindowsOpen
         case menuBarDisplayMode
         case menuBarIdleTextMode
         case menuBarTimeFormat
@@ -255,6 +257,8 @@ extension CompanionPreferences {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        hideDockIconWhenNoWindowsOpen =
+            try values.decodeIfPresent(Bool.self, forKey: .hideDockIconWhenNoWindowsOpen) ?? true
         menuBarDisplayMode =
             try values.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarDisplayMode)
             ?? .iconAndText
@@ -322,6 +326,7 @@ extension CompanionPreferences {
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(launchAtLogin, forKey: .launchAtLogin)
+        try values.encode(hideDockIconWhenNoWindowsOpen, forKey: .hideDockIconWhenNoWindowsOpen)
         try values.encode(menuBarDisplayMode, forKey: .menuBarDisplayMode)
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)

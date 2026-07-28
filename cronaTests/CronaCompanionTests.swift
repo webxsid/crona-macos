@@ -578,6 +578,7 @@ final class CronaCompanionTests: XCTestCase {
         service.preferences.menuBarDisplayMode = .textOnly
         service.preferences.menuBarIdleTextMode = .focusToday
         service.preferences.menuBarTimeFormat = .adaptive
+        service.preferences.hideDockIconWhenNoWindowsOpen = false
         service.preferences.smartPauseEnabled = true
         service.preferences.smartPauseOnLock = false
         service.preferences.smartPauseOnDisplaySleep = false
@@ -598,6 +599,7 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(reloaded.preferences.menuBarDisplayMode, .textOnly)
         XCTAssertEqual(reloaded.preferences.menuBarIdleTextMode, .focusToday)
         XCTAssertEqual(reloaded.preferences.menuBarTimeFormat, .adaptive)
+        XCTAssertFalse(reloaded.preferences.hideDockIconWhenNoWindowsOpen)
         XCTAssertTrue(reloaded.preferences.smartPauseEnabled)
         XCTAssertFalse(reloaded.preferences.smartPauseOnLock)
         XCTAssertFalse(reloaded.preferences.smartPauseOnDisplaySleep)
@@ -631,6 +633,7 @@ final class CronaCompanionTests: XCTestCase {
 
         XCTAssertEqual(preferences.menuBarDisplayMode, .iconAndText)
         XCTAssertEqual(preferences.menuBarIdleTextMode, .idle)
+        XCTAssertTrue(preferences.hideDockIconWhenNoWindowsOpen)
         XCTAssertFalse(preferences.smartPauseEnabled)
         XCTAssertTrue(preferences.smartPauseOnLock)
         XCTAssertTrue(preferences.smartPauseOnDisplaySleep)
@@ -815,6 +818,15 @@ final class CronaCompanionTests: XCTestCase {
         let service = PreferencesService(defaults: defaults)
 
         XCTAssertTrue(service.preferences.showHardLimitActionPopups)
+    }
+
+    func testPreferencesDefaultDockIconHidesWhenNoWindowsAreOpen() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let service = PreferencesService(defaults: defaults)
+
+        XCTAssertTrue(service.preferences.hideDockIconWhenNoWindowsOpen)
     }
 
     func testHardLimitWarningLeadTimeUsesFixedPresets() {

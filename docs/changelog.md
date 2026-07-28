@@ -7,12 +7,34 @@ All notable changes to **Crona for macOS** are documented here.
 ### Added
 
 - A dedicated documentation set for the macOS client, covering installation, runtime behavior, development, release process, and troubleshooting.
+- A user-facing General setting to hide Crona from the Dock when no app window is open.
+- A branded DMG background and Finder layout preparation script for release packaging.
 
 ### Changed
 
 - Daemon startup now treats discovery as a hint instead of a guarantee and can launch the daemon when discovery is missing or stale.
 - Daemon launch resolution now follows the core Crona project's candidate order, including repo-local dev binaries and repo-local `go run` fallback.
 - Repeated daemon launch failures now latch the companion into the existing connection error state instead of reconnecting indefinitely.
+- Dock activation now returns release builds to menu-bar-only mode when the Settings window closes, unless the new Dock preference disables that behavior.
+- Release packaging now stages a styled DMG with a quiet terminal-like background instead of a plain folder image.
+
+## [1.0.0-beta.5] - 2026-07-28
+
+Crona for macOS v1.0.0-beta.5 finishes the beta release polish around window presence and installer presentation, while keeping the daemon recovery and popup work from beta.4 intact.
+
+### Added
+
+- A General setting to keep Crona out of the Dock whenever no full app window is open.
+- A branded DMG background asset and Finder layout script for drag-install releases.
+
+### Changed
+
+- Release builds now re-evaluate Dock visibility when the Settings window or other regular-window presentations close.
+- The release DMG now opens with a restrained terminal-like background and curated drag-to-Applications layout.
+
+### Fixed
+
+- Beta builds no longer linger in the Dock after the Settings window closes when the Dock-hiding preference is enabled.
 
 ## [1.0.0-beta.4] - 2026-07-28
 

@@ -165,6 +165,9 @@ jobs:
           DMG_NAME="Crona-${VERSION}-macOS.dmg"
           DSYM_NAME="Crona-${VERSION}-dSYMs.zip"
           DMG_ROOT="${RUNNER_TEMP}/dmg-root"
+          DMG_RW_PATH="${RUNNER_TEMP}/Crona-${VERSION}-staging.dmg"
+          DMG_MOUNT_POINT="${RUNNER_TEMP}/mounted-dmg-stage"
+          DMG_VOLUME_NAME="Crona"
           rm -rf "${DMG_ROOT}"
           mkdir -p "${DMG_ROOT}"
 
@@ -176,19 +179,39 @@ jobs:
             "${RUNNER_TEMP}/${DSYM_NAME}"
           ditto "${RUNNER_TEMP}/export/crona.app" "${DMG_ROOT}/Crona.app"
           ln -s /Applications "${DMG_ROOT}/Applications"
-          if diskutil image create --help >/dev/null 2>&1; then
-            diskutil image create from \
-              --volumeName "Crona" \
-              --format UDZO \
-              "${DMG_ROOT}" \
-              "${RUNNER_TEMP}/${DMG_NAME}"
-          else
-            hdiutil create \
-              -volname "Crona" \
-              -srcfolder "${DMG_ROOT}" \
-              -format UDZO \
-              "${RUNNER_TEMP}/${DMG_NAME}"
-          fi
+
+          hdiutil create \
+            -volname "${DMG_VOLUME_NAME}" \
+            -srcfolder "${DMG_ROOT}" \
+            -fs HFS+ \
+            -format UDRW \
+            -size 200m \
+            "${DMG_RW_PATH}"
+
+          rm -rf "${DMG_MOUNT_POINT}"
+          mkdir -p "${DMG_MOUNT_POINT}"
+          hdiutil attach \
+            -nobrowse \
+            -readwrite \
+            -mountPoint "${DMG_MOUNT_POINT}" \
+            "${DMG_RW_PATH}"
+          trap 'hdiutil detach "${DMG_MOUNT_POINT}" || true' EXIT
+
+          chmod +x scripts/prepare_dmg_layout.sh
+          ./scripts/prepare_dmg_layout.sh \
+            "${DMG_VOLUME_NAME}" \
+            "${DMG_MOUNT_POINT}" \
+            "assets/release/dmg-background.png"
+
+          sync
+          hdiutil detach "${DMG_MOUNT_POINT}"
+          trap - EXIT
+
+          hdiutil convert \
+            "${DMG_RW_PATH}" \
+            -format UDZO \
+            -imagekey zlib-level=9 \
+            -o "${RUNNER_TEMP}/${DMG_NAME}"
 
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "base_version=${BASE_VERSION}" >> "${GITHUB_OUTPUT}"

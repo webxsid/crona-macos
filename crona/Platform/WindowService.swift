@@ -53,6 +53,7 @@ final class WindowService {
     private var hardLimitWarningAnimationID: UInt64 = 0
     private var breakScreenPrimaryDisplayID: CGDirectDisplayID?
     private var screenParametersObserver: NSObjectProtocol?
+    private var externalWindowPresentationCount = 0
 
     var breakScreensVisible: Bool {
         breakScreenPanels.values.contains(where: \.isVisible)
@@ -264,12 +265,13 @@ final class WindowService {
     }
 
     func beginExternalWindowPresentation() {
+        externalWindowPresentationCount += 1
         presentAsRegularApplication()
     }
 
     func endExternalWindowPresentation() {
-        guard settingsWindow?.isVisible != true else { return }
-        NSApp.setActivationPolicy(.accessory)
+        externalWindowPresentationCount = max(0, externalWindowPresentationCount - 1)
+        refreshApplicationActivationPolicy()
     }
 
     func registerSettingsWindow(_ window: NSWindow) {
@@ -304,8 +306,23 @@ final class WindowService {
                     NotificationCenter.default.removeObserver(settingsWindowCloseObserver)
                     self.settingsWindowCloseObserver = nil
                 }
-                NSApp.setActivationPolicy(.accessory)
+                self.refreshApplicationActivationPolicy()
             }
+        }
+    }
+
+    func refreshApplicationActivationPolicy() {
+        let shouldRemainRegular = settingsWindow?.isVisible == true || externalWindowPresentationCount > 0
+        if shouldRemainRegular {
+            presentAsRegularApplication()
+            return
+        }
+
+        let shouldHideDockIcon = appState?.preferences.preferences.hideDockIconWhenNoWindowsOpen ?? true
+        if shouldHideDockIcon {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            presentAsRegularApplication()
         }
     }
 

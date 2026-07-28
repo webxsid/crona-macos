@@ -274,6 +274,15 @@ private struct GeneralSettingsView: View {
                     )
                 )
 
+                SettingsToggleRow(
+                    title: "Hide Dock Icon When Closed",
+                    subtitle: "Keep Crona in the menu bar only unless a full app window is open.",
+                    isOn: Binding(
+                        get: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen },
+                        set: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen = $0 }
+                    )
+                )
+
                 if let error = appState.launchAtLoginService.lastError, !error.isEmpty {
                     settingsFootnote(error)
                 }
