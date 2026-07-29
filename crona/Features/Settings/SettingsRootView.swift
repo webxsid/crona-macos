@@ -38,8 +38,6 @@ struct SettingsRootView: View {
                     .disabled(!appState.settingsNavigation.canGoBack)
                     .help("Back")
                 }
-                .visibilityPriority(.high)
-
                 ToolbarSpacer(.fixed)
 
                 ToolbarItem(placement: .navigation) {
@@ -49,8 +47,6 @@ struct SettingsRootView: View {
                     .disabled(!appState.settingsNavigation.canGoForward)
                     .help("Forward")
                 }
-                .visibilityPriority(.high)
-
                 ToolbarSpacer(.fixed)
 
                 ToolbarItem(placement: .navigation) {
@@ -59,7 +55,6 @@ struct SettingsRootView: View {
                         .foregroundStyle(PopupVisualTheme.primaryText)
                 }
                 .sharedBackgroundVisibility(.hidden)
-                .visibilityPriority(.low)
             } else if #available(macOS 26.1, *) {
                 ToolbarItemGroup(placement: .navigation) {
                     Button(action: appState.goBackInSettings) {
@@ -82,7 +77,6 @@ struct SettingsRootView: View {
                         .foregroundStyle(PopupVisualTheme.primaryText)
                 }
                 .sharedBackgroundVisibility(.hidden)
-                .visibilityPriority(.low)
             } else if #available(macOS 26.0, *) {
                 ToolbarItemGroup(placement: .navigation) {
                     Button(action: appState.goBackInSettings) {
