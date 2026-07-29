@@ -35,6 +35,8 @@ show_toolbar = False
 show_pathbar = False
 show_sidebar = False
 sidebar_width = 180
+# Keep the Finder window aligned with the 720x460 background. dmgbuild stores
+# this as the default WindowBounds in the image's .DS_Store.
 window_rect = ((120, 140), (720, 460))
 default_view = "icon-view"
 show_icon_preview = False

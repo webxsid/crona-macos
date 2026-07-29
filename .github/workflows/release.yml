@@ -165,6 +165,19 @@ jobs:
           DMG_NAME="Crona-${VERSION}-macOS.dmg"
           DSYM_NAME="Crona-${VERSION}-dSYMs.zip"
           DMG_VOLUME_NAME="Crona"
+          BACKGROUND_SOURCE="${GITHUB_WORKSPACE}/assets/release/dmg-background.png"
+          BACKGROUND_PATH="${RUNNER_TEMP}/dmg-background.png"
+
+          test -f "${BACKGROUND_SOURCE}"
+          test "$(sips -g pixelWidth "${BACKGROUND_SOURCE}" | awk '/pixelWidth:/{print $2}')" = "720"
+          test "$(sips -g pixelHeight "${BACKGROUND_SOURCE}" | awk '/pixelHeight:/{print $2}')" = "460"
+          # Finder interprets the background in points. Normalize the asset so
+          # its 720x460 pixels map to the 720x460 Finder window on every runner.
+          sips \
+            -s dpiWidth 72 \
+            -s dpiHeight 72 \
+            "${BACKGROUND_SOURCE}" \
+            --out "${BACKGROUND_PATH}" >/dev/null
 
           ditto -c -k --sequesterRsrc --keepParent \
             "${RUNNER_TEMP}/export/crona.app" \
@@ -179,7 +192,7 @@ jobs:
           "${DMG_VENV}/bin/dmgbuild" \
             -s scripts/dmgbuild_settings.py \
             -D app="${RUNNER_TEMP}/export/crona.app" \
-            -D background="${GITHUB_WORKSPACE}/assets/release/dmg-background.png" \
+            -D background="${BACKGROUND_PATH}" \
             -D volume_name="${DMG_VOLUME_NAME}" \
             -D format=UDZO \
             "${DMG_VOLUME_NAME}" \
