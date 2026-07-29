@@ -216,48 +216,55 @@ struct NowTabView: View {
     let displayClock: PopupDisplayClock
 
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            content
-
-            ScrollView(.vertical) {
-                content
-                    .padding(.vertical, 2)
-            }
-            .scrollIndicators(.hidden)
-            .frame(maxHeight: 480)
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
         switch appState.daemonConnection.connectionState {
         case .connected:
             if appState.timerService.snapshot.sessionID != nil,
                 appState.timerService.snapshot.state != "idle",
                 appState.timerService.snapshot.state != "disconnected"
             {
-                ActiveTimerView(
-                    appState: appState,
-                    displayClock: displayClock
-                )
+                fitOrScroll {
+                    ActiveTimerView(
+                        appState: appState,
+                        displayClock: displayClock
+                    )
+                }
             } else if let issue = appState.selectedFocusIssue {
                 FocusStartConfigView(appState: appState, issue: issue)
             } else {
-                IdleFocusView(appState: appState)
+                fitOrScroll {
+                    IdleFocusView(appState: appState)
+                }
             }
         case .connecting, .disconnected, .idle:
-            PlaceholderPanel(
-                icon: "bolt.horizontal.circle",
-                title: "Connecting to Crona",
-                subtitle: "The companion is waiting for the daemon to become available."
-            )
+            fitOrScroll {
+                PlaceholderPanel(
+                    icon: "bolt.horizontal.circle",
+                    title: "Connecting to Crona",
+                    subtitle: "The companion is waiting for the daemon to become available."
+                )
+            }
         case .incompatible, .error:
-            PlaceholderPanel(
-                icon: "exclamationmark.triangle.fill",
-                title: "Connection Error",
-                subtitle: appState.daemonConnection.lastErrorDescription
-                    ?? "Unable to reach Crona."
-            )
+            fitOrScroll {
+                PlaceholderPanel(
+                    icon: "exclamationmark.triangle.fill",
+                    title: "Connection Error",
+                    subtitle: appState.daemonConnection.lastErrorDescription
+                        ?? "Unable to reach Crona."
+                )
+            }
+        }
+    }
+
+    private func fitOrScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ViewThatFits(in: .vertical) {
+            content()
+
+            ScrollView(.vertical) {
+                content()
+                    .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: 480)
         }
     }
 }
@@ -663,6 +670,7 @@ struct FocusStartConfigView: View {
 
 struct StatsTabView: View {
     @ObservedObject var appState: CompanionAppState
+    @State private var isShowingCalendar = false
 
     var body: some View {
         let snapshot = appState.popoverStatsService.snapshot
@@ -673,12 +681,26 @@ struct StatsTabView: View {
                     appState.popoverStatsService.showPreviousDay()
                 }
 
-                Text(statsTitle(for: snapshot.date))
-                    .font(.headline)
-                    .foregroundStyle(PopupVisualTheme.primaryText)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
-                    .background(glassCapsuleBackground())
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        if isShowingCalendar {
+                            appState.popoverStatsService.showToday()
+                            isShowingCalendar = false
+                        } else {
+                            isShowingCalendar = true
+                        }
+                    }
+                } label: {
+                    Text(isShowingCalendar ? "Today" : statsTitle(for: snapshot.date))
+                        .font(.headline)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(glassCapsuleBackground())
+                }
+                .buttonStyle(.plain)
+                .contentShape(Capsule())
+                .accessibilityLabel(isShowingCalendar ? "Return to today" : "Show calendar")
 
                 statsDateArrow(
                     systemName: "chevron.right",
@@ -688,111 +710,347 @@ struct StatsTabView: View {
                 }
             }
 
-            ScrollView(.vertical) {
-                ZStack {
-                    VStack(spacing: 12) {
-                        if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
-                            scoreHero(score: score, message: snapshot.scoreMessage)
-                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            if isShowingCalendar {
+                statsCalendarContent(snapshot: snapshot)
+            } else {
+                statsSummaryContent(snapshot: snapshot)
+            }
+        }
+    }
 
-                            LazyVGrid(
-                                columns: [
-                                    GridItem(.flexible(), spacing: 10),
-                                    GridItem(.flexible(), spacing: 10),
-                                ],
-                                spacing: 10
-                            ) {
-                                StatsMetricTile(
-                                    icon: "bolt.fill",
-                                    tint: .yellow,
-                                    title: "Focus",
-                                    value: compactDuration(metrics.workedSeconds)
-                                )
-                                StatsMetricTile(
-                                    icon: "cup.and.saucer.fill",
-                                    tint: .pink,
-                                    title: "Breaks",
-                                    value: compactDuration(metrics.restSeconds)
-                                )
-                                StatsMetricTile(
-                                    icon: "rectangle.stack.fill",
-                                    tint: .orange,
-                                    title: "Sessions",
-                                    value: "\(metrics.sessionCount)"
-                                )
-                                StatsMetricTile(
-                                    icon: "scope",
-                                    tint: .mint,
-                                    title: "Target",
-                                    value: compactDuration(score.targetWorkedSeconds)
-                                )
-                            }
+    private func statsSummaryContent(snapshot: PopoverStatsSnapshot) -> some View {
+        ScrollView(.vertical) {
+            ZStack {
+                VStack(spacing: 12) {
+                    if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
+                        scoreHero(score: score, message: snapshot.scoreMessage)
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
-                            FocusRestBalanceView(
-                                workedSeconds: metrics.workedSeconds,
-                                restSeconds: metrics.restSeconds
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 10),
+                                GridItem(.flexible(), spacing: 10),
+                            ],
+                            spacing: 10
+                        ) {
+                            StatsMetricTile(
+                                icon: "bolt.fill",
+                                tint: .yellow,
+                                title: "Focus",
+                                value: compactDuration(metrics.workedSeconds)
                             )
-
-                            StatsOutcomeCard(
-                                icon: "checkmark.circle.fill",
-                                tint: .green,
-                                title: "Issues",
-                                values: [
-                                    ("Completed", metrics.completedIssues),
-                                    ("Planned", metrics.totalIssues),
-                                    ("Abandoned", metrics.abandonedIssues),
-                                ]
+                            StatsMetricTile(
+                                icon: "cup.and.saucer.fill",
+                                tint: .pink,
+                                title: "Breaks",
+                                value: compactDuration(metrics.restSeconds)
                             )
-
-                            StatsOutcomeCard(
-                                icon: "checklist.checked",
-                                tint: .cyan,
-                                title: "Habits",
-                                values: [
-                                    ("Done", metrics.habitCompletedCount),
-                                    ("Due", metrics.habitDueCount),
-                                    ("Failed", metrics.habitFailedCount),
-                                ]
+                            StatsMetricTile(
+                                icon: "rectangle.stack.fill",
+                                tint: .orange,
+                                title: "Sessions",
+                                value: "\(metrics.sessionCount)"
                             )
-                        } else if !snapshot.isLoading {
-                            PlaceholderPanel(
-                                icon: "chart.xyaxis.line",
-                                title: "No stats yet",
-                                subtitle: "Start a focus session to populate this day’s summary."
+                            StatsMetricTile(
+                                icon: "scope",
+                                tint: .mint,
+                                title: "Target",
+                                value: compactDuration(score.targetWorkedSeconds)
                             )
                         }
 
-                        if let error = snapshot.lastErrorDescription, !error.isEmpty {
-                            Label(error, systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.red.opacity(0.9))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 4)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.2), value: snapshot.date)
-                    .animation(.easeOut(duration: 0.2), value: snapshot.focusScore?.score)
+                        FocusRestBalanceView(
+                            workedSeconds: metrics.workedSeconds,
+                            restSeconds: metrics.restSeconds
+                        )
 
-                    if snapshot.isLoading && snapshot.focusScore == nil {
+                        StatsOutcomeCard(
+                            icon: "checkmark.circle.fill",
+                            tint: .green,
+                            title: "Issues",
+                            values: [
+                                ("Completed", metrics.completedIssues),
+                                ("Planned", metrics.totalIssues),
+                                ("Abandoned", metrics.abandonedIssues),
+                            ]
+                        )
+
+                        StatsOutcomeCard(
+                            icon: "checklist.checked",
+                            tint: .cyan,
+                            title: "Habits",
+                            values: [
+                                ("Done", metrics.habitCompletedCount),
+                                ("Due", metrics.habitDueCount),
+                                ("Failed", metrics.habitFailedCount),
+                            ]
+                        )
+                    } else if !snapshot.isLoading {
                         PlaceholderPanel(
-                            icon: "arrow.triangle.2.circlepath",
-                            title: "Loading stats",
-                            subtitle: "Refreshing this day from the daemon."
+                            icon: "chart.xyaxis.line",
+                            title: "No stats yet",
+                            subtitle: "Start a focus session to populate this day’s summary."
                         )
                     }
+
+                    if let error = snapshot.lastErrorDescription, !error.isEmpty {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red.opacity(0.9))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                    }
                 }
-                .padding(.vertical, 2)
+                .animation(.easeOut(duration: 0.2), value: snapshot.date)
+                .animation(.easeOut(duration: 0.2), value: snapshot.focusScore?.score)
+
+                if snapshot.isLoading && snapshot.focusScore == nil {
+                    PlaceholderPanel(
+                        icon: "arrow.triangle.2.circlepath",
+                        title: "Loading stats",
+                        subtitle: "Refreshing this day from the daemon."
+                    )
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.hidden)
+        .frame(maxHeight: 480)
+        .overlay(alignment: .topTrailing) {
+            if snapshot.isLoading && snapshot.focusScore != nil {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(8)
+            }
+        }
+    }
+
+    private func statsCalendarContent(snapshot: PopoverStatsSnapshot) -> some View {
+        ViewThatFits(in: .vertical) {
+            statsCalendarBody(snapshot: snapshot)
+
+            ScrollView(.vertical) {
+                statsCalendarBody(snapshot: snapshot)
+                    .padding(.vertical, 2)
             }
             .scrollIndicators(.hidden)
             .frame(maxHeight: 480)
-            .overlay(alignment: .topTrailing) {
-                if snapshot.isLoading && snapshot.focusScore != nil {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(8)
+        }
+    }
+
+    private func statsCalendarBody(snapshot: PopoverStatsSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            calendarSelectionCard(snapshot: snapshot)
+            calendarMonthGrid(snapshot: snapshot)
+
+            if let error = snapshot.lastErrorDescription, !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.9))
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private func calendarSelectionCard(snapshot: PopoverStatsSnapshot) -> some View {
+        let selectedSnapshot = appState.popoverStatsService.cachedSnapshot(for: snapshot.date) ?? snapshot
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 16) {
+                CompactScoreRing(score: selectedSnapshot.focusScore?.score ?? 0)
+                    .frame(width: 92, height: 92)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(displayDate(snapshot.date))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(PopupVisualTheme.primaryText)
+                        .lineLimit(1)
+
+                    if let score = selectedSnapshot.focusScore {
+                        Text(score.level.capitalized)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
+
+                        Text(selectedSnapshot.scoreMessage)
+                            .font(.caption)
+                            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if selectedSnapshot.isLoading {
+                        Text("Loading day summary")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
+                    } else {
+                        Text("No summary available for this day.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
+    }
+
+    private func calendarMonthGrid(snapshot: PopoverStatsSnapshot) -> some View {
+        let selectedDate = CronaCalendarDate.date(from: snapshot.date) ?? Date()
+        let monthTitle = calendarMonthTitle(for: selectedDate)
+        let days = calendarGridDays(containing: selectedDate)
+        let todayString = appState.daemonConnection.currentDate.isEmpty
+            ? DailyFocusService.todayString()
+            : appState.daemonConnection.currentDate
+        let visibleDates = days.compactMap { date in
+            date.map(calendarDateString(for:))
+        }
+        .filter { $0 <= todayString }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(monthTitle)
+                    .font(.headline)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+                Spacer()
+                Text("Tap a day")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.55))
+            }
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7),
+                spacing: 8
+            ) {
+                ForEach(calendarWeekdaySymbols(), id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.5))
+                        .frame(maxWidth: .infinity)
+                }
+
+                ForEach(Array(days.enumerated()), id: \.offset) { _, date in
+                    calendarDayCell(date: date, selectedDate: snapshot.date)
                 }
             }
         }
+        .padding(14)
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
+        .task(id: visibleDates) {
+            await appState.popoverStatsService.prefetchCalendarDates(visibleDates)
+        }
+    }
+
+    private func calendarDayCell(date: Date?, selectedDate: String) -> some View {
+        let calendar = calendarForLayout()
+        let todayString = appState.daemonConnection.currentDate.isEmpty
+            ? DailyFocusService.todayString()
+            : appState.daemonConnection.currentDate
+        let today = CronaCalendarDate.date(from: todayString) ?? Date()
+        let selected = date.map(calendarDateString(for:)) == selectedDate
+        let isToday = date.map { calendar.isDate($0, inSameDayAs: today) } ?? false
+        let isFuture = date.map { calendar.compare($0, to: today, toGranularity: .day) == .orderedDescending } ?? false
+        let cached = date.flatMap { appState.popoverStatsService.cachedSnapshot(for: calendarDateString(for: $0)) }
+        let score = cached?.focusScore?.score
+
+        return Button {
+            guard let date else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                appState.popoverStatsService.selectDate(calendarDateString(for: date))
+                isShowingCalendar = false
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(selected ? PopupVisualTheme.selectedControlBackground.opacity(0.95) : PopupVisualTheme.primaryText.opacity(isFuture ? 0.025 : 0.05))
+
+                Circle()
+                    .strokeBorder(
+                        isToday ? PopupVisualTheme.highlightedBorder : PopupVisualTheme.primaryText.opacity(isFuture ? 0.05 : 0.08),
+                        lineWidth: isToday ? 1.3 : 1
+                    )
+
+                if let score {
+                    Circle()
+                        .trim(from: 0, to: min(1, max(0, Double(score) / 100)))
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    PopupVisualTheme.primaryText.opacity(0.82),
+                                    Color.yellow.opacity(0.72)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .padding(3)
+                }
+
+                if let date {
+                    Text("\(calendar.component(.day, from: date))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(selected ? PopupVisualTheme.selectedControlText : PopupVisualTheme.primaryText)
+                }
+            }
+            .frame(height: 34)
+            .opacity(isFuture ? 0.35 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(date == nil || isFuture)
+    }
+
+    private func calendarGridDays(containing date: Date) -> [Date?] {
+        let calendar = calendarForLayout()
+        guard let monthInterval = calendar.dateInterval(of: .month, for: date),
+              let dayRange = calendar.range(of: .day, in: .month, for: date)
+        else {
+            return []
+        }
+
+        let firstOfMonth = monthInterval.start
+        let leading = (calendar.component(.weekday, from: firstOfMonth) - calendar.firstWeekday + 7) % 7
+        var days: [Date?] = Array(repeating: nil, count: leading)
+
+        for day in dayRange {
+            days.append(calendar.date(bySetting: .day, value: day, of: firstOfMonth))
+        }
+
+        while days.count.isMultiple(of: 7) == false {
+            days.append(nil)
+        }
+
+        return days
+    }
+
+    private func calendarWeekdaySymbols() -> [String] {
+        let calendar = calendarForLayout()
+        let symbols = calendar.shortStandaloneWeekdaySymbols
+        let offset = max(0, calendar.firstWeekday - 1)
+        return Array(symbols[offset...] + symbols[..<offset])
+    }
+
+    private func calendarMonthTitle(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendarForLayout()
+        formatter.locale = Locale.current
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
+    }
+
+    private func calendarForLayout() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        return calendar
+    }
+
+    private func calendarDateString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendarForLayout()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     private func scoreHero(

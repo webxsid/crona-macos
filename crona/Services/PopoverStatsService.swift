@@ -127,8 +127,49 @@ final class PopoverStatsService: ObservableObject {
         Task { await refresh() }
     }
 
+    func selectDate(_ date: String) {
+        guard !date.isEmpty, date != selectedDate else { return }
+        selectedDate = date
+        presentSelectedDate()
+        Task { await refresh() }
+    }
+
+    func showToday() {
+        selectedDate = todayDate
+        presentSelectedDate()
+        Task { await refresh() }
+    }
+
     func canShowNextDay() -> Bool {
         selectedDate < todayDate
+    }
+
+    func cachedSnapshot(for date: String) -> PopoverStatsSnapshot? {
+        cache[date]
+    }
+
+    func prefetchCalendarDates(_ dates: [String]) async {
+        let datesToLoad = dates.filter { !isCachedFocusScoreLoaded(for: $0) }
+        guard !datesToLoad.isEmpty else { return }
+
+        for date in datesToLoad {
+            do {
+                let score = try await daemonConnection.withClient {
+                    try await $0.dashboardFocusScore(start: date, end: date)
+                }
+                let refreshed = PopoverStatsSnapshot(
+                    date: date,
+                    focusScore: score,
+                    scoreMessage: Self.message(for: score.level),
+                    isConnected: true,
+                    isLoading: false,
+                    lastErrorDescription: nil
+                )
+                cache[date] = refreshed
+            } catch {
+                logger.debug("Calendar prefetch failed for \(date, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     func refreshTodayMetrics() async {
@@ -189,6 +230,10 @@ final class PopoverStatsService: ObservableObject {
         } else {
             snapshot = PopoverStatsSnapshot(date: selectedDate, isLoading: true)
         }
+    }
+
+    private func isCachedFocusScoreLoaded(for date: String) -> Bool {
+        cache[date]?.focusScore != nil
     }
 
     static func message(for level: String) -> String {

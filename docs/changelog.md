@@ -18,6 +18,26 @@ All notable changes to **Crona for macOS** are documented here.
 - Dock activation now returns release builds to menu-bar-only mode when the Settings window closes, unless the new Dock preference disables that behavior.
 - Release packaging now builds a styled DMG with pinned `dmgbuild` and an isolated virtualenv in CI.
 
+## [1.0.0-beta.7] - 2026-07-29
+
+Crona for macOS v1.0.0-beta.7 is a hot-fix release focused on historical Stats navigation, popup sizing, and release packaging reliability.
+
+### Added
+
+- A month calendar in the menu-bar Stats tab for browsing historical focus summaries.
+- Cached focus-score indicators and background prefetching for visible calendar days.
+
+### Changed
+
+- Stats navigation now supports returning directly to today and refreshes data for the selected logical date.
+- Long Now and Stats popup content now adapts between fitting and scrolling layouts.
+- DMG packaging validates and normalizes the 720x460 background before building.
+
+### Fixed
+
+- Historical Stats navigation no longer requires stepping through days one at a time.
+- Release builds no longer use unsupported SwiftUI toolbar visibility modifiers.
+
 ## [1.0.0-beta.5] - 2026-07-28
 
 Crona for macOS v1.0.0-beta.5 finishes the beta release polish around window presence and installer presentation, while keeping the daemon recovery and popup work from beta.4 intact.
