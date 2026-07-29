@@ -259,6 +259,26 @@ final class CronaDaemonClient {
         return settings
     }
 
+    func dayBoundarySettingsGet() async throws -> CronaDayBoundarySettings {
+        let allSettings: [String: CronaDayBoundarySettings] = try await request(
+            method: "settings.get_all"
+        )
+        if let localSettings = allSettings["local"] {
+            return localSettings
+        }
+        return allSettings.values.first ?? CronaDayBoundarySettings()
+    }
+
+    func dayBoundarySettingPatch(
+        key: String,
+        schedule: CronaDayBoundarySchedule
+    ) async throws -> CronaOKResponse {
+        try await request(
+            method: "settings.patch",
+            params: AnyEncodable(CronaDayBoundarySettingPatch(key: key, value: schedule))
+        )
+    }
+
     func alertSettingsPut(_ values: [String: JSONValue]) async throws {
         let _: JSONValue = try await request(
             method: "settings.put",
@@ -314,6 +334,11 @@ final class CronaDaemonClient {
 
         return result
     }
+}
+
+private struct CronaDayBoundarySettingPatch: Encodable {
+    let key: String
+    let value: CronaDayBoundarySchedule
 }
 
 struct CronaDailyPlanQuery: Codable { let date: String }

@@ -283,9 +283,15 @@ final class WindowService {
         settingsWindow = window
         window.title = "Crona"
         window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
+        window.toolbarStyle = .unifiedCompact
         window.titlebarSeparatorStyle = .none
+        if #available(macOS 27.0, *) {
+            window.titlebarAppearsTransparent = false
+            window.backgroundColor = .windowBackgroundColor
+        } else {
+            window.titlebarAppearsTransparent = true
+        }
         window.contentMinSize = NSSize(width: 860, height: 620)
         if window.contentLayoutRect.width < 860 || window.contentLayoutRect.height < 620 {
             window.setContentSize(NSSize(width: 900, height: 680))

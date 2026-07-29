@@ -19,7 +19,11 @@ where T.AllCases: RandomAccessCollection {
 
                     Text(label)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(isSelected ? .white : Color.white.opacity(0.6))
+                        .foregroundStyle(
+                            isSelected
+                                ? PopupVisualTheme.selectedControlText
+                                : PopupVisualTheme.secondaryText
+                        )
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
@@ -33,10 +37,10 @@ where T.AllCases: RandomAccessCollection {
         .padding(4)
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.065))
+                .fill(PopupVisualTheme.controlBackground)
                 .overlay {
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+                        .strokeBorder(PopupVisualTheme.border, lineWidth: 0.8)
                 }
         )
     }
@@ -45,21 +49,12 @@ where T.AllCases: RandomAccessCollection {
     private func segmentBackground(isSelected: Bool) -> some View {
         if isSelected {
             Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.2),
-                            Color.white.opacity(0.1),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(PopupVisualTheme.selectedControlBackground)
                 .overlay {
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                        .strokeBorder(PopupVisualTheme.highlightedBorder, lineWidth: 0.8)
                 }
-                .shadow(color: .black.opacity(0.14), radius: 8, y: 5)
+                .shadow(color: PopupVisualTheme.shadow, radius: 8, y: 5)
         } else {
             Capsule()
                 .fill(Color.clear)

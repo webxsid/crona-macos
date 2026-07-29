@@ -125,27 +125,45 @@ final class IssueActionsService: ObservableObject {
 }
 
 enum CronaCalendarDate {
-    private static let formatter: DateFormatter = {
+    private static func formatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }()
+    }
 
     static func date(from value: String) -> Date? {
-        formatter.date(from: value)
+        let components = value.split(separator: "-")
+        guard components.count == 3,
+              let year = Int(components[0]),
+              let month = Int(components[1]),
+              let day = Int(components[2])
+        else {
+            return nil
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        return calendar.date(from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: 12
+        ))
     }
 
     static func string(from date: Date) -> String {
-        formatter.string(from: date)
+        formatter().string(from: date)
     }
 
     static func adding(days: Int, to value: String) -> String? {
         guard let date = date(from: value) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.timeZone = TimeZone.current
         guard let result = calendar.date(byAdding: .day, value: days, to: date) else { return nil }
         return string(from: result)
     }

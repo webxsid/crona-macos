@@ -43,7 +43,7 @@ struct PopoverRootView: View {
                     .padding(.vertical, 11)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.white.opacity(0.07))
+                            .fill(PopupVisualTheme.primaryText.opacity(0.07))
                     )
                 }
                 .buttonStyle(.plain)
@@ -79,7 +79,7 @@ struct PopoverRootView: View {
                         .lineLimit(2)
                 }
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -131,6 +131,7 @@ struct PopoverRootView: View {
                 openSettings()
             }
         }
+        .companionAppearance(appState)
     }
 
     private var hasPresentedModal: Bool {
@@ -196,9 +197,10 @@ struct PopoverRootView: View {
                 } label: {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.7))
                         .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .background(Circle().fill(PopupVisualTheme.primaryText.opacity(0.06)))
+                        .menuBarIconHitTarget()
                 }
                 .buttonStyle(.plain)
                 .help("Crona Menu")
@@ -214,36 +216,48 @@ struct NowTabView: View {
     let displayClock: PopupDisplayClock
 
     var body: some View {
-        Group {
-            switch appState.daemonConnection.connectionState {
-            case .connected:
-                if appState.timerService.snapshot.sessionID != nil,
-                    appState.timerService.snapshot.state != "idle",
-                    appState.timerService.snapshot.state != "disconnected"
-                {
-                    ActiveTimerView(
-                        appState: appState,
-                        displayClock: displayClock
-                    )
-                } else if let issue = appState.selectedFocusIssue {
-                    FocusStartConfigView(appState: appState, issue: issue)
-                } else {
-                    IdleFocusView(appState: appState)
-                }
-            case .connecting, .disconnected, .idle:
-                PlaceholderPanel(
-                    icon: "bolt.horizontal.circle",
-                    title: "Connecting to Crona",
-                    subtitle: "The companion is waiting for the daemon to become available."
-                )
-            case .incompatible, .error:
-                PlaceholderPanel(
-                    icon: "exclamationmark.triangle.fill",
-                    title: "Connection Error",
-                    subtitle: appState.daemonConnection.lastErrorDescription
-                        ?? "Unable to reach Crona."
-                )
+        ViewThatFits(in: .vertical) {
+            content
+
+            ScrollView(.vertical) {
+                content
+                    .padding(.vertical, 2)
             }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: 480)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch appState.daemonConnection.connectionState {
+        case .connected:
+            if appState.timerService.snapshot.sessionID != nil,
+                appState.timerService.snapshot.state != "idle",
+                appState.timerService.snapshot.state != "disconnected"
+            {
+                ActiveTimerView(
+                    appState: appState,
+                    displayClock: displayClock
+                )
+            } else if let issue = appState.selectedFocusIssue {
+                FocusStartConfigView(appState: appState, issue: issue)
+            } else {
+                IdleFocusView(appState: appState)
+            }
+        case .connecting, .disconnected, .idle:
+            PlaceholderPanel(
+                icon: "bolt.horizontal.circle",
+                title: "Connecting to Crona",
+                subtitle: "The companion is waiting for the daemon to become available."
+            )
+        case .incompatible, .error:
+            PlaceholderPanel(
+                icon: "exclamationmark.triangle.fill",
+                title: "Connection Error",
+                subtitle: appState.daemonConnection.lastErrorDescription
+                    ?? "Unable to reach Crona."
+            )
         }
     }
 }
@@ -263,16 +277,16 @@ struct ActiveTimerView: View {
             VStack(spacing: 10) {
                 Image(systemName: presentation.phaseSymbolName)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.58))
 
                 Text(presentation.phaseTitle)
                     .font(.headline)
-                    .foregroundStyle(.white.opacity(0.68))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
 
                 Text(timeText(for: presentation))
                     .font(.system(size: 58, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
@@ -296,7 +310,7 @@ struct ActiveTimerView: View {
                         Label {
                             Text(issue)
                                 .font(.headline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(PopupVisualTheme.primaryText)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
                         } icon: {
@@ -317,14 +331,14 @@ struct ActiveTimerView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .padding(.horizontal, 18)
-                .background(cardBackground(stroke: Color.white.opacity(0.08)))
+                .background(cardBackground(stroke: PopupVisualTheme.border))
             }
 
             HStack(spacing: 10) {
                 if presentation.canPause {
                     actionPill(
                         "Pause",
-                        fill: Color.white.opacity(0.18),
+                        fill: PopupVisualTheme.primaryText.opacity(0.18),
                         shortcut: KeyboardShortcut("p", modifiers: []),
                         shortcutLabel: "P"
                     ) {
@@ -334,7 +348,7 @@ struct ActiveTimerView: View {
                 if presentation.canResume {
                     actionPill(
                         "Resume",
-                        fill: Color.white.opacity(0.18),
+                        fill: PopupVisualTheme.primaryText.opacity(0.18),
                         shortcut: KeyboardShortcut("r", modifiers: []),
                         shortcutLabel: "R"
                     ) {
@@ -344,7 +358,7 @@ struct ActiveTimerView: View {
                 if presentation.canEnd {
                     actionPill(
                         "End",
-                        fill: Color.white.opacity(0.08),
+                        fill: PopupVisualTheme.primaryText.opacity(0.08),
                         shortcut: KeyboardShortcut("e", modifiers: []),
                         shortcutLabel: "E"
                     ) {
@@ -377,7 +391,7 @@ struct ActiveTimerView: View {
                 .lineLimit(1)
         }
         .font(.caption.weight(.medium))
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
     }
 
     private func timeText(for presentation: TimerPresentation) -> String {
@@ -400,7 +414,7 @@ struct IdleFocusView: View {
                     .foregroundStyle(.yellow)
                 Text("Ready to Focus")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
             }
 
             if appState.dailyFocusService.snapshot.issues.isEmpty {
@@ -432,9 +446,10 @@ struct IdleFocusView: View {
                         Image(systemName: "xmark")
                     }
                     .buttonStyle(.plain)
+                    .menuBarIconHitTarget()
                 }
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
                 .padding(.horizontal, 4)
             }
         }
@@ -469,7 +484,7 @@ struct FocusStartConfigView: View {
                         .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.8))
                 .keyboardShortcut(.cancelAction)
                 Spacer()
             }
@@ -477,7 +492,7 @@ struct FocusStartConfigView: View {
             Label {
                 Text(issue.title)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                     .lineLimit(2)
             } icon: {
                 Image(systemName: "record.circle.fill")
@@ -619,7 +634,7 @@ struct FocusStartConfigView: View {
                 Spacer()
                 actionPill(
                     "Start Focus",
-                    fill: Color.white.opacity(0.18),
+                    fill: PopupVisualTheme.primaryText.opacity(0.18),
                     shortcut: .defaultAction,
                     shortcutLabel: "↩"
                 ) {
@@ -660,7 +675,7 @@ struct StatsTabView: View {
 
                 Text(statsTitle(for: snapshot.date))
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 8)
                     .background(glassCapsuleBackground())
@@ -791,19 +806,19 @@ struct StatsTabView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text(score.level.capitalized)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                     .contentTransition(.numericText())
 
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.66))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
         }
         .padding(18)
-        .background(cardBackground(stroke: Color.white.opacity(0.1), cornerRadius: 26))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 26))
     }
 
     private func compactDuration(_ seconds: Int) -> String {
@@ -811,7 +826,9 @@ struct StatsTabView: View {
     }
 
     private func statsTitle(for date: String) -> String {
-        let today = DailyFocusService.todayString()
+        let today = appState.daemonConnection.currentDate.isEmpty
+            ? DailyFocusService.todayString()
+            : appState.daemonConnection.currentDate
         if date == today || date.isEmpty {
             return "Today’s Focus Score"
         }
@@ -819,19 +836,13 @@ struct StatsTabView: View {
     }
 
     private func displayDate(_ date: String) -> String {
-        let parser = DateFormatter()
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy-MM-dd"
-
         let renderer = DateFormatter()
         renderer.calendar = Calendar(identifier: .gregorian)
         renderer.locale = Locale.current
         renderer.timeZone = TimeZone.current
         renderer.dateFormat = "MMM d"
 
-        guard let parsed = parser.date(from: date) else {
+        guard let parsed = CronaCalendarDate.date(from: date) else {
             return date
         }
         return renderer.string(from: parsed)
@@ -845,9 +856,13 @@ struct StatsTabView: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(isEnabled ? .white : .white.opacity(0.28))
+                    .foregroundStyle(
+                        isEnabled
+                            ? PopupVisualTheme.primaryText
+                            : PopupVisualTheme.primaryText.opacity(0.28)
+                    )
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.white.opacity(isEnabled ? 0.08 : 0.04)))
+                .background(Circle().fill(PopupVisualTheme.primaryText.opacity(isEnabled ? 0.08 : 0.04)))
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -860,13 +875,13 @@ private struct CompactScoreRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.08), lineWidth: 9)
+                .stroke(PopupVisualTheme.primaryText.opacity(0.08), lineWidth: 9)
 
             Circle()
                 .trim(from: 0, to: min(1, max(0, Double(score) / 100)))
                 .stroke(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.82), Color.yellow.opacity(0.72)],
+                        colors: [PopupVisualTheme.primaryText.opacity(0.82), Color.yellow.opacity(0.72)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -881,9 +896,9 @@ private struct CompactScoreRing: View {
                     .contentTransition(.numericText())
                 Text("score")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.48))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(PopupVisualTheme.primaryText)
         }
         .animation(.easeOut(duration: 0.35), value: score)
     }
@@ -902,14 +917,14 @@ private struct StatsMetricTile: View {
                     .foregroundStyle(tint)
                 Text(title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.58))
                 Spacer()
             }
 
             Text(value)
                 .font(.title3.weight(.bold))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .contentTransition(.numericText())
         }
         .padding(14)
@@ -930,12 +945,12 @@ private struct FocusRestBalanceView: View {
             HStack {
                 Label("Focus balance", systemImage: "circle.lefthalf.filled")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
                 Spacer()
                 Text("\(Int(focusFraction * 100))% focus")
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
             }
 
             GeometryReader { geometry in
@@ -943,14 +958,14 @@ private struct FocusRestBalanceView: View {
                     .fill(Color.pink.opacity(0.18))
                     .overlay(alignment: .leading) {
                         Capsule()
-                            .fill(Color.white.opacity(0.56))
+                            .fill(PopupVisualTheme.primaryText.opacity(0.56))
                             .frame(width: geometry.size.width * focusFraction)
                     }
             }
             .frame(height: 6)
         }
         .padding(16)
-        .background(cardBackground(stroke: Color.white.opacity(0.07), cornerRadius: 20))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 20))
     }
 }
 
@@ -964,7 +979,7 @@ private struct StatsOutcomeCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Label(title, systemImage: icon)
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
 
             HStack(spacing: 0) {
                 ForEach(Array(values.enumerated()), id: \.offset) { index, value in
@@ -972,17 +987,17 @@ private struct StatsOutcomeCard: View {
                         Text("\(value.1)")
                             .font(.title3.weight(.bold))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PopupVisualTheme.primaryText)
                             .contentTransition(.numericText())
                         Text(value.0)
                             .font(.caption2.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.52))
+                            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.52))
                     }
                     .frame(maxWidth: .infinity)
 
                     if index < values.count - 1 {
                         Divider()
-                            .overlay(Color.white.opacity(0.08))
+                            .overlay(PopupVisualTheme.primaryText.opacity(0.08))
                             .frame(height: 30)
                     }
                 }
@@ -1001,18 +1016,32 @@ struct HabitsTabView: View {
     var body: some View {
         let snapshot = appState.habitsService.snapshot
 
+        ViewThatFits(in: .vertical) {
+            habitsContent(snapshot: snapshot)
+
+            ScrollView(.vertical) {
+                habitsContent(snapshot: snapshot)
+                    .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: 480)
+        }
+    }
+
+    @ViewBuilder
+    private func habitsContent(snapshot: HabitsSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Image(systemName: "checklist.checked")
                     .foregroundStyle(.green)
                 Text("Habits Due")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                 Spacer()
                 if !snapshot.date.isEmpty {
                     Text(snapshot.date)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.55))
                 }
             }
 
@@ -1083,18 +1112,18 @@ struct PlaceholderPanel: View {
         VStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
             Text(title)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
             Text(subtitle)
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: 132)
         .padding(20)
-        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 24))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
     }
 }
 
@@ -1109,16 +1138,16 @@ struct EndSessionSheetView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("End Session")
                         .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                     Text("Add the commit message that will be stored with this session.")
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.66))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Commit Message")
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
 
                     StableMultilineTextField(
                         text: $appState.endSessionCommitMessage,
@@ -1127,7 +1156,7 @@ struct EndSessionSheetView: View {
                         focusRequest: appState.endSessionFocusRequest
                     )
                     .frame(height: 104)
-                    .background(cardBackground(stroke: Color.white.opacity(0.08)))
+                    .background(cardBackground(stroke: PopupVisualTheme.border))
 
                     if let error = appState.endSessionErrorMessage, !error.isEmpty {
                         Text(error)
@@ -1180,7 +1209,7 @@ struct MetricStripCard: View {
         HStack {
             Label {
                 Text(title)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                     .font(.headline)
             } icon: {
                 Image(systemName: icon)
@@ -1190,12 +1219,12 @@ struct MetricStripCard: View {
             }
             Spacer()
             Text(value)
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .font(.headline)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(cardBackground(stroke: Color.white.opacity(0.05), cornerRadius: 22))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
     }
 }
 
@@ -1206,22 +1235,22 @@ struct EndsAtRow: View {
         HStack(spacing: 10) {
             Image(systemName: "clock.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.58))
 
             Text("Ends At")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
 
             Spacer()
 
             Text(TimerEndTimeFormatter.string(from: date))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 42)
-        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 16))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 16))
     }
 }
 
@@ -1235,14 +1264,14 @@ struct ReverseProgressBar: View {
 
             ZStack(alignment: .trailing) {
                 shape
-                    .fill(Color.white.opacity(0.045))
+                    .fill(PopupVisualTheme.primaryText.opacity(0.045))
 
                 Rectangle()
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.22),
-                                Color.white.opacity(0.46),
+                                PopupVisualTheme.primaryText.opacity(0.22),
+                                PopupVisualTheme.primaryText.opacity(0.46),
                             ],
                             startPoint: .bottom,
                             endPoint: .top
@@ -1252,7 +1281,7 @@ struct ReverseProgressBar: View {
 
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.16),
+                        PopupVisualTheme.primaryText.opacity(0.16),
                         Color.clear,
                     ],
                     startPoint: .top,
@@ -1263,7 +1292,7 @@ struct ReverseProgressBar: View {
             }
             .clipShape(shape)
             .overlay(
-                shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 0.5)
+                shape.strokeBorder(PopupVisualTheme.primaryText.opacity(0.09), lineWidth: 0.5)
             )
             .animation(.easeOut(duration: 0.24), value: clampedProgress)
         }
@@ -1281,7 +1310,7 @@ struct FocusIssueRow: View {
                 Label {
                     Text(issue.title)
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                         .lineLimit(2)
                 } icon: {
                     Image(systemName: "record.circle.fill")
@@ -1304,7 +1333,7 @@ struct FocusIssueRow: View {
                 Button(action: onStart) {
                     Label("Start", systemImage: "play.fill")
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                         .frame(minWidth: 90)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 11)
@@ -1314,7 +1343,7 @@ struct FocusIssueRow: View {
             }
         }
         .padding(16)
-        .background(cardBackground(stroke: Color.white.opacity(0.08), cornerRadius: 24))
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
         .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .contextMenu {
             statusMenu
@@ -1395,7 +1424,10 @@ struct FocusIssueRow: View {
 
     private var anchorDate: String {
         let value = appState.dailyFocusService.snapshot.date
-        return value.isEmpty ? DailyFocusService.todayString() : value
+        if !value.isEmpty { return value }
+        return appState.daemonConnection.currentDate.isEmpty
+            ? DailyFocusService.todayString()
+            : appState.daemonConnection.currentDate
     }
 
     private var isWorking: Bool {
@@ -1417,7 +1449,7 @@ struct FocusIssueRow: View {
                 .lineLimit(1)
         }
         .font(.caption)
-        .foregroundStyle(.white.opacity(0.62))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
     }
 }
 
@@ -1472,12 +1504,14 @@ struct IssueActionEditorView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.black.opacity(0.48))
+        .fill(PopupVisualTheme.surfaceFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(
-                    noteIsFocused ? Color.accentColor.opacity(0.72) : .white.opacity(0.16),
+                    noteIsFocused
+                        ? Color.accentColor.opacity(0.72)
+                        : PopupVisualTheme.surfaceStroke,
                     lineWidth: noteIsFocused ? 1.2 : 0.7
                 )
         )
@@ -1533,10 +1567,10 @@ struct IssueActionEditorView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.58))
                     .lineLimit(1)
             }
         }
@@ -1588,7 +1622,7 @@ struct HabitRow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(habit.name)
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                         .lineLimit(2)
 
                     HStack(spacing: 12) {
@@ -1663,9 +1697,10 @@ struct HabitRow: View {
                 Text(title)
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(actionsDisabled && !isWorking ? 0.42 : 0.9))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(actionsDisabled && !isWorking ? 0.42 : 0.9))
             .padding(.horizontal, 10)
             .frame(minHeight: 32)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(tint.opacity(title == "Complete" || title == "Log" ? 0.16 : 0.08))
@@ -1726,7 +1761,7 @@ struct HabitRow: View {
                 .lineLimit(1)
         }
         .font(.caption)
-        .foregroundStyle(.white.opacity(0.62))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
     }
 }
 
@@ -1741,7 +1776,7 @@ private struct InlineHabitLogEditor: View {
         HStack(spacing: 8) {
             Text("Time logged")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
 
             Spacer()
 
@@ -1767,14 +1802,14 @@ private struct InlineHabitLogEditor: View {
                     .onSubmit(onSubmit)
                 Text("min")
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.48))
             }
             .padding(.horizontal, 8)
             .frame(height: 30)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.black.opacity(0.18))
-                    .strokeBorder(Color.white.opacity(isFocused ? 0.22 : 0.08), lineWidth: 1)
+                    .fill(PopupVisualTheme.elevatedBackground)
+                    .strokeBorder(PopupVisualTheme.primaryText.opacity(isFocused ? 0.22 : 0.08), lineWidth: 1)
             )
 
             stepButton("plus") {
@@ -1786,24 +1821,26 @@ private struct InlineHabitLogEditor: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(0.58))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.58))
             .keyboardShortcut(.cancelAction)
+            .menuBarIconHitTarget()
 
             Button(action: onSubmit) {
                 Image(systemName: "checkmark")
                     .fontWeight(.bold)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(Color.green.opacity(0.2)))
+                    .menuBarIconHitTarget()
             }
             .buttonStyle(GlassPressButtonStyle())
-            .foregroundStyle(.white)
+            .foregroundStyle(PopupVisualTheme.primaryText)
             .keyboardShortcut(.defaultAction)
             .help("Log \(value) minutes")
         }
         .padding(.top, 9)
         .overlay(alignment: .top) {
             Divider()
-                .overlay(Color.white.opacity(0.07))
+                .overlay(PopupVisualTheme.primaryText.opacity(0.07))
         }
         .onAppear {
             draft = "\(value)"
@@ -1831,10 +1868,18 @@ private struct InlineHabitLogEditor: View {
             Image(systemName: symbol)
                 .font(.caption2.weight(.bold))
                 .frame(width: 27, height: 27)
-                .background(Circle().fill(Color.white.opacity(0.07)))
+                .background(Circle().fill(PopupVisualTheme.primaryText.opacity(0.07)))
+                .menuBarIconHitTarget()
         }
         .buttonStyle(GlassPressButtonStyle())
-        .foregroundStyle(.white.opacity(0.8))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.8))
+    }
+}
+
+private extension View {
+    func menuBarIconHitTarget() -> some View {
+        padding(7)
+            .contentShape(Rectangle())
     }
 }
 
@@ -1939,7 +1984,7 @@ struct ExpandablePresetRow: View {
 
             if isExpanded {
                 Divider()
-                    .overlay(Color.white.opacity(0.08))
+                    .overlay(PopupVisualTheme.primaryText.opacity(0.08))
                     .padding(.horizontal, 14)
 
                 LazyVGrid(
@@ -1966,7 +2011,7 @@ struct ExpandablePresetRow: View {
             }
         }
         .background(cardBackground(
-            stroke: Color.white.opacity(isExpanded ? 0.14 : 0.05),
+            stroke: PopupVisualTheme.primaryText.opacity(isExpanded ? 0.14 : 0.05),
             cornerRadius: 22
         ))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -1998,7 +2043,7 @@ struct ExpandableNumberRow: View {
 
             if isExpanded {
                 Divider()
-                    .overlay(Color.white.opacity(0.08))
+                    .overlay(PopupVisualTheme.primaryText.opacity(0.08))
                     .padding(.horizontal, 14)
 
                 LazyVGrid(
@@ -2018,7 +2063,7 @@ struct ExpandableNumberRow: View {
             }
         }
         .background(cardBackground(
-            stroke: Color.white.opacity(isExpanded ? 0.14 : 0.05),
+            stroke: PopupVisualTheme.primaryText.opacity(isExpanded ? 0.14 : 0.05),
             cornerRadius: 22
         ))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -2036,7 +2081,7 @@ private struct InlineMinutesEditor: View {
         HStack(spacing: 12) {
             Text("Custom")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
 
             Spacer()
 
@@ -2067,15 +2112,15 @@ private struct InlineMinutesEditor: View {
                     }
                 Text("min")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.5))
             }
             .padding(.horizontal, 10)
             .frame(height: 34)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(0.18))
+                    .fill(PopupVisualTheme.elevatedBackground)
                     .strokeBorder(
-                        Color.white.opacity(isFocused ? 0.24 : 0.08),
+                        PopupVisualTheme.primaryText.opacity(isFocused ? 0.24 : 0.08),
                         lineWidth: 1
                     )
             )
@@ -2087,7 +2132,7 @@ private struct InlineMinutesEditor: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.045))
+                .fill(PopupVisualTheme.primaryText.opacity(0.045))
         )
         .onAppear {
             draft = "\(value)"
@@ -2116,9 +2161,10 @@ private struct InlineMinutesEditor: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.82))
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(Color.white.opacity(0.08)))
+                .background(Circle().fill(PopupVisualTheme.primaryText.opacity(0.08)))
+                .menuBarIconHitTarget()
         }
         .buttonStyle(GlassPressButtonStyle())
         .accessibilityLabel(systemName == "plus" ? "Add five minutes" : "Remove five minutes")
@@ -2141,18 +2187,18 @@ private func configDisclosureHeader(
                 .background(Circle().fill(tint))
 
             Text(title)
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .font(.headline)
 
             Spacer()
 
             Text(displayValue)
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .font(.headline.monospacedDigit())
 
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.white.opacity(0.52))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.52))
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
         }
         .contentShape(Rectangle())
@@ -2177,12 +2223,13 @@ private func configOptionButton(
                 .lineLimit(1)
         }
         .font(.subheadline.weight(.semibold))
-        .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(isSelected ? 1 : 0.72))
         .frame(maxWidth: .infinity, minHeight: 34)
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.white.opacity(isSelected ? 0.14 : 0.05))
-                .strokeBorder(Color.white.opacity(isSelected ? 0.16 : 0.05), lineWidth: 1)
+                .fill(PopupVisualTheme.primaryText.opacity(isSelected ? 0.14 : 0.05))
+                .strokeBorder(PopupVisualTheme.primaryText.opacity(isSelected ? 0.16 : 0.05), lineWidth: 1)
         )
     }
     .buttonStyle(GlassPressButtonStyle())
@@ -2201,13 +2248,14 @@ func actionPill(
             if let shortcutLabel {
                 Text(shortcutLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.46))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.46))
             }
         }
         .font(.headline)
-        .foregroundStyle(.white)
+        .foregroundStyle(PopupVisualTheme.primaryText)
         .padding(.horizontal, 18)
         .padding(.vertical, 11)
+        .contentShape(Capsule())
         .background(
             glassCapsuleBackground(emphasis: 0.16)
         )
@@ -2233,49 +2281,16 @@ func cardBackground(stroke: Color, cornerRadius: CGFloat = 20) -> some View {
     let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
     return shape
-        .fill(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.085),
-                    Color.black.opacity(0.2),
-                    Color.white.opacity(0.03),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            shape
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.02),
-                            Color.clear,
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-        )
+        .fill(PopupVisualTheme.cardBackground)
         .overlay(
             shape
                 .strokeBorder(stroke, lineWidth: 1)
         )
         .overlay(
             shape
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.16),
-                            Color.white.opacity(0.02),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
+                .strokeBorder(PopupVisualTheme.highlightedBorder.opacity(0.55), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 6)
+        .shadow(color: PopupVisualTheme.shadow, radius: 10, y: 6)
 }
 
 @MainActor
@@ -2314,73 +2329,19 @@ struct PopoverGlassBackground: View {
 
         ZStack {
             if systemGlass.reduceTransparency {
-                shellShape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.17, green: 0.17, blue: 0.19),
-                                Color(red: 0.11, green: 0.11, blue: 0.12),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                shellShape.fill(PopupVisualTheme.popoverBackground)
 
                 shellShape
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.6)
-
-                shellShape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.05),
-                                Color.clear,
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .strokeBorder(PopupVisualTheme.border, lineWidth: 0.6)
             } else if #available(macOS 26.0, *) {
                 Color.clear
-                    .glassEffect(.regular, in: shellShape)
-
-                shellShape
-                    .strokeBorder(Color.white.opacity(0.045), lineWidth: 0.35)
+                    .glassEffect(.regular.interactive(false), in: shellShape)
             } else {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, emphasized: false)
                     .clipShape(shellShape)
-
-                shellShape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.11),
-                                Color.white.opacity(0.025),
-                                Color.black.opacity(0.05),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                shellShape
-                    .fill(Color.black.opacity(0.055))
-
-                shellShape
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.12),
-                                Color.white.opacity(0.025),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.35
-                )
             }
         }
-        .shadow(color: systemGlass.reduceTransparency ? .black.opacity(0.08) : .black.opacity(0.045), radius: 14, y: 7)
+        .shadow(color: PopupVisualTheme.shadow, radius: 14, y: 7)
     }
 }
 
@@ -2407,42 +2368,20 @@ private struct GlassCapsuleBackground: View {
         Group {
             if systemGlass.reduceTransparency {
                 shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.12),
-                                Color.white.opacity(0.04),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(PopupVisualTheme.controlBackground)
                     .overlay(
                         shape
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                            .strokeBorder(PopupVisualTheme.primaryText.opacity(0.08), lineWidth: 0.5)
                     )
             } else if #available(macOS 26.0, *) {
                 Color.clear
-                    .glassEffect(.clear.tint(.white.opacity(max(0.08, emphasis))), in: shape)
-                    .overlay(
-                        shape.strokeBorder(Color.white.opacity(0.05), lineWidth: 0.35)
+                    .glassEffect(
+                        .clear.tint(PopupVisualTheme.selectedControlBackground.opacity(max(0.08, emphasis))),
+                        in: shape
                     )
             } else {
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(emphasis),
-                                Color.white.opacity(max(0.04, emphasis * 0.45)),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .overlay(
-                        shape
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
-                    )
+                VisualEffectView(material: .menu, blendingMode: .withinWindow, emphasized: false)
+                    .clipShape(shape)
             }
         }
     }
@@ -2462,7 +2401,7 @@ private struct PopoverModalScrim: View {
             .fill(.black.opacity(0.56))
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(.white.opacity(0.015))
+                    .fill(PopupVisualTheme.primaryText.opacity(0.015))
             )
             .contentShape(Rectangle())
             .onTapGesture(perform: onDismiss)
@@ -2478,69 +2417,16 @@ private struct PopoverDialogBackground: View {
 
         ZStack {
             if systemGlass.reduceTransparency {
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.18, green: 0.18, blue: 0.20),
-                                Color(red: 0.12, green: 0.12, blue: 0.13),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                shape.fill(PopupVisualTheme.elevatedBackground)
 
                 shape
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.6)
-
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.055),
-                                Color.clear,
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .strokeBorder(PopupVisualTheme.border, lineWidth: 0.6)
             } else if #available(macOS 26.0, *) {
                 Color.clear
                     .glassEffect(.regular.interactive(false), in: shape)
-
-                shape
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.4)
             } else {
-                VisualEffectView(
-                    material: .popover,
-                    blendingMode: .withinWindow,
-                    emphasized: true
-                )
-
-                shape.fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.black.opacity(0.10),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-                shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
-
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.24),
-                            Color.white.opacity(0.05),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
+                VisualEffectView(material: .popover, blendingMode: .withinWindow, emphasized: true)
+                    .clipShape(shape)
             }
         }
         .clipShape(shape)

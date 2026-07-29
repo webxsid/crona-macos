@@ -80,6 +80,7 @@ final class CompanionAppState: ObservableObject {
     let kernelDiscovery: KernelDiscoveryService
     let notificationService: NotificationService
     let alertSettingsService: AlertSettingsService
+    let dayBoundarySettingsService: DayBoundarySettingsService
     let launchAtLoginService: LaunchAtLoginService
     let daemonConnection: DaemonConnectionService
     let diagnosticsService: DiagnosticsService
@@ -105,6 +106,7 @@ final class CompanionAppState: ObservableObject {
     private var presentationTimer: Timer?
     private var lastWarningIndicatorKey: String?
     private var settingsSceneAction: (() -> Void)?
+    private var selectedPopoverTabLayoutRefreshTask: Task<Void, Never>?
     @Published var selectedFocusIssue: DailyFocusIssue?
     @Published var issueActionEditor: IssueActionEditor?
     @Published var issueActionNote = ""
@@ -155,12 +157,14 @@ final class CompanionAppState: ObservableObject {
             kernelDiscovery: kernelDiscovery
         )
         let alertSettingsService = AlertSettingsService(daemonConnection: daemonConnection)
+        let dayBoundarySettingsService = DayBoundarySettingsService(daemonConnection: daemonConnection)
         let appUpdateService = AppUpdateService(preferences: preferences)
 
         self.preferences = preferences
         self.kernelDiscovery = kernelDiscovery
         self.notificationService = notificationService
         self.alertSettingsService = alertSettingsService
+        self.dayBoundarySettingsService = dayBoundarySettingsService
         self.launchAtLoginService = launchAtLoginService
         self.daemonConnection = daemonConnection
         self.contextService = contextService
@@ -252,6 +256,7 @@ final class CompanionAppState: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.alertSettingsService.refresh()
+                await self.dayBoundarySettingsService.refresh()
                 self.notificationService.reconcileDelivery()
             }
         }
@@ -452,7 +457,13 @@ final class CompanionAppState: ObservableObject {
             return
         }
         selectedPopoverTab = tab
-        statusBarService.refreshPopupLayout()
+
+        selectedPopoverTabLayoutRefreshTask?.cancel()
+        selectedPopoverTabLayoutRefreshTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+            self.statusBarService.refreshPopupLayout(animated: false)
+        }
     }
 
     func setSelectedSettingsDestination(_ destination: SettingsDestination) {
@@ -1035,6 +1046,8 @@ final class CompanionAppState: ObservableObject {
 
     private func handleDaemonEvent(_ event: CronaProtocolEvent) {
         switch event.type {
+        case "day.start":
+            handleDayStart(event)
         case "timer.hard_limit_reached":
             handleHardLimitReached(event)
         case "timer.extended":
@@ -1044,6 +1057,26 @@ final class CompanionAppState: ObservableObject {
             finalizeEndSessionIfNeeded(for: sessionID)
         default:
             break
+        }
+    }
+
+    private func handleDayStart(_ event: CronaProtocolEvent) {
+        guard let payload = try? event.decodePayload(CronaDayBoundaryEventPayload.self),
+              !payload.logicalDate.isEmpty
+        else {
+            logger.error("Ignoring malformed day.start event")
+            return
+        }
+
+        let previousDate = daemonConnection.currentDate
+        guard daemonConnection.applyDayBoundary(payload) else { return }
+        let date = payload.logicalDate
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await dailyFocusService.refresh(date: date)
+            await habitsService.refresh(date: date)
+            await popoverStatsService.handleDayStart(date: date, previousDate: previousDate)
+            statusBarService.updateStatusItem()
         }
     }
 

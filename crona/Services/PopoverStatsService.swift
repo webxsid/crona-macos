@@ -91,7 +91,7 @@ final class PopoverStatsService: ObservableObject {
             )
             cache[date] = refreshed
             snapshot = refreshed
-            if date == DailyFocusService.todayString() {
+            if date == todayDate {
                 todayWorkedSeconds = metric?.workedSeconds
             }
         } catch {
@@ -119,7 +119,7 @@ final class PopoverStatsService: ObservableObject {
     }
 
     func showNextDay() {
-        let today = DailyFocusService.todayString()
+        let today = todayDate
         let candidate = Self.shift(date: selectedDate, byDays: 1)
         guard candidate <= today else { return }
         selectedDate = candidate
@@ -128,11 +128,11 @@ final class PopoverStatsService: ObservableObject {
     }
 
     func canShowNextDay() -> Bool {
-        selectedDate < DailyFocusService.todayString()
+        selectedDate < todayDate
     }
 
     func refreshTodayMetrics() async {
-        let today = DailyFocusService.todayString()
+        let today = todayDate
         do {
             let metricDays = try await daemonConnection.withClient {
                 try await $0.metricsRange(start: today, end: today)
@@ -152,7 +152,7 @@ final class PopoverStatsService: ObservableObject {
         switch event.type {
         case "timer.state", "session.started", "session.stopped", "session.ended", "timer.extended", "timer.boundary", "context.issue.changed":
             cache[selectedDate] = nil
-            let today = DailyFocusService.todayString()
+            let today = todayDate
             cache[today] = nil
             Task {
                 await refresh()
@@ -163,6 +163,22 @@ final class PopoverStatsService: ObservableObject {
         default:
             break
         }
+    }
+
+    func handleDayStart(date: String, previousDate: String) async {
+        guard !date.isEmpty else { return }
+        if selectedDate == previousDate {
+            selectedDate = date
+        }
+        cache[previousDate] = nil
+        cache[date] = nil
+        await refresh()
+        await refreshTodayMetrics()
+    }
+
+    private var todayDate: String {
+        let daemonDate = daemonConnection.currentDate
+        return daemonDate.isEmpty ? DailyFocusService.todayString() : daemonDate
     }
 
     private func presentSelectedDate() {
@@ -189,19 +205,6 @@ final class PopoverStatsService: ObservableObject {
     }
 
     private static func shift(date: String, byDays days: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-
-        guard
-            let current = formatter.date(from: date),
-            let shifted = Calendar(identifier: .gregorian).date(byAdding: .day, value: days, to: current)
-        else {
-            return date
-        }
-
-        return formatter.string(from: shifted)
+        CronaCalendarDate.adding(days: days, to: date) ?? date
     }
 }

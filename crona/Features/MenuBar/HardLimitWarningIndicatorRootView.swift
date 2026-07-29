@@ -22,7 +22,7 @@ struct HardLimitWarningIndicatorRootView: View {
 
                     Text(model.title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                         .lineLimit(1)
 
                     Spacer(minLength: 4)
@@ -30,7 +30,7 @@ struct HardLimitWarningIndicatorRootView: View {
                     Text(model.remainingText)
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PopupVisualTheme.primaryText)
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
@@ -40,6 +40,7 @@ struct HardLimitWarningIndicatorRootView: View {
             .opacity(appState.isHardLimitWarningIndicatorAnimatingIn ? 1 : 0.02)
             .blur(radius: appState.isHardLimitWarningIndicatorAnimatingIn ? 0 : 16)
             .animation(.easeOut(duration: 0.16), value: appState.isHardLimitWarningIndicatorAnimatingIn)
+            .companionAppearance(appState)
         }
     }
 }

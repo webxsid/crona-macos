@@ -30,6 +30,109 @@ struct CronaHealth: Codable, Equatable {
     let db: Bool
     let ok: Int
     let uptime: Double
+    let currentDate: String?
+    let timezone: String?
+
+    init(
+        status: String,
+        db: Bool,
+        ok: Int,
+        uptime: Double,
+        currentDate: String? = nil,
+        timezone: String? = nil
+    ) {
+        self.status = status
+        self.db = db
+        self.ok = ok
+        self.uptime = uptime
+        self.currentDate = currentDate
+        self.timezone = timezone
+    }
+}
+
+struct CronaDayBoundarySchedule: Codable, Equatable {
+    var enabled: Bool
+    var defaultTime: String
+    var weekdayOverrides: [Int: String]
+
+    init(
+        enabled: Bool,
+        defaultTime: String,
+        weekdayOverrides: [Int: String] = [:]
+    ) {
+        self.enabled = enabled
+        self.defaultTime = defaultTime
+        self.weekdayOverrides = weekdayOverrides
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        defaultTime = try values.decodeIfPresent(String.self, forKey: .defaultTime) ?? "00:00"
+        weekdayOverrides = try values.decodeIfPresent([Int: String].self, forKey: .weekdayOverrides) ?? [:]
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case defaultTime
+        case weekdayOverrides
+    }
+
+    static let defaultStart = CronaDayBoundarySchedule(
+        enabled: true,
+        defaultTime: "00:00",
+        weekdayOverrides: [:]
+    )
+
+    static let defaultEnd = CronaDayBoundarySchedule(
+        enabled: false,
+        defaultTime: "00:00",
+        weekdayOverrides: [:]
+    )
+
+    func isValidTime(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2,
+              parts[1].count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return false
+        }
+        return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+
+    var isValid: Bool {
+        isValidTime(defaultTime)
+            && weekdayOverrides.allSatisfy { (1...7).contains($0.key) && isValidTime($0.value) }
+    }
+}
+
+struct CronaDayBoundarySettings: Codable, Equatable {
+    var startOfDay: CronaDayBoundarySchedule
+    var endOfDay: CronaDayBoundarySchedule
+
+    init(
+        startOfDay: CronaDayBoundarySchedule = .defaultStart,
+        endOfDay: CronaDayBoundarySchedule = .defaultEnd
+    ) {
+        self.startOfDay = startOfDay
+        self.endOfDay = endOfDay
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        startOfDay = try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .startOfDay)
+            ?? .defaultStart
+        endOfDay = try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .endOfDay)
+            ?? .defaultEnd
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case startOfDay
+        case endOfDay
+    }
 }
 
 struct CronaAlertStatus: Codable, Equatable {
@@ -653,6 +756,28 @@ struct CronaHabitCompletionUpsertRequest: Codable, Equatable {
 
 struct CronaOKResponse: Codable, Equatable {
     let ok: Bool
+}
+
+struct CronaDayBoundaryEventPayload: Decodable, Equatable {
+    let kind: String
+    let dateBefore: String
+    let dateAfter: String
+    let effectiveLocalTime: String
+    let effectiveUTCTime: String?
+    let timezone: String
+    let occurrenceID: String
+    let logicalDate: String
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case dateBefore
+        case dateAfter
+        case effectiveLocalTime
+        case effectiveUTCTime = "effectiveUtcTime"
+        case timezone
+        case occurrenceID = "occurrenceId"
+        case logicalDate
+    }
 }
 
 nonisolated struct CronaProtocolEvent: Decodable, Equatable {

@@ -123,11 +123,23 @@ final class StatusBarService: NSObject {
     private var lastRenderedTitle = ""
     private var lastRenderedDisplayMode: MenuBarDisplayMode?
     private var lastRenderedIconState: MenuBarIconState?
+    private var iconAnimationTimer: Timer?
+    private var iconAnimationPhase = 0.0
+    private var completionTask: Task<Void, Never>?
+    private var completionSessionID: String?
+    private var completionDeadline: Date?
+    private var completedSessionID: String?
     private var pendingUpdate = false
     private var animationGeneration = 0
     private var lastLayoutKey: StatusPopupLayoutKey?
     private lazy var contextMenu = makeContextMenu()
     private weak var appUpdateMenuItem: NSMenuItem?
+
+    deinit {
+        iconAnimationTimer?.invalidate()
+        statusDisplayTimer?.invalidate()
+        completionTask?.cancel()
+    }
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
@@ -153,9 +165,9 @@ final class StatusBarService: NSObject {
         }
     }
 
-    func refreshPopupLayout() {
+    func refreshPopupLayout(animated: Bool = true) {
         guard let panel = popupPanel, panel.isVisible else { return }
-        resizePanelToFit(panel, animated: true, force: false)
+        resizePanelToFit(panel, animated: animated, force: false)
     }
 
     func dismissPopup(animated: Bool = true, completion: (() -> Void)? = nil) {
@@ -214,10 +226,7 @@ final class StatusBarService: NSObject {
             now: now
         )
         let displayMode = appState.preferences.preferences.menuBarDisplayMode
-        let iconState = MenuBarIconState.resolve(
-            connectionState: model.connectionState,
-            timerSnapshot: model.timerSnapshot
-        )
+        let iconState = resolvedIconState(for: model, now: now)
 
         if lastRenderedDisplayMode != displayMode {
             switch displayMode {
@@ -232,22 +241,117 @@ final class StatusBarService: NSObject {
         }
 
         if displayMode.showsIcon {
-            if lastRenderedIconState != iconState || button.image == nil {
-                button.image = MenuBarIconProvider.image(for: iconState)
+            if lastRenderedIconState != iconState || button.image == nil || iconState == .connecting {
+                button.image = MenuBarIconProvider.image(
+                    for: iconState,
+                    connectingPhase: iconAnimationPhase
+                )
                 lastRenderedIconState = iconState
             }
         } else {
             button.image = nil
             lastRenderedIconState = nil
         }
-        button.setAccessibilityLabel(iconState.accessibilityDescription)
-        button.toolTip = iconState.accessibilityDescription
+        let accessibilityDescription = iconState.accessibilityDescription(
+            for: model.timerSnapshot,
+            at: now
+        )
+        button.setAccessibilityLabel(accessibilityDescription)
+        button.toolTip = accessibilityDescription
 
         if lastRenderedTitle != nextTitle {
             button.title = nextTitle
             lastRenderedTitle = nextTitle
         }
+        reconcileIconAnimation(for: displayMode.showsIcon ? iconState : .idle)
         reconcileStatusDisplayTimer()
+    }
+
+    private func resolvedIconState(
+        for model: PopoverViewModel,
+        now: Date
+    ) -> MenuBarIconState {
+        let snapshot = model.timerSnapshot
+        let connectionState = model.connectionState
+
+        if connectionState == .error || connectionState == .incompatible || connectionState == .disconnected {
+            clearCompletionTransition()
+        } else if let completionSessionID,
+                  let snapshotSessionID = snapshot.sessionID,
+                  snapshotSessionID != completionSessionID {
+            completedSessionID = completionSessionID
+            clearCompletionTransition()
+        } else if let sessionID = snapshot.sessionID, snapshot.hardLimitExpired {
+            beginCompletionTransitionIfNeeded(sessionID: sessionID, now: now)
+        }
+
+        if let completionSessionID,
+           let completionDeadline,
+           now < completionDeadline,
+           snapshot.sessionID == nil || snapshot.sessionID == completionSessionID {
+            return .completed
+        }
+
+        if let completionSessionID, now >= (completionDeadline ?? .distantPast) {
+            completedSessionID = completionSessionID
+            clearCompletionTransition()
+        }
+
+        if let completedSessionID,
+           completedSessionID == snapshot.sessionID,
+           snapshot.hardLimitExpired {
+            return .idle
+        }
+
+        return MenuBarIconState.resolve(
+            connectionState: connectionState,
+            timerSnapshot: snapshot,
+            now: now,
+            includeCompletion: true
+        )
+    }
+
+    private func beginCompletionTransitionIfNeeded(sessionID: String, now: Date) {
+        guard completionSessionID != sessionID, completedSessionID != sessionID else { return }
+        completionTask?.cancel()
+        completionSessionID = sessionID
+        completionDeadline = now.addingTimeInterval(2)
+        let expectedSessionID = sessionID
+        completionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self,
+                  self.completionSessionID == expectedSessionID
+            else { return }
+            self.updateStatusItem()
+        }
+    }
+
+    private func clearCompletionTransition() {
+        completionTask?.cancel()
+        completionTask = nil
+        completionSessionID = nil
+        completionDeadline = nil
+    }
+
+    private func reconcileIconAnimation(for state: MenuBarIconState) {
+        guard state == .connecting else {
+            iconAnimationTimer?.invalidate()
+            iconAnimationTimer = nil
+            iconAnimationPhase = 0
+            return
+        }
+        guard iconAnimationTimer == nil else { return }
+
+        let timer = Timer(timeInterval: 0.16, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.iconAnimationPhase += 0.08
+                self.updateStatusItem()
+            }
+        }
+        timer.tolerance = 0.04
+        RunLoop.main.add(timer, forMode: .common)
+        iconAnimationTimer = timer
     }
 
     @objc
@@ -431,7 +535,7 @@ final class StatusBarService: NSObject {
         guard let appState else { return }
         let preferences = appState.preferences.preferences
         let snapshot = appState.timerService.snapshot
-        let shouldTick = preferences.menuBarDisplayMode.showsText
+        let shouldTick = (preferences.menuBarDisplayMode.showsText || preferences.menuBarDisplayMode.showsIcon)
             && snapshot.sessionID != nil
             && snapshot.state == "running"
         let displaySeconds = TimerPresentation.projectedDisplaySeconds(
@@ -439,11 +543,13 @@ final class StatusBarService: NSObject {
             at: Date()
         )
         let interval: TimeInterval? = shouldTick
-            ? MenuBarTextFormatter.nextRefreshInterval(
-                seconds: displaySeconds,
-                style: preferences.menuBarTimeFormat,
-                countsDown: snapshot.hardLimitActive
-            )
+            ? (preferences.menuBarDisplayMode.showsIcon
+                ? 1
+                : MenuBarTextFormatter.nextRefreshInterval(
+                    seconds: displaySeconds,
+                    style: preferences.menuBarTimeFormat,
+                    countsDown: snapshot.hardLimitActive
+                ))
             : nil
 
         guard interval != statusDisplayInterval else { return }

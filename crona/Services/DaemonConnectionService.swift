@@ -23,11 +23,14 @@ final class DaemonConnectionService: ObservableObject {
     private var isAttemptingConnection = false
     private var launchFailureLatched = false
     private var attemptedDaemonLaunchEndpoints: Set<String> = []
+    private var lastDayBoundaryOccurrenceID: String?
 
     @Published var connectionState: CompanionConnectionState = .idle
     @Published var kernelInfo: CronaKernelInfo?
     @Published var health: CronaHealth?
     @Published var alertStatus: CronaAlertStatus?
+    @Published private(set) var currentDate = ""
+    @Published private(set) var timezone = ""
     @Published var lastReconnectAt: Date?
     @Published var lastErrorDescription: String?
     @Published var resolvedDiscovery: CronaResolvedKernelDiscovery?
@@ -68,6 +71,9 @@ final class DaemonConnectionService: ObservableObject {
         kernelInfo = nil
         health = nil
         alertStatus = nil
+        currentDate = ""
+        timezone = ""
+        lastDayBoundaryOccurrenceID = nil
         lastErrorDescription = nil
         connectionState = .disconnected
         start()
@@ -87,6 +93,15 @@ final class DaemonConnectionService: ObservableObject {
             throw CronaConnectionFailure.transport("The daemon client is unavailable.")
         }
         return try await body(client)
+    }
+
+    func applyDayBoundary(_ payload: CronaDayBoundaryEventPayload) -> Bool {
+        guard payload.kind == "start", !payload.logicalDate.isEmpty else { return false }
+        guard payload.occurrenceID != lastDayBoundaryOccurrenceID else { return false }
+        lastDayBoundaryOccurrenceID = payload.occurrenceID
+        currentDate = payload.logicalDate
+        timezone = payload.timezone
+        return true
     }
 
     func shutdownAndWait(
@@ -139,6 +154,9 @@ final class DaemonConnectionService: ObservableObject {
         kernelInfo = nil
         health = nil
         alertStatus = nil
+        currentDate = ""
+        timezone = ""
+        lastDayBoundaryOccurrenceID = nil
         connectionState = .disconnected
         lastErrorDescription = nil
     }
@@ -217,6 +235,9 @@ final class DaemonConnectionService: ObservableObject {
 
             self.client = client
             self.health = health
+            self.currentDate = health.currentDate ?? ""
+            self.timezone = health.timezone ?? ""
+            self.lastDayBoundaryOccurrenceID = nil
             self.kernelInfo = info
             self.alertStatus = try? await client.alertsStatusGet()
             self.connectionState = .connected
@@ -259,6 +280,9 @@ final class DaemonConnectionService: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.client = nil
+                    self.currentDate = ""
+                    self.timezone = ""
+                    self.lastDayBoundaryOccurrenceID = nil
                     self.connectionState = .disconnected
                     self.lastErrorDescription = error.localizedDescription
                     self.eventTask = nil
@@ -304,6 +328,9 @@ final class DaemonConnectionService: ObservableObject {
         kernelInfo = nil
         health = nil
         alertStatus = nil
+        currentDate = ""
+        timezone = ""
+        lastDayBoundaryOccurrenceID = nil
         connectionState = .error
         lastErrorDescription = message
     }

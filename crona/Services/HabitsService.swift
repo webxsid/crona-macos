@@ -69,8 +69,9 @@ final class HabitsService: ObservableObject {
         }
     }
 
-    func refresh() async {
-        let date = DailyFocusService.todayString()
+    func refresh(date requestedDate: String? = nil) async {
+        let daemonDate = requestedDate ?? daemonConnection.currentDate
+        let date = daemonDate.isEmpty ? DailyFocusService.todayString() : daemonDate
         snapshot.date = date
         snapshot.isLoading = true
 

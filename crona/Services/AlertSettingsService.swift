@@ -122,6 +122,68 @@ final class AlertSettingsService: ObservableObject {
     }
 }
 
+@MainActor
+final class DayBoundarySettingsService: ObservableObject {
+    private let daemonConnection: DaemonConnectionService
+    private let logger = Logger(subsystem: "com.crona.macos", category: "day-boundary-settings")
+
+    @Published private(set) var settings = CronaDayBoundarySettings()
+    @Published private(set) var isSaving = false
+    @Published private(set) var lastErrorDescription: String?
+
+    init(daemonConnection: DaemonConnectionService) {
+        self.daemonConnection = daemonConnection
+    }
+
+    func refresh() async {
+        guard daemonConnection.connectionState == .connected else { return }
+        do {
+            settings = try await daemonConnection.withClient { client in
+                try await client.dayBoundarySettingsGet()
+            }
+            lastErrorDescription = nil
+        } catch {
+            lastErrorDescription = error.localizedDescription
+            logger.error("Failed to load day-boundary settings: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func setSchedule(_ key: String, schedule: CronaDayBoundarySchedule) {
+        guard schedule.isValid else {
+            lastErrorDescription = "Enter times using HH:mm format."
+            return
+        }
+
+        var projected = settings
+        if key == "startOfDay" {
+            projected.startOfDay = schedule
+        } else if key == "endOfDay" {
+            projected.endOfDay = schedule
+        } else {
+            lastErrorDescription = "Unsupported day-boundary setting."
+            return
+        }
+        settings = projected
+        isSaving = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await daemonConnection.withClient { client in
+                    try await client.dayBoundarySettingPatch(key: key, schedule: schedule)
+                }
+                await refresh()
+                lastErrorDescription = nil
+            } catch {
+                lastErrorDescription = error.localizedDescription
+                logger.error("Failed to save day-boundary setting: \(error.localizedDescription, privacy: .public)")
+                await refresh()
+            }
+            isSaving = false
+        }
+    }
+}
+
 private extension JSONValue {
     var logDescription: String {
         switch self {

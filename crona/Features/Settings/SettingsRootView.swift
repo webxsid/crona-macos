@@ -4,24 +4,132 @@ import UserNotifications
 
 struct SettingsRootView: View {
     @ObservedObject var appState: CompanionAppState
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             settingsSidebar
-            Divider().opacity(0.5)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
             settingsDetail
         }
         .frame(minWidth: 860, minHeight: 620)
         .ignoresSafeArea(.container, edges: .top)
-        .background(
-            VisualEffectView(
-                material: .underWindowBackground,
-                blendingMode: .behindWindow,
-                emphasized: true
-            )
+        .background {
+            ZStack(alignment: .leading) {
+                PopupVisualTheme.windowBackground
+                SettingsSidebarBackground()
+                    .frame(width: SettingsChromeMetrics.sidebarWidth)
+                SettingsToolbarSurfaceBackground()
+                    .frame(height: SettingsChromeMetrics.toolbarSurfaceHeight)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
             .ignoresSafeArea()
-        )
+        }
         .background(SettingsWindowReader(windowService: appState.windowService))
+        .companionAppearance(appState)
+        .modifier(SettingsWindowToolbarBackgroundModifier())
+        .toolbar {
+            if #available(macOS 27.0, *) {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: appState.goBackInSettings) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoBack)
+                    .help("Back")
+                }
+                .visibilityPriority(.high)
+
+                ToolbarSpacer(.fixed)
+
+                ToolbarItem(placement: .navigation) {
+                    Button(action: appState.goForwardInSettings) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoForward)
+                    .help("Forward")
+                }
+                .visibilityPriority(.high)
+
+                ToolbarSpacer(.fixed)
+
+                ToolbarItem(placement: .navigation) {
+                    Text(appState.selectedSettingsDestination.title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                .visibilityPriority(.low)
+            } else if #available(macOS 26.1, *) {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button(action: appState.goBackInSettings) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoBack)
+                    .help("Back")
+
+                    Button(action: appState.goForwardInSettings) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoForward)
+                    .help("Forward")
+                }
+                .visibilityPriority(.high)
+
+                ToolbarItem(placement: .navigation) {
+                    Text(appState.selectedSettingsDestination.title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                .visibilityPriority(.low)
+            } else if #available(macOS 26.0, *) {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button(action: appState.goBackInSettings) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoBack)
+                    .help("Back")
+
+                    Button(action: appState.goForwardInSettings) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(!appState.settingsNavigation.canGoForward)
+                    .help("Forward")
+                }
+
+                ToolbarItem(placement: .navigation) {
+                    Text(appState.selectedSettingsDestination.title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .navigation) {
+                    HStack(spacing: 12) {
+                        SettingsNavigationCluster(
+                            canGoBack: appState.settingsNavigation.canGoBack,
+                            canGoForward: appState.settingsNavigation.canGoForward,
+                            goBack: appState.goBackInSettings,
+                            goForward: appState.goForwardInSettings
+                        )
+
+                        Text(appState.selectedSettingsDestination.title)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(PopupVisualTheme.primaryText)
+                    }
+                }
+            }
+        }
+        .modifier(SettingsWindowToolbarChromeModifier())
+        .onAppear {
+            columnVisibility = .all
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            if visibility != .all {
+                columnVisibility = .all
+            }
+        }
     }
 
     private var settingsSidebar: some View {
@@ -66,125 +174,265 @@ struct SettingsRootView: View {
 #endif
                 }
                 .padding(.horizontal, 10)
-                .padding(.top, SettingsChromeMetrics.sidebarTrafficLightClearance)
-                .padding(.bottom, 28)
+                .padding(.top, SettingsLayoutMetrics.sidebarTopPadding)
+                .padding(.bottom, SettingsLayoutMetrics.sidebarBottomPadding)
             }
             .scrollIndicators(.visible)
+            .scrollContentBackground(.hidden)
         }
         .frame(width: SettingsChromeMetrics.sidebarWidth, alignment: .topLeading)
-        .background(
-            VisualEffectView(material: .sidebar, blendingMode: .withinWindow, emphasized: true)
-        )
+        .background(Color.clear)
     }
 
     private var settingsDetail: some View {
         VStack(spacing: 0) {
-            settingsToolbar
-            Divider().opacity(0.35)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     switch appState.selectedSettingsDestination {
                     case .general:
-                        SettingsPane(subtitle: "Choose how Crona fits into your day.") {
+                        SettingsPane(title: "General", subtitle: "Choose how Crona starts, appears, and marks the day.") {
                             GeneralSettingsView(appState: appState)
                         }
                     case .menuBar:
-                        SettingsPane(subtitle: "Keep the right amount of focus in sight.") {
+                        SettingsPane(title: "Menu Bar", subtitle: "Choose how Crona appears in the menu bar.") {
                             MenuBarSettingsView(appState: appState)
                         }
                     case .smartPause:
-                        SettingsPane(subtitle: "Keep stopwatch time aligned with the time you are actually at your Mac.") {
+                        SettingsPane(title: "Smart Pause", subtitle: "Choose when Crona pauses and resumes automatically.") {
                             SmartPauseSettingsView(appState: appState)
                         }
                     case .breakScreen:
-                        SettingsPane(subtitle: "Step away when a pomodoro break begins.") {
+                        SettingsPane(title: "Break Screen", subtitle: "Choose how break time appears on your Mac.") {
                             BreakScreenSettingsView(appState: appState)
                         }
                     case .notifications:
-                        SettingsPane(subtitle: "Decide when Crona should get your attention.") {
+                        SettingsPane(title: "Notifications", subtitle: "Choose how Crona alerts you.") {
                             NotificationSettingsView(appState: appState)
                         }
                     case .runtime:
-                        SettingsPane(subtitle: "See where Crona is running and reconnect when needed.") {
+                        SettingsPane(title: "Runtime", subtitle: "Review the active runtime and kernel connection.") {
                             RuntimeSettingsView(appState: appState)
                         }
                     case .diagnostics:
-                        SettingsPane(subtitle: "Everything you need when something feels off.") {
+                        SettingsPane(title: "Diagnostics", subtitle: "Review runtime health and recent issues.") {
                             DiagnosticsSettingsView(appState: appState)
                         }
                     case .updates:
-                        SettingsPane(subtitle: "Keep Crona current without interrupting your focus.") {
+                        SettingsPane(title: "Updates", subtitle: "Review the installed build and update settings.") {
                             UpdatesSettingsView(appState: appState)
                         }
                     case .about:
-                        SettingsPane(subtitle: "Crona for macOS, at a glance.") {
+                        SettingsPane(title: "About", subtitle: "See the installed version and release channel.") {
                             AboutSettingsView(appState: appState)
                         }
 #if DEBUG
                     case .developer:
-                        SettingsPane(subtitle: "Preview companion presenters without changing the daemon or starting a session.") {
+                        SettingsPane(title: "Developer", subtitle: "Preview companion presenters without touching the daemon.") {
                             DeveloperSettingsView(appState: appState)
                         }
 #endif
                     }
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 20)
-                .padding(.bottom, 36)
+                .padding(.horizontal, SettingsLayoutMetrics.detailHorizontalPadding)
+                .padding(.top, SettingsLayoutMetrics.detailTopPadding)
+                .padding(.bottom, SettingsLayoutMetrics.detailBottomPadding)
                 .frame(maxWidth: 760, alignment: .leading)
             }
             .scrollIndicators(.visible)
+            .modifier(SettingsScrollEdgeEffectModifier())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.38))
+        .background(PopupVisualTheme.windowBackground)
     }
 
-    private var settingsToolbar: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 0) {
-                Button(action: appState.goBackInSettings) {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 32, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .disabled(!appState.settingsNavigation.canGoBack)
-
-                Divider()
-                    .frame(height: 16)
-
-                Button(action: appState.goForwardInSettings) {
-                    Image(systemName: "chevron.right")
-                        .frame(width: 32, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .disabled(!appState.settingsNavigation.canGoForward)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .background(
-                Capsule()
-                    .fill(Color.primary.opacity(0.075))
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
-                    )
-            )
-
-            Text(appState.selectedSettingsDestination.title)
-                .font(.headline)
-
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .frame(height: SettingsChromeMetrics.titlebarBandHeight)
-    }
 }
 
 private enum SettingsChromeMetrics {
-    static let titlebarBandHeight: CGFloat = 54
-    static let sidebarTrafficLightClearance: CGFloat = 50
     static let sidebarWidth: CGFloat = 210
+    static let toolbarSurfaceHeight: CGFloat = 52
+}
+
+private enum SettingsLayoutMetrics {
+    static let sidebarTopPadding: CGFloat = 20
+    static let sidebarBottomPadding: CGFloat = 26
+    static let detailHorizontalPadding: CGFloat = 28
+    static let detailTopPadding: CGFloat = 20
+    static let detailBottomPadding: CGFloat = 28
+    static let sectionSpacing: CGFloat = 22
+    static let cardHeaderSpacing: CGFloat = 10
+    static let cardContentHorizontalPadding: CGFloat = 14
+    static let cardContentVerticalPadding: CGFloat = 8
+    static let rowVerticalPadding: CGFloat = 12
+    static let rowSpacing: CGFloat = 18
+    static let labelColumnWidth: CGFloat = 260
+    static let controlColumnWidth: CGFloat = 178
+    static let actionButtonMinimumHeight: CGFloat = 38
+    static let actionButtonCornerRadius: CGFloat = 11
+    static let detailCardCornerRadius: CGFloat = 14
+}
+
+private struct SettingsScrollEdgeEffectModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SettingsWindowToolbarChromeModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27.0, *) {
+            content
+                .toolbar(removing: .title)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        } else if #available(macOS 26.0, *) {
+            content
+                .toolbar(removing: .title)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        } else if #available(macOS 15.0, *) {
+            content
+                .toolbar(removing: .title)
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SettingsWindowToolbarBackgroundModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content
+                .toolbarBackground(.regularMaterial, for: .windowToolbar)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SettingsNavigationCluster: View {
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let goBack: () -> Void
+    let goForward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            settingsToolbarButton(
+                systemImage: "chevron.left",
+                action: goBack,
+                isEnabled: canGoBack
+            )
+
+            Divider()
+                .frame(height: 18)
+                .padding(.vertical, 4)
+                .opacity(0.28)
+
+            settingsToolbarButton(
+                systemImage: "chevron.right",
+                action: goForward,
+                isEnabled: canGoForward
+            )
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(PopupVisualTheme.primaryText.opacity(0.08))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(PopupVisualTheme.primaryText.opacity(0.1), lineWidth: 0.75)
+                )
+        )
+    }
+
+    private func settingsToolbarButton(
+        systemImage: String,
+        action: @escaping () -> Void,
+        isEnabled: Bool
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isEnabled ? PopupVisualTheme.primaryText : PopupVisualTheme.secondaryText.opacity(0.55))
+        .disabled(!isEnabled)
+        .help(systemImage == "chevron.left" ? "Back" : "Forward")
+    }
+}
+
+private struct SettingsToolbarSurfaceBackground: View {
+    var body: some View {
+        Group {
+            if #available(macOS 27.0, *) {
+                ZStack {
+                    VisualEffectView(
+                        material: .headerView,
+                        blendingMode: .withinWindow,
+                        emphasized: false
+                    )
+
+                    LinearGradient(
+                        colors: [
+                            PopupVisualTheme.windowBackground.opacity(0.72),
+                            PopupVisualTheme.windowBackground.opacity(0.42),
+                            PopupVisualTheme.windowBackground.opacity(0.18)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .overlay(alignment: .bottom) {
+                    Divider()
+                        .opacity(0.18)
+                }
+            } else if #available(macOS 26.0, *) {
+                ZStack {
+                    VisualEffectView(
+                        material: .headerView,
+                        blendingMode: .withinWindow,
+                        emphasized: false
+                    )
+
+                    LinearGradient(
+                        colors: [
+                            PopupVisualTheme.windowBackground.opacity(0.56),
+                            PopupVisualTheme.windowBackground.opacity(0.24),
+                            .clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .overlay(alignment: .bottom) {
+                    Divider()
+                        .opacity(0.14)
+                }
+            } else {
+                EmptyView()
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct SettingsSidebarBackground: View {
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(.regular.interactive(false), in: Rectangle())
+        } else {
+            VisualEffectView(material: .sidebar, blendingMode: .withinWindow, emphasized: true)
+        }
+    }
 }
 
 private struct SettingsSidebarSection: View {
@@ -197,7 +445,7 @@ private struct SettingsSidebarSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PopupVisualTheme.secondaryText)
                 .padding(.horizontal, 8)
 
             VStack(spacing: 4) {
@@ -220,7 +468,7 @@ private struct SettingsSidebarRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: item.iconName)
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 16)
@@ -233,11 +481,11 @@ private struct SettingsSidebarRow: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.1) : Color.clear)
+                    .fill(isSelected ? PopupVisualTheme.primaryText.opacity(0.1) : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 0.75)
+                    .strokeBorder(isSelected ? PopupVisualTheme.primaryText.opacity(0.08) : Color.clear, lineWidth: 0.75)
             )
         }
         .buttonStyle(.plain)
@@ -245,14 +493,21 @@ private struct SettingsSidebarRow: View {
 }
 
 private struct SettingsPane<Content: View>: View {
+    let title: String
     let subtitle: String
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             content
         }
@@ -263,11 +518,11 @@ private struct GeneralSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Startup") {
                 SettingsToggleRow(
                     title: "Launch at Login",
-                    subtitle: "Have Crona ready in the menu bar when you sign in.",
+                    subtitle: "Choose whether Crona is ready in the menu bar when you sign in.",
                     isOn: Binding(
                         get: { appState.launchAtLoginService.isEnabled },
                         set: { appState.launchAtLoginService.setEnabled($0) }
@@ -276,7 +531,7 @@ private struct GeneralSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Hide Dock Icon When Closed",
-                    subtitle: "Keep Crona in the menu bar only unless a full app window is open.",
+                    subtitle: "Choose whether Crona stays in the menu bar only unless a full app window is open.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen },
                         set: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen = $0 }
@@ -288,10 +543,25 @@ private struct GeneralSettingsView: View {
                 }
             }
 
+            SettingsCard("Appearance") {
+                SettingsPickerRow(
+                    title: "Theme",
+                    subtitle: "Choose a light or dark palette, or follow macOS.",
+                    selection: Binding(
+                        get: { appState.preferences.preferences.appearance },
+                        set: { appState.preferences.preferences.appearance = $0 }
+                    )
+                ) {
+                    ForEach(CompanionAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+            }
+
             SettingsCard("Menu Popover") {
                 SettingsToggleRow(
                     title: "Pin Popover",
-                    subtitle: "Keep the popover open while you work with it.",
+                    subtitle: "Choose whether the popover stays open while you work with it.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.pinPopover },
                         set: { appState.preferences.preferences.pinPopover = $0 }
@@ -299,11 +569,777 @@ private struct GeneralSettingsView: View {
                 )
             }
 
-            SettingsMediaPlaceholder(
-                assetName: "SettingsGeneralDemo",
-                title: "Crona in your workflow",
-                subtitle: "Add a walkthrough image or GIF named SettingsGeneralDemo."
+            DayBoundarySettingsCard(appState: appState)
+        }
+    }
+}
+
+private struct DayBoundarySettingsCard: View {
+    @ObservedObject var appState: CompanionAppState
+
+    var body: some View {
+        SettingsCard("Crona Day") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Local times tell the daemon when a Crona day starts and ends.")
+                    .font(.caption)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                DayBoundaryScheduleEditor(
+                    title: "Start of Day",
+                    subtitle: "Defines when a new Crona day begins.",
+                    key: "startOfDay",
+                    schedule: appState.dayBoundarySettingsService.settings.startOfDay,
+                    service: appState.dayBoundarySettingsService
+                )
+
+                DayBoundaryScheduleEditor(
+                    title: "End of Day",
+                    subtitle: "Defines when Crona stops counting into the next day.",
+                    key: "endOfDay",
+                    schedule: appState.dayBoundarySettingsService.settings.endOfDay,
+                    service: appState.dayBoundarySettingsService
+                )
+
+                if !appState.daemonConnection.timezone.isEmpty {
+                    Text("Timezone: \(appState.daemonConnection.timezone)")
+                        .font(.caption2)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
+                }
+
+                if let error = appState.dayBoundarySettingsService.lastErrorDescription,
+                   !error.isEmpty {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .task {
+            await appState.dayBoundarySettingsService.refresh()
+        }
+    }
+}
+
+private struct DayBoundaryScheduleEditor: View {
+    let title: String
+    let subtitle: String
+    let key: String
+    let schedule: CronaDayBoundarySchedule
+    let service: DayBoundarySettingsService
+
+    @State private var defaultTime = "00:00"
+    @State private var overrides: [Int: String] = [:]
+    @State private var draft: DayBoundaryOverrideDraft?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+
+                Toggle("", isOn: Binding(
+                    get: { schedule.enabled },
+                    set: { enabled in
+                        service.setSchedule(
+                            key,
+                            schedule: CronaDayBoundarySchedule(
+                                enabled: enabled,
+                                defaultTime: defaultTime,
+                                weekdayOverrides: overrides
+                            )
+                        )
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.regular)
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center, spacing: SettingsLayoutMetrics.rowSpacing) {
+                    Text("Default")
+                        .font(.subheadline)
+                        .foregroundStyle(isDefaultDisabled ? PopupVisualTheme.secondaryText.opacity(0.55) : PopupVisualTheme.primaryText)
+                        .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+
+                    Spacer(minLength: 0)
+
+                    DatePicker(
+                        "",
+                        selection: Binding(
+                            get: { dayBoundaryTimeDate(from: defaultTime) },
+                            set: { newDate in
+                                defaultTime = dayBoundaryTimeString(from: newDate)
+                                save()
+                            }
+                        ),
+                        displayedComponents: .hourAndMinute
+                    )
+                    .datePickerStyle(.compact)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .frame(width: SettingsLayoutMetrics.controlColumnWidth, alignment: .trailing)
+                    .disabled(isDefaultDisabled)
+                    .opacity(isDefaultDisabled ? 0.55 : 1)
+                }
+                .padding(.vertical, 10)
+
+                Divider().opacity(0.35)
+                    .padding(.vertical, 4)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Weekday overrides")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(PopupVisualTheme.secondaryText)
+
+                        Spacer(minLength: 0)
+
+                        Button {
+                            beginNewOverride()
+                        } label: {
+                            Label("Add Override", systemImage: "plus")
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(hasAvailableWeekdays ? Color.accentColor : PopupVisualTheme.secondaryText)
+                        .disabled(!hasAvailableWeekdays)
+                    }
+
+                    if groupedOverrides.isEmpty {
+                        Text("No weekday overrides yet.")
+                            .font(.caption)
+                            .foregroundStyle(PopupVisualTheme.secondaryText)
+                            .padding(.vertical, 6)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(groupedOverrides) { group in
+                                DayBoundaryOverrideGroupRow(
+                                    group: group,
+                                    onEdit: { beginEditing(group) },
+                                    onDelete: { remove(group) }
+                                )
+                            }
+                        }
+                    }
+
+                    if let draft {
+                        DayBoundaryOverrideEditor(
+                            draft: Binding(
+                                get: { draft },
+                                set: { self.draft = $0 }
+                            ),
+                            occupiedDays: occupiedDays(excluding: draft.originalDays),
+                            onCancel: { self.draft = nil },
+                            onSave: { saveDraft() }
+                        )
+                        .padding(.top, 6)
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                        .fill(PopupVisualTheme.primaryText.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                                .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                        )
+                )
+            }
+        }
+        .onAppear { load() }
+        .onChange(of: schedule) { _, _ in load() }
+    }
+
+    private var groupedOverrides: [DayBoundaryOverrideGroup] {
+        Dictionary(grouping: overrides, by: { $0.value })
+            .map { time, entries in
+                DayBoundaryOverrideGroup(time: time, days: entries.map(\.key).sorted())
+            }
+            .sorted {
+                if $0.time == $1.time {
+                    return ($0.days.first ?? 0) < ($1.days.first ?? 0)
+                }
+                return $0.time < $1.time
+            }
+    }
+
+    private var hasAvailableWeekdays: Bool {
+        availableWeekdays.count > 0
+    }
+
+    private var availableWeekdays: [Int] {
+        (1...7).filter { overrides[$0] == nil }
+    }
+
+    private var isDefaultDisabled: Bool {
+        availableWeekdays.isEmpty
+    }
+
+    private func occupiedDays(excluding excludedDays: Set<Int>) -> Set<Int> {
+        Set(overrides.keys).subtracting(excludedDays)
+    }
+
+    private func beginNewOverride() {
+        guard hasAvailableWeekdays else { return }
+        draft = DayBoundaryOverrideDraft(
+            time: defaultTime,
+            selectedDays: [],
+            originalDays: []
+        )
+    }
+
+    private func beginEditing(_ group: DayBoundaryOverrideGroup) {
+        draft = DayBoundaryOverrideDraft(
+            time: group.time,
+            selectedDays: Set(group.days),
+            originalDays: Set(group.days)
+        )
+    }
+
+    private func remove(_ group: DayBoundaryOverrideGroup) {
+        for weekday in group.days {
+            overrides.removeValue(forKey: weekday)
+        }
+        save()
+    }
+
+    private func saveDraft() {
+        guard let draft, !draft.selectedDays.isEmpty, isValidTime(draft.time) else { return }
+
+        var projected = overrides
+        for weekday in draft.originalDays {
+            projected.removeValue(forKey: weekday)
+        }
+        for weekday in draft.selectedDays {
+            projected[weekday] = draft.time
+        }
+        overrides = projected
+        self.draft = nil
+        save()
+    }
+
+    private func overrideBinding(for weekday: Int) -> Binding<String> {
+        Binding(
+            get: { overrides[weekday] ?? "" },
+            set: { value in
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    overrides.removeValue(forKey: weekday)
+                } else {
+                    overrides[weekday] = value
+                }
+            }
+        )
+    }
+
+    private func isValidTime(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2,
+              parts[1].count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return false
+        }
+        return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+
+    private func timeSelectionBinding(for value: Binding<String>) -> Binding<Date> {
+        Binding(
+            get: { dateValue(for: value.wrappedValue) },
+            set: { newDate in
+                value.wrappedValue = timeString(from: newDate)
+            }
+        )
+    }
+
+    private func dateValue(for value: String) -> Date {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return Date()
+        }
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: Date())
+        let baseDate = calendar.date(from: components) ?? Date()
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? Date()
+    }
+
+    private func timeString(from date: Date) -> String {
+        let calendar = Calendar.current
+        return String(
+            format: "%02d:%02d",
+            calendar.component(.hour, from: date),
+            calendar.component(.minute, from: date)
+        )
+    }
+
+    private func load() {
+        defaultTime = schedule.defaultTime
+        overrides = schedule.weekdayOverrides
+        draft = nil
+    }
+
+    private func save() {
+        service.setSchedule(
+            key,
+            schedule: CronaDayBoundarySchedule(
+                enabled: schedule.enabled,
+                defaultTime: defaultTime,
+                weekdayOverrides: overrides
             )
+        )
+    }
+
+    fileprivate static func weekdayName(_ weekday: Int) -> String {
+        let symbols = Calendar.current.weekdaySymbols
+        let index = weekday == 7 ? 0 : weekday
+        return symbols[index]
+    }
+
+    fileprivate static func weekdayShortName(_ weekday: Int) -> String {
+        let symbols = Calendar.current.shortWeekdaySymbols
+        let index = weekday == 7 ? 0 : weekday
+        return symbols[index]
+    }
+}
+
+private struct DayBoundaryOverrideGroup: Identifiable, Equatable {
+    let time: String
+    let days: [Int]
+
+    var id: String {
+        "\(time)-\(days.map(String.init).joined(separator: ","))"
+    }
+}
+
+private struct DayBoundaryOverrideDraft: Equatable {
+    var time: String
+    var selectedDays: Set<Int>
+    var originalDays: Set<Int>
+}
+
+private func dayBoundaryTimeDate(from value: String) -> Date {
+    let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+    guard parts.count == 2,
+          let hour = Int(parts[0]),
+          let minute = Int(parts[1])
+    else {
+        return Date()
+    }
+
+    let calendar = Calendar.current
+    let components = calendar.dateComponents([.year, .month, .day], from: Date())
+    let baseDate = calendar.date(from: components) ?? Date()
+    return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? Date()
+}
+
+private func dayBoundaryTimeString(from date: Date) -> String {
+    let calendar = Calendar.current
+    return String(
+        format: "%02d:%02d",
+        calendar.component(.hour, from: date),
+        calendar.component(.minute, from: date)
+    )
+}
+
+private struct TimePopupPicker: View {
+    let time: Binding<String>
+    var isDisabled: Bool = false
+
+    @State private var isPresented = false
+    @State private var draftDate = Date()
+
+    var body: some View {
+        Button {
+            guard !isDisabled else { return }
+            draftDate = dateValue(for: time.wrappedValue)
+            isPresented = true
+        } label: {
+            HStack(spacing: 8) {
+                Text(time.wrappedValue)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(isDisabled ? PopupVisualTheme.secondaryText.opacity(0.55) : PopupVisualTheme.primaryText)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PopupVisualTheme.primaryText.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.55 : 1)
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose Time")
+                        .font(.headline)
+                    Text("Pick a clock time for this schedule.")
+                        .font(.caption)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Text(timeString(from: draftDate))
+                            .font(.system(size: 28, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(PopupVisualTheme.primaryText.opacity(0.04))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                            )
+                    )
+
+                    StepperRow(
+                        title: "Hour",
+                        value: hourBinding
+                    )
+
+                    StepperRow(
+                        title: "Minute",
+                        value: minuteBinding
+                    )
+                }
+
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Done") {
+                        isPresented = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(16)
+            .frame(minWidth: 260)
+            .onAppear {
+                draftDate = dateValue(for: time.wrappedValue)
+            }
+        }
+    }
+
+    private var hourBinding: Binding<Int> {
+        Binding(
+            get: { Calendar.current.component(.hour, from: draftDate) },
+            set: { newHour in
+                draftDate = updatedDate(hour: newHour, minute: Calendar.current.component(.minute, from: draftDate))
+                time.wrappedValue = timeString(from: draftDate)
+            }
+        )
+    }
+
+    private var minuteBinding: Binding<Int> {
+        Binding(
+            get: { Calendar.current.component(.minute, from: draftDate) },
+            set: { newMinute in
+                draftDate = updatedDate(hour: Calendar.current.component(.hour, from: draftDate), minute: newMinute)
+                time.wrappedValue = timeString(from: draftDate)
+            }
+        )
+    }
+
+    private func dateValue(for value: String) -> Date {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return Date()
+        }
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: Date())
+        let baseDate = calendar.date(from: components) ?? Date()
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? Date()
+    }
+
+    private func updatedDate(hour: Int, minute: Int) -> Date {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: draftDate)
+        let baseDate = calendar.date(from: components) ?? draftDate
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? draftDate
+    }
+
+    private func timeString(from date: Date) -> String {
+        let calendar = Calendar.current
+        return String(
+            format: "%02d:%02d",
+            calendar.component(.hour, from: date),
+            calendar.component(.minute, from: date)
+        )
+    }
+}
+
+private struct StepperRow: View {
+    let title: String
+    let value: Binding<Int>
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(PopupVisualTheme.primaryText)
+                .frame(width: 54, alignment: .leading)
+
+            Stepper(value: value, in: title == "Hour" ? 0...23 : 0...59) {
+                Text(formattedValue)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .frame(width: 42, alignment: .trailing)
+            }
+            .labelsHidden()
+        }
+    }
+
+    private var formattedValue: String {
+        String(format: "%02d", value.wrappedValue)
+    }
+}
+
+private struct DayBoundaryOverrideGroupRow: View {
+    let group: DayBoundaryOverrideGroup
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                WrapDayPills(days: group.days)
+
+                Spacer(minLength: 0)
+
+                Text(group.time)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+                    .padding(.top, 2)
+            }
+
+            HStack(spacing: 8) {
+                Button("Edit", action: onEdit)
+                Button("Remove", action: onDelete)
+            }
+            .buttonStyle(.plain)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(PopupVisualTheme.secondaryText)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(PopupVisualTheme.primaryText.opacity(0.03))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                )
+        )
+    }
+}
+
+private struct DayBoundaryOverrideEditor: View {
+    @Binding var draft: DayBoundaryOverrideDraft
+    let occupiedDays: Set<Int>
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    private var isSaveEnabled: Bool {
+        !draft.selectedDays.isEmpty && isValidTime(draft.time)
+    }
+
+    private func timeSelectionBinding(for value: Binding<String>) -> Binding<Date> {
+        Binding(
+            get: { dateValue(for: value.wrappedValue) },
+            set: { newDate in
+                value.wrappedValue = timeString(from: newDate)
+            }
+        )
+    }
+
+    private func dateValue(for value: String) -> Date {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return Date()
+        }
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: Date())
+        let baseDate = calendar.date(from: components) ?? Date()
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? Date()
+    }
+
+    private func timeString(from date: Date) -> String {
+        let calendar = Calendar.current
+        return String(
+            format: "%02d:%02d",
+            calendar.component(.hour, from: date),
+            calendar.component(.minute, from: date)
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Override Editor")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
+
+                Spacer(minLength: 0)
+
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain)
+                Button("Save", action: onSave)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(isSaveEnabled ? Color.accentColor : PopupVisualTheme.secondaryText)
+                    .disabled(!isSaveEnabled)
+            }
+
+            Text("Select weekdays that should share this time.")
+                .font(.caption)
+                .foregroundStyle(PopupVisualTheme.secondaryText)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 54), spacing: 8), count: 4), spacing: 8) {
+                ForEach(1...7, id: \.self) { weekday in
+                    let isSelected = draft.selectedDays.contains(weekday)
+                    let isDisabled = occupiedDays.contains(weekday) && !isSelected
+
+                    Button {
+                        if isSelected {
+                            draft.selectedDays.remove(weekday)
+                        } else {
+                            draft.selectedDays.insert(weekday)
+                        }
+                    } label: {
+                        Text(DayBoundaryScheduleEditor.weekdayShortName(weekday))
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(
+                                isSelected
+                                    ? PopupVisualTheme.selectedControlText
+                                    : isDisabled
+                                        ? PopupVisualTheme.secondaryText.opacity(0.45)
+                                        : PopupVisualTheme.primaryText
+                            )
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(
+                                        isSelected
+                                            ? PopupVisualTheme.selectedControlBackground
+                                            : PopupVisualTheme.primaryText.opacity(0.05)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(
+                                                isSelected
+                                                    ? PopupVisualTheme.highlightedBorder
+                                                    : PopupVisualTheme.border,
+                                                lineWidth: 0.75
+                                            )
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDisabled)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                Text("Time")
+                    .font(.subheadline)
+                    .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { dayBoundaryTimeDate(from: draft.time) },
+                        set: { newDate in
+                            draft.time = dayBoundaryTimeString(from: newDate)
+                        }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.compact)
+                .controlSize(.small)
+                .labelsHidden()
+                    .frame(width: SettingsLayoutMetrics.controlColumnWidth, alignment: .trailing)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(PopupVisualTheme.primaryText.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                )
+        )
+    }
+
+    private func isValidTime(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].count == 2,
+              parts[1].count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1])
+        else {
+            return false
+        }
+        return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+}
+
+private struct WrapDayPills: View {
+    let days: [Int]
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 50), spacing: 6), count: 4), spacing: 6) {
+            ForEach(days, id: \.self) { weekday in
+                Text(DayBoundaryScheduleEditor.weekdayShortName(weekday))
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+                    .background(
+                        Capsule()
+                            .fill(PopupVisualTheme.primaryText.opacity(0.06))
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                            )
+                    )
+            }
         }
     }
 }
@@ -319,22 +1355,20 @@ private struct MenuBarSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Preview") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Your menu bar")
+                    Text("Menu bar preview")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
 
                     HStack(spacing: 8) {
                         Spacer()
                         if appState.preferences.preferences.menuBarDisplayMode.showsIcon {
-                            if let image = MenuBarIconProvider.image(for: previewIconState) {
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .frame(width: 18, height: 18)
-                            }
+                            Image(nsImage: MenuBarIconProvider.image(for: previewIconState))
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 18, height: 18)
                         }
                         if appState.preferences.preferences.menuBarDisplayMode.showsText {
                             Text(previewStatus)
@@ -346,8 +1380,8 @@ private struct MenuBarSettingsView: View {
                     .frame(height: 34)
                     .background(
                         Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75))
+                            .fill(PopupVisualTheme.primaryText.opacity(0.08))
+                            .overlay(Capsule().strokeBorder(PopupVisualTheme.primaryText.opacity(0.08), lineWidth: 0.75))
                     )
                 }
             }
@@ -367,9 +1401,9 @@ private struct MenuBarSettingsView: View {
                 }
 
                 if appState.preferences.preferences.menuBarDisplayMode.showsText {
-                    SettingsPickerRow(
-                        title: "When Idle",
-                        subtitle: "Show a quiet Idle label or today’s focus time.",
+                SettingsPickerRow(
+                    title: "When Idle",
+                    subtitle: "Choose whether idle text shows a quiet Idle label or today’s focus time.",
                         selection: Binding(
                             get: { appState.preferences.preferences.menuBarIdleTextMode },
                             set: { appState.preferences.preferences.menuBarIdleTextMode = $0 }
@@ -415,11 +1449,11 @@ private struct SmartPauseSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Smart Pause") {
                 SettingsToggleRow(
                     title: "Pause Automatically",
-                    subtitle: "Pause a running stopwatch when you step away from your Mac.",
+                    subtitle: "Choose whether a running stopwatch pauses when you step away from your Mac.",
                     isOn: binding(\.smartPauseEnabled)
                 )
             }
@@ -440,14 +1474,14 @@ private struct SmartPauseSettingsView: View {
 
                     SettingsToggleRow(
                         title: "No Keyboard or Mouse Input",
-                        subtitle: "Pause only after there has been no input for the selected time.",
+                        subtitle: "Pause only after there has been no keyboard or mouse input for the selected time.",
                         isOn: binding(\.smartPauseOnInactivity)
                     )
 
                     if preferences.smartPauseOnInactivity {
                         SettingsPickerRow(
                             title: "No-Input Delay",
-                            subtitle: "This delay applies only to keyboard and mouse inactivity.",
+                            subtitle: "Choose how long to wait before pausing for keyboard and mouse inactivity.",
                             selection: binding(\.smartPauseIdleSeconds)
                         ) {
                             ForEach(CompanionPreferences.smartPauseIdleOptions, id: \.self) { seconds in
@@ -463,7 +1497,7 @@ private struct SmartPauseSettingsView: View {
             SettingsCard("When You Return") {
                 SettingsValueRow(
                     title: "Resume Automatically",
-                    subtitle: "Crona resumes only when it initiated the pause and every pause condition has cleared.",
+                    subtitle: "See when Crona resumes after it initiated the pause and every pause condition has cleared.",
                     value: "On"
                 )
             }
@@ -498,7 +1532,7 @@ private struct BreakScreenSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Break Screen") {
                 SettingsToggleRow(
                     title: "Take Over the Screen",
@@ -521,7 +1555,7 @@ private struct BreakScreenSettingsView: View {
                         }
                     }
                 }
-                .padding(.vertical, 10)
+                .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
 
                 if preferences.breakScreenMode == .strict {
                     SettingsPickerRow(
@@ -560,14 +1594,12 @@ private struct BreakScreenSettingsView: View {
                 case .systemWallpaper:
                     settingsFootnote("Uses each display’s current wallpaper with a quiet dimming layer.")
                 case .solidColor:
-                    HStack {
-                        Text("Break Color")
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        ColorPicker("", selection: solidColorBinding, supportsOpacity: false)
-                            .labelsHidden()
-                    }
-                    .padding(.vertical, 10)
+                    BreakScreenSolidColorSwatchPicker(
+                        selection: Binding(
+                            get: { preferences.breakScreenSolidColor },
+                            set: { appState.preferences.preferences.breakScreenSolidColor = $0 }
+                        )
+                    )
                 case .gradient:
                     SettingsPickerRow(
                         title: "Gradient",
@@ -589,16 +1621,110 @@ private struct BreakScreenSettingsView: View {
         .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenMode)
         .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenBackgroundStyle)
     }
+}
 
-    private var solidColorBinding: Binding<Color> {
-        Binding(
-            get: { Color(rgba: preferences.breakScreenSolidColor) },
-            set: {
-                appState.preferences.preferences.breakScreenSolidColor =
-                    CompanionRGBAColor(nsColor: NSColor($0))
+private struct BreakScreenSolidColorSwatchPicker: View {
+    @Binding var selection: CompanionRGBAColor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Break Color")
+                        .font(.subheadline.weight(.medium))
+                    Text("Choose a calm swatch for the break screen.")
+                        .font(.caption)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+
+                Text(selectedTitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
             }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 42), spacing: 10), count: 6), spacing: 10) {
+                ForEach(Self.swatches) { swatch in
+                    Button {
+                        selection = swatch.color
+                    } label: {
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(rgba: swatch.color))
+                                .frame(width: 22, height: 22)
+                                .overlay {
+                                    if isSelected(swatch.color) {
+                                        Circle()
+                                            .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                                    }
+                                }
+                                .overlay(alignment: .topTrailing) {
+                                    if isSelected(swatch.color) {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .padding(3)
+                                            .background(Circle().fill(Color.accentColor))
+                                            .offset(x: 3, y: -3)
+                                    }
+                                }
+
+                            Text(swatch.name)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(PopupVisualTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(isSelected(swatch.color) ? Color.accentColor.opacity(0.12) : PopupVisualTheme.primaryText.opacity(0.04))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(isSelected(swatch.color) ? Color.accentColor.opacity(0.45) : PopupVisualTheme.border, lineWidth: 0.75)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                .fill(PopupVisualTheme.primaryText.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                        .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
+                )
         )
     }
+
+    private var selectedTitle: String {
+        Self.swatches.first(where: { $0.color == selection })?.name ?? "Custom"
+    }
+
+    private func isSelected(_ color: CompanionRGBAColor) -> Bool {
+        selection == color
+    }
+
+    private static let swatches: [BreakScreenSolidColorSwatch] = [
+        .init(name: "Slate", color: .init(red: 0.055, green: 0.075, blue: 0.11, alpha: 1)),
+        .init(name: "Blue", color: .init(red: 0.04, green: 0.13, blue: 0.23, alpha: 1)),
+        .init(name: "Teal", color: .init(red: 0.04, green: 0.14, blue: 0.11, alpha: 1)),
+        .init(name: "Rose", color: .init(red: 0.2, green: 0.07, blue: 0.1, alpha: 1)),
+        .init(name: "Violet", color: .init(red: 0.18, green: 0.11, blue: 0.24, alpha: 1)),
+        .init(name: "Warm", color: .init(red: 0.52, green: 0.2, blue: 0.15, alpha: 1))
+    ]
+}
+
+private struct BreakScreenSolidColorSwatch: Identifiable {
+    let name: String
+    let color: CompanionRGBAColor
+
+    var id: String { name }
 }
 
 private struct BreakScreenModeCard: View {
@@ -608,25 +1734,25 @@ private struct BreakScreenModeCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Image(systemName: symbolName)
                     .font(.system(size: 20, weight: .semibold))
                 Text(mode.title)
                     .font(.subheadline.weight(.semibold))
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.16) : PopupVisualTheme.primaryText.opacity(0.045))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        selected ? Color.accentColor : Color.primary.opacity(0.07),
+                        selected ? Color.accentColor : PopupVisualTheme.primaryText.opacity(0.07),
                         lineWidth: selected ? 2 : 0.75
                     )
             )
@@ -655,28 +1781,34 @@ private struct BreakScreenSettingsPreview: View {
     let preferences: CompanionPreferences
 
     var body: some View {
-        ZStack {
-            BreakScreenBackgroundView(preferences: preferences, screen: NSScreen.main)
-            VStack(spacing: 5) {
-                Text("Short Break")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-                Text("04:32")
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text("Ends at 4:45 PM")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.62))
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            ZStack {
+                BreakScreenBackgroundView(
+                    preferences: preferences,
+                    screen: NSScreen.main,
+                    date: timeline.date
+                )
+                VStack(spacing: 4) {
+                    Text("Short Break")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                    Text("04:32")
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text("Ends at 4:45 PM")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+                .foregroundStyle(.white)
             }
-            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 138)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(PopupVisualTheme.primaryText.opacity(0.12), lineWidth: 0.75)
+            )
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 150)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.75)
-        )
     }
 }
 
@@ -692,11 +1824,11 @@ private struct NotificationSettingsView: View {
     var body: some View {
         let settings = alertSettings.settings
 
-        VStack(alignment: .leading, spacing: 18) {
-            SettingsCard("Native Notifications") {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
+            SettingsCard("System Notifications") {
                 SettingsValueRow(
                     title: "Permission",
-                    subtitle: "Let Crona deliver alerts with native actions and sounds.",
+                    subtitle: "See whether Crona can deliver alerts with native actions and sounds.",
                     value: notificationStatusText(
                         appState.notificationService.authorizationStatus
                     )
@@ -704,7 +1836,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsValueRow(
                     title: "Delivery",
-                    subtitle: "The daemon falls back automatically whenever the app cannot deliver.",
+                    subtitle: "See when the daemon falls back automatically if the app cannot deliver.",
                     value: deliveryStatusText
                 )
 
@@ -722,7 +1854,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Alerts") {
                 SettingsToggleRow(
                     title: "Show Notifications",
-                    subtitle: "Keep focus boundaries, reminders, and Crona updates in Notification Center.",
+                    subtitle: "Choose whether focus boundaries, reminders, and Crona updates appear in Notification Center.",
                     isOn: Binding(
                         get: { settings?.boundaryNotificationsEnabled ?? true },
                         set: {
@@ -737,7 +1869,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Play Alert Sounds",
-                    subtitle: "Use the selected Crona sound when an alert needs your attention.",
+                    subtitle: "Choose whether the selected Crona sound plays when an alert needs your attention.",
                     isOn: Binding(
                         get: { settings?.boundarySoundEnabled ?? true },
                         set: {
@@ -789,7 +1921,7 @@ private struct NotificationSettingsView: View {
                 }
                 .disabled(settings == nil)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     SettingsActionButton("Send Test", systemImage: "paperplane.fill") {
                         appState.sendTestNotification()
                     }
@@ -804,7 +1936,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Focus Reminders") {
                 SettingsToggleRow(
                     title: "Inactivity Reminder",
-                    subtitle: "Nudge me when a focus session may have been left running.",
+                    subtitle: "Choose whether Crona nudges you when a focus session may have been left running.",
                     isOn: Binding(
                         get: { settings?.inactivityAlertsEnabled ?? true },
                         set: {
@@ -819,7 +1951,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Remind After",
-                    subtitle: "Wait this long without activity before the first reminder.",
+                    subtitle: "Choose how long to wait without activity before the first reminder.",
                     selection: Binding(
                         get: { settings?.inactivityThresholdMinutes ?? 60 },
                         set: {
@@ -838,7 +1970,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Repeat",
-                    subtitle: "Space out follow-up reminders while the session stays active.",
+                    subtitle: "Choose how often to repeat follow-up reminders while the session stays active.",
                     selection: Binding(
                         get: { settings?.inactivityRepeatMinutes ?? 60 },
                         set: {
@@ -857,7 +1989,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Show Action Popup",
-                    subtitle: "Open a small desktop prompt when that reminder fires.",
+                    subtitle: "Choose whether a small desktop prompt appears when that reminder fires.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showInactivityActionPopups },
                         set: {
@@ -883,7 +2015,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Focus Boundaries") {
                 SettingsToggleRow(
                     title: "Show Action Popup",
-                    subtitle: "Bring up End and Extend when a hard-limit session reaches its boundary.",
+                    subtitle: "Choose whether End and Extend appear when a hard-limit session reaches its boundary.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showHardLimitActionPopups },
                         set: { appState.preferences.preferences.showHardLimitActionPopups = $0 }
@@ -892,7 +2024,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Show Early Warning",
-                    subtitle: "Place a small warning beside the pointer before a session changes.",
+                    subtitle: "Choose whether a small warning appears beside the pointer before a session changes.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showHardLimitWarningIndicator },
                         set: { appState.preferences.preferences.showHardLimitWarningIndicator = $0 }
@@ -918,12 +2050,6 @@ private struct NotificationSettingsView: View {
                     }
                 }
             }
-
-            SettingsMediaPlaceholder(
-                assetName: "SettingsNotificationDemo",
-                title: "Notification preview",
-                subtitle: "Add an image or GIF named SettingsNotificationDemo."
-            )
 
             if let error = alertSettings.lastErrorDescription {
                 Text(error)
@@ -959,12 +2085,12 @@ private struct DeveloperSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SettingsCard("Presentation Lab") {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
+            SettingsCard("Preview Tools") {
                 Text("These previews use local fixtures only. They never start, pause, extend, or end a daemon session.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 10)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
+                    .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
 
                 SettingsActionGroup {
                     SettingsActionButton("Hard Limit Flow", systemImage: "hourglass.circle") {
@@ -995,6 +2121,41 @@ private struct DeveloperSettingsView: View {
                     }
                 }
             }
+
+            SettingsCard("Menu Bar Icon Preview") {
+                MenuBarIconPreviewGrid()
+            }
+        }
+    }
+}
+#endif
+
+#if DEBUG
+private struct MenuBarIconPreviewGrid: View {
+    private let previews: [(String, MenuBarIconState)] = [
+        ("Idle", .idle),
+        ("Focus", .focus(progress: 0.55)),
+        ("Paused", .paused(progress: 0.55)),
+        ("Break", .breakTime(progress: 0.55)),
+        ("Connecting", .connecting),
+        ("Offline", .offline),
+        ("Error", .error),
+        ("Completed", .completed)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92))], spacing: 14) {
+            ForEach(previews, id: \.0) { title, state in
+                VStack(spacing: 7) {
+                    Image(nsImage: MenuBarIconProvider.image(for: state))
+                        .resizable()
+                        .frame(width: 18, height: 18)
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 }
@@ -1007,17 +2168,17 @@ private struct RuntimeSettingsView: View {
         SettingsCard("Discovery") {
             SettingsValueRow(
                 title: "Runtime Directory",
-                subtitle: "Where Crona looks for the running kernel.",
+                subtitle: "See where Crona looks for the running kernel.",
                 value: appState.kernelDiscovery.loadedRuntime.config.runtimeDirectoryPath
             )
             SettingsValueRow(
                 title: "Discovery File",
-                subtitle: "The kernel.json currently used for discovery.",
+                subtitle: "See the kernel.json currently used for discovery.",
                 value: appState.kernelDiscovery.loadedRuntime.config.discoveryFilePath
             )
             SettingsValueRow(
                 title: "Endpoint",
-                subtitle: "The socket Crona is connected through.",
+                subtitle: "See the socket Crona is connected through.",
                 value: appState.daemonConnection.kernelInfo?.endpoint ?? appState.kernelDiscovery.loadedRuntime.resolvedDiscovery?.endpoint ?? "Unavailable"
             )
 
@@ -1034,31 +2195,31 @@ private struct DiagnosticsSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Snapshot") {
                 SettingsValueRow(
                     title: "Connection State",
-                    subtitle: "Whether the macOS app can reach Crona.",
+                    subtitle: "See whether the macOS app can reach Crona.",
                     value: appState.diagnosticsService.snapshot.connectionState
                 )
                 SettingsValueRow(
                     title: "Protocol Version",
-                    subtitle: "The language shared by the app and kernel.",
+                    subtitle: "See the protocol shared by the app and kernel.",
                     value: appState.diagnosticsService.snapshot.protocolVersion
                 )
                 SettingsValueRow(
                     title: "Kernel Version",
-                    subtitle: "The kernel build currently running.",
+                    subtitle: "See the kernel build currently running.",
                     value: appState.diagnosticsService.snapshot.kernelVersion
                 )
                 SettingsValueRow(
                     title: "Runtime Directory",
-                    subtitle: "The active Crona runtime location.",
+                    subtitle: "See the active Crona runtime location.",
                     value: appState.diagnosticsService.snapshot.runtimeDirectory
                 )
                 SettingsValueRow(
                     title: "Health",
-                    subtitle: "The kernel’s latest health report.",
+                    subtitle: "See the kernel’s latest health report.",
                     value: appState.diagnosticsService.snapshot.healthSummary
                 )
                 SettingsValueRow(
@@ -1092,11 +2253,11 @@ private struct UpdatesSettingsView: View {
     private var service: AppUpdateService { appState.appUpdateService }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Installed") {
                 SettingsValueRow(
                     title: "Crona",
-                    subtitle: "The version currently installed on this Mac.",
+                    subtitle: "See the version currently installed on this Mac.",
                     value: "\(service.snapshot.currentVersion) (\(service.snapshot.currentBuild))"
                 )
 
@@ -1109,7 +2270,7 @@ private struct UpdatesSettingsView: View {
                 if let lastCheckedAt = service.snapshot.lastCheckedAt {
                     SettingsValueRow(
                         title: "Last Checked",
-                        subtitle: "The most recent completed update check.",
+                        subtitle: "See the most recent completed update check.",
                         value: lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
                     )
                 }
@@ -1118,7 +2279,7 @@ private struct UpdatesSettingsView: View {
             SettingsCard("Release Channel") {
                 SettingsPickerRow(
                     title: "Channel",
-                    subtitle: "Stable is dependable. Beta includes early releases and every stable update.",
+                    subtitle: "Choose Stable for dependable releases or Beta for early access plus every stable update.",
                     selection: Binding(
                         get: { service.selectedChannel },
                         set: { service.setChannel($0) }
@@ -1141,7 +2302,7 @@ private struct UpdatesSettingsView: View {
             SettingsCard("Automatic Updates") {
                 SettingsToggleRow(
                     title: "Check Automatically",
-                    subtitle: "Look for new releases quietly in the background.",
+                    subtitle: "Choose whether Crona looks for new releases quietly in the background.",
                     isOn: Binding(
                         get: { service.automaticallyChecksForUpdates },
                         set: { service.setAutomaticallyChecksForUpdates($0) }
@@ -1150,7 +2311,7 @@ private struct UpdatesSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Download Automatically",
-                    subtitle: "Prepare verified updates so they are ready when Crona next quits.",
+                    subtitle: "Choose whether verified updates are prepared so they are ready when Crona next quits.",
                     isOn: Binding(
                         get: { service.automaticallyDownloadsUpdates },
                         set: { service.setAutomaticallyDownloadsUpdates($0) }
@@ -1203,20 +2364,20 @@ private struct AboutSettingsView: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
             SettingsCard("Crona for macOS") {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     Image(nsImage: CronaAppIcon.image)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 72, height: 72)
+                        .frame(width: 64, height: 64)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Crona")
-                            .font(.title2.weight(.bold))
+                            .font(.title3.weight(.semibold))
                         Text("Focus stays in the daemon. Crona brings it naturally into macOS.")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(PopupVisualTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1259,7 +2420,7 @@ private struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.cardHeaderSpacing) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 10)
@@ -1267,14 +2428,14 @@ private struct SettingsCard<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, SettingsLayoutMetrics.cardContentHorizontalPadding)
+            .padding(.vertical, SettingsLayoutMetrics.cardContentVerticalPadding)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(Color.primary.opacity(0.055))
+                RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                    .fill(PopupVisualTheme.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.065), lineWidth: 0.75)
+                        RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
+                            .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
                     )
             )
         }
@@ -1285,16 +2446,16 @@ private struct TimerDisplayStyleRow: View {
     let selection: Binding<MenuBarTimeFormat>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Timer Display")
                     .font(.subheadline.weight(.medium))
                 Text("Choose how an active timer fits into the menu bar.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 styleButton(
                     .clock,
                     detail: "A precise digital clock.",
@@ -1307,7 +2468,7 @@ private struct TimerDisplayStyleRow: View {
                 )
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.3)
         }
@@ -1333,25 +2494,25 @@ private struct TimerDisplayStyleRow: View {
                 }
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                 Text(preview)
                     .font(.system(.caption, design: .rounded, weight: .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
                     .fill(selection.wrappedValue == style
                         ? Color.accentColor.opacity(0.12)
-                        : Color.primary.opacity(0.045))
+                        : PopupVisualTheme.primaryText.opacity(0.045))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
                             .strokeBorder(
                                 selection.wrappedValue == style
                                     ? Color.accentColor.opacity(0.55)
-                                    : Color.primary.opacity(0.07),
+                                    : PopupVisualTheme.primaryText.opacity(0.07),
                                 lineWidth: 0.8
                             )
                     )
@@ -1370,22 +2531,27 @@ private struct SettingsToggleRow: View {
     let isOn: Binding<Bool>
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: SettingsLayoutMetrics.rowSpacing) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                 Text(subtitle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 16)
+            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
             Toggle("", isOn: isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.regular)
+                .frame(width: 44, alignment: .trailing)
+                .padding(.top, 2)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.3)
         }
@@ -1399,25 +2565,29 @@ private struct SettingsPickerRow<SelectionValue: Hashable, Content: View>: View 
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: SettingsLayoutMetrics.rowSpacing) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                 Text(subtitle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 16)
+            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
             Picker("", selection: selection) {
                 content
             }
             .labelsHidden()
             .pickerStyle(.menu)
             .controlSize(.regular)
-            .frame(width: 170)
+            .frame(width: SettingsLayoutMetrics.controlColumnWidth, alignment: .trailing)
+            .padding(.top, 2)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.3)
         }
@@ -1428,19 +2598,22 @@ private struct InactivityPopupPositionRow: View {
     let selection: Binding<CompanionPopupPosition>
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: SettingsLayoutMetrics.rowSpacing) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Popup Position")
                     .font(.subheadline.weight(.medium))
                 Text("Choose where the reminder appears on screen.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 16)
+            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
             placementGrid
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.3)
         }
@@ -1456,10 +2629,10 @@ private struct InactivityPopupPositionRow: View {
         .frame(width: 156, height: 82)
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.primary.opacity(0.055))
+                .fill(PopupVisualTheme.primaryText.opacity(0.055))
                 .overlay(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.75)
+                        .strokeBorder(PopupVisualTheme.primaryText.opacity(0.1), lineWidth: 0.75)
                 )
         )
         .accessibilityElement(children: .contain)
@@ -1499,23 +2672,28 @@ private struct SettingsValueRow: View {
     let value: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .top, spacing: SettingsLayoutMetrics.rowSpacing) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                 Text(subtitle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 16)
+            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
             Text(value)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PopupVisualTheme.secondaryText)
                 .font(.subheadline.weight(.medium))
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(width: SettingsLayoutMetrics.controlColumnWidth, alignment: .trailing)
+                .padding(.top, 2)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.3)
         }
@@ -1545,15 +2723,15 @@ private struct SettingsActionButton: View {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(minHeight: 38)
+                .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
+                .frame(minHeight: SettingsLayoutMetrics.actionButtonMinimumHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(prominent ? Color.primary.opacity(0.16) : Color.primary.opacity(0.075))
+                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
+                        .fill(prominent ? PopupVisualTheme.primaryText.opacity(0.16) : PopupVisualTheme.primaryText.opacity(0.075))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
                                 .strokeBorder(
-                                    prominent ? Color.primary.opacity(0.2) : Color.primary.opacity(0.11),
+                                    prominent ? PopupVisualTheme.primaryText.opacity(0.2) : PopupVisualTheme.primaryText.opacity(0.11),
                                     lineWidth: 0.75
                                 )
                         )
@@ -1568,10 +2746,10 @@ private struct SettingsActionGroup<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             content
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
     }
 }
 
@@ -1585,14 +2763,14 @@ private struct SettingsActionLink: View {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(minHeight: 38)
+                .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
+                .frame(minHeight: SettingsLayoutMetrics.actionButtonMinimumHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.075))
+                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
+                        .fill(PopupVisualTheme.primaryText.opacity(0.075))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.11), lineWidth: 0.75)
+                            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
+                                .strokeBorder(PopupVisualTheme.primaryText.opacity(0.11), lineWidth: 0.75)
                         )
                 )
         }
@@ -1607,52 +2785,6 @@ private struct SettingsPressButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
-private struct SettingsMediaPlaceholder: View {
-    let assetName: String
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        Group {
-            if let image = NSImage(named: NSImage.Name(assetName)) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Text(title)
-                        .font(.headline)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 132)
-        .background(
-            ZStack {
-                VisualEffectView(material: .contentBackground, blendingMode: .withinWindow, emphasized: false)
-                LinearGradient(
-                    colors: [Color.primary.opacity(0.055), Color.primary.opacity(0.018)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.1), style: StrokeStyle(lineWidth: 0.8, dash: [5, 5]))
-        )
     }
 }
 
@@ -1681,7 +2813,7 @@ private struct SettingsWindowReader: NSViewRepresentable {
 private func settingsFootnote(_ text: String) -> some View {
     Text(text)
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(PopupVisualTheme.secondaryText)
         .padding(.top, 8)
 }
 

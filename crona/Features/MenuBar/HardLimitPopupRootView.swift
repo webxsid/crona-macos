@@ -1,11 +1,11 @@
 import SwiftUI
 
 private enum HoverDismissPopupMetrics {
-    static let leadingInset: CGFloat = 14
-    static let topInset: CGFloat = 12
-    static let buttonOffsetX: CGFloat = 6
-    static let buttonOffsetY: CGFloat = 5
-    static let compactDiameter: CGFloat = 24
+    static let leadingInset: CGFloat = 12
+    static let topInset: CGFloat = 10
+    static let buttonOffsetX: CGFloat = 4
+    static let buttonOffsetY: CGFloat = 4
+    static let compactDiameter: CGFloat = 22
 }
 
 private enum HardLimitPopupMetrics {
@@ -21,14 +21,14 @@ struct HardLimitPopupRootView: View {
         ZStack {
             if let phase = appState.hardLimitPopupPhase {
                 HoverDismissPopupChrome(
-                    cornerRadius: 36,
+                    cornerRadius: 28,
                     showsDismissControl: phase != .endSession,
                     onClose: appState.handleHardLimitPopupClose
                 ) {
                     VStack(spacing: 0) {
                         content(for: phase)
                     }
-                    .padding(10)
+                    .padding(8)
                 }
                 .frame(width: HardLimitPopupMetrics.contentWidth)
                 .opacity(appState.isHardLimitPopupAnimatingIn ? 1 : 0)
@@ -42,6 +42,7 @@ struct HardLimitPopupRootView: View {
             height: HardLimitPopupMetrics.panelHeight,
             alignment: .center
         )
+        .companionAppearance(appState)
     }
 
     @ViewBuilder
@@ -65,7 +66,7 @@ struct InactivityPopupRootView: View {
     var body: some View {
         if let phase = appState.inactivityPopupPhase {
             HoverDismissPopupChrome(
-                cornerRadius: 34,
+                cornerRadius: 24,
                 showsDismissControl: phase != .endSession,
                 onClose: appState.dismissInactivityPopup
             ) {
@@ -77,10 +78,11 @@ struct InactivityPopupRootView: View {
                         InactivityEndSessionView(appState: appState)
                     }
                 }
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
-            .frame(width: 380)
+            .frame(width: 372)
+            .companionAppearance(appState)
         }
     }
 }
@@ -90,8 +92,8 @@ struct SmartPauseResumeNoticeRootView: View {
 
     var body: some View {
         if appState.smartPauseResumeNotice != nil {
-            HoverDismissPopupChrome(
-                cornerRadius: 24,
+                HoverDismissPopupChrome(
+                    cornerRadius: 24,
                 showsDismissControl: true,
                 onClose: appState.dismissSmartPauseResumeNoticeNow
             ) {
@@ -105,15 +107,16 @@ struct SmartPauseResumeNoticeRootView: View {
                             .font(.subheadline.weight(.semibold))
                         Text("Crona resumed your stopwatch when you returned.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(PopupVisualTheme.secondaryText)
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
             }
-            .frame(width: 260, height: 80)
+            .frame(width: 272, height: 82)
+            .companionAppearance(appState)
         }
     }
 }
@@ -165,7 +168,7 @@ private struct HoverDismissPopupChrome<Content: View>: View {
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
             }
-            .foregroundStyle(.white.opacity(0.78))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.78))
             .padding(.leading, isButtonHovered ? 7 : 0)
             .padding(.trailing, isButtonHovered ? 10 : 0)
             .frame(
@@ -174,11 +177,11 @@ private struct HoverDismissPopupChrome<Content: View>: View {
             )
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.24))
+                    .fill(PopupVisualTheme.controlBackground)
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                    .strokeBorder(PopupVisualTheme.border, lineWidth: 0.8)
             )
         }
         .buttonStyle(.plain)
@@ -263,7 +266,7 @@ private struct InactivityDecisionView: View {
         HStack(spacing: 9) {
             Image(systemName: "timer.circle.fill")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.64))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.64))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(
@@ -271,7 +274,7 @@ private struct InactivityDecisionView: View {
                         ?? "Focus session still running"
                 )
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .lineLimit(1)
 
                 HStack(spacing: 10) {
@@ -303,7 +306,7 @@ private struct InactivityDecisionView: View {
             Text(text).lineLimit(1)
         }
         .font(.caption2.weight(.medium))
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
     }
 
     private enum DecisionAction: Hashable {
@@ -343,17 +346,17 @@ private struct HardLimitDecisionView: View {
             ? "Choose how to finish this timer session."
             : "Choose how to finish this Pomodoro session."
 
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             header(symbol: "hourglass.circle.fill", title: title, subtitle: subtitle)
 
             Text(MenuBarTextFormatter.formatClock(seconds: presentation.displaySeconds))
             .font(.system(size: 48, weight: .bold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(.white)
+            .foregroundStyle(PopupVisualTheme.primaryText)
 
             contextCard
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Button {
                     appState.chooseHardLimitExtend()
                 } label: {
@@ -388,7 +391,7 @@ private struct HardLimitDecisionView: View {
                 }
             }
         }
-        .padding(8)
+        .padding(10)
         .onChange(of: focusedAction) { _, newAction in
             countdown.setPaused(newAction != nil, reason: .keyboardFocus)
         }
@@ -398,11 +401,11 @@ private struct HardLimitDecisionView: View {
     }
 
     private var contextCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if let issue = appState.contextService.snapshot.issueTitle {
                 Label(issue, systemImage: "record.circle.fill")
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
             }
 
             HStack(spacing: 14) {
@@ -416,11 +419,11 @@ private struct HardLimitDecisionView: View {
 
             Text("Choose whether to extend this session or commit it now.")
                 .font(.footnote)
-                .foregroundStyle(.white.opacity(0.66))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(cardBackground(stroke: Color.white.opacity(0.08)))
+        .padding(12)
+        .background(cardBackground(stroke: PopupVisualTheme.border))
     }
 
     private func meta(icon: String, text: String) -> some View {
@@ -429,7 +432,7 @@ private struct HardLimitDecisionView: View {
             Text(text).lineLimit(1)
         }
         .font(.caption.weight(.medium))
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
     }
 
     private enum DecisionAction: Hashable {
@@ -456,13 +459,13 @@ private struct PopupEndSessionForm: View {
     let onBack: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             header(symbol: "checkmark.circle", title: "End Session", subtitle: subtitle)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Commit Message")
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PopupVisualTheme.primaryText)
 
                 StableMultilineTextField(
                     text: $appState.endSessionCommitMessage,
@@ -470,8 +473,8 @@ private struct PopupEndSessionForm: View {
                     isEnabled: !appState.isSubmittingEndSession,
                     focusRequest: appState.endSessionFocusRequest
                 )
-                .frame(height: 110)
-                .background(cardBackground(stroke: Color.white.opacity(0.08)))
+                .frame(height: 104)
+        .background(cardBackground(stroke: PopupVisualTheme.border))
 
                 if let error = appState.endSessionErrorMessage, !error.isEmpty {
                     Text(error)
@@ -480,7 +483,7 @@ private struct PopupEndSessionForm: View {
                 }
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Button {
                     appState.confirmEndSession()
                 } label: {
@@ -504,7 +507,7 @@ private struct PopupEndSessionForm: View {
                 .disabled(appState.isSubmittingEndSession)
             }
         }
-        .padding(8)
+        .padding(10)
     }
 }
 
@@ -518,7 +521,7 @@ private struct HardLimitExtendView: View {
             ? "Add time to the current countdown. No breaks or cycles."
             : "Choose how many Pomodoro sessions to add using the current cadence."
 
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             header(symbol: "plus.circle", title: title, subtitle: subtitle)
 
             VStack(spacing: 10) {
@@ -529,7 +532,7 @@ private struct HardLimitExtendView: View {
                         HStack {
                             Text(choice.title)
                                 .font(.headline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(PopupVisualTheme.primaryText)
                             Spacer()
                             if appState.hardLimitPopupExtendChoice == choice {
                                 Image(systemName: "checkmark.circle.fill")
@@ -541,10 +544,10 @@ private struct HardLimitExtendView: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.white.opacity(appState.hardLimitPopupExtendChoice == choice ? 0.1 : 0.05))
+                                .fill(PopupVisualTheme.primaryText.opacity(appState.hardLimitPopupExtendChoice == choice ? 0.1 : 0.05))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                                        .strokeBorder(PopupVisualTheme.border, lineWidth: 1)
                                 )
                         )
                     }
@@ -587,7 +590,7 @@ private struct HardLimitExtendView: View {
                 .disabled(appState.isSubmittingHardLimitAction)
             }
         }
-        .padding(8)
+        .padding(10)
     }
 
     private func choices(for mode: FocusTimerMode) -> [HardLimitExtendChoice] {
@@ -614,11 +617,11 @@ private struct HardLimitExtendSuccessView: View {
                 successRow(title: "New End Time", value: success?.endTimeText ?? "—")
             }
             .padding(16)
-            .background(cardBackground(stroke: Color.white.opacity(0.08)))
+            .background(cardBackground(stroke: PopupVisualTheme.border))
 
             Text("This popup will close automatically.")
                 .font(.footnote)
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
         }
         .padding(8)
     }
@@ -627,11 +630,11 @@ private struct HardLimitExtendSuccessView: View {
         HStack {
             Text(title)
                 .font(.headline)
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
             Spacer()
             Text(value)
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(PopupVisualTheme.primaryText)
                 .monospacedDigit()
         }
     }
@@ -650,16 +653,16 @@ private struct PopupFullWidthButtonStyle: ButtonStyle {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
         configuration.label
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(PopupVisualTheme.primaryText)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 ZStack(alignment: .leading) {
                     background(configuration.isPressed)
                     if let progress {
                         GeometryReader { geometry in
                             Rectangle()
-                                .fill(Color.white.opacity(0.12))
+                                .fill(PopupVisualTheme.primaryText.opacity(0.12))
                                 .frame(width: geometry.size.width * min(1, max(0, progress)))
                         }
                         .allowsHitTesting(false)
@@ -668,7 +671,7 @@ private struct PopupFullWidthButtonStyle: ButtonStyle {
             }
             .clipShape(shape)
             .overlay(
-                shape.strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+                shape.strokeBorder(PopupVisualTheme.border, lineWidth: 0.8)
             )
             .contentShape(shape)
             .opacity(configuration.isPressed ? 0.92 : 1)
@@ -678,13 +681,13 @@ private struct PopupFullWidthButtonStyle: ButtonStyle {
         let baseOpacity: Double
         switch style {
         case .primary:
-            baseOpacity = isPressed ? 0.26 : 0.20
+            baseOpacity = isPressed ? 0.18 : 0.14
         case .secondary:
-            baseOpacity = isPressed ? 0.14 : 0.10
+            baseOpacity = isPressed ? 0.11 : 0.08
         }
 
         return RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.white.opacity(baseOpacity))
+            .fill(PopupVisualTheme.controlBackground.opacity(baseOpacity >= 0.14 ? 1 : 0.92))
     }
 }
 
@@ -695,25 +698,25 @@ private struct InactivityPopupButtonStyle: ButtonStyle {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 
         configuration.label
-            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.82 : 0.92))
-            .frame(maxWidth: .infinity, minHeight: 30)
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(configuration.isPressed ? 0.82 : 0.92))
+            .frame(maxWidth: .infinity, minHeight: 32)
             .background {
                 ZStack(alignment: .leading) {
                     if let progress {
                         GeometryReader { geometry in
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
+                                .fill(PopupVisualTheme.primaryText.opacity(0.08))
                                 .frame(width: geometry.size.width * min(1, max(0, progress)))
                         }
                         .allowsHitTesting(false)
                     }
 
                     shape
-                        .fill(Color.white.opacity(configuration.isPressed ? 0.04 : 0.02))
+                        .fill(PopupVisualTheme.controlBackground.opacity(configuration.isPressed ? 0.92 : 0.82))
                 }
             }
             .overlay(
-                shape.strokeBorder(Color.white.opacity(configuration.isPressed ? 0.18 : 0.12), lineWidth: 0.8)
+                shape.strokeBorder(PopupVisualTheme.highlightedBorder, lineWidth: 0.8)
             )
             .clipShape(shape)
             .contentShape(shape)
@@ -736,7 +739,7 @@ private func popupButtonLabel(
             if let detail {
                 Text(detail)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.62))
             }
         }
 
@@ -762,7 +765,7 @@ private func popupCompactButtonLabel(
         if let detail {
             Text(detail)
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.48))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.48))
                 .lineLimit(1)
         }
 
@@ -770,7 +773,7 @@ private func popupCompactButtonLabel(
 
         Text(shortcut)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.38))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.38))
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 1)
@@ -780,12 +783,12 @@ private func popupCompactButtonLabel(
 private func shortcutHint(_ shortcut: String) -> some View {
     Text(shortcut)
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(.white.opacity(0.5))
+        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.5))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black.opacity(0.16))
+                .fill(PopupVisualTheme.elevatedBackground)
         )
 }
 
@@ -793,13 +796,13 @@ private func header(symbol: String, title: String, subtitle: String) -> some Vie
     VStack(spacing: 10) {
         Image(systemName: symbol)
             .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.72))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
         Text(title)
             .font(.title2.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(PopupVisualTheme.primaryText)
         Text(subtitle)
             .font(.subheadline)
-            .foregroundStyle(.white.opacity(0.66))
+            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
             .multilineTextAlignment(.center)
     }
     .frame(maxWidth: .infinity)

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SwiftUI
 
 enum AppReleaseChannel: String, Codable, Equatable, CaseIterable, Identifiable {
     case stable
@@ -14,6 +15,30 @@ enum AppReleaseChannel: String, Codable, Equatable, CaseIterable, Identifiable {
 
     static func resolved(configuredValue: String?, version: String) -> Self {
         configuredValue.flatMap(Self.init(rawValue:)) ?? inferred(from: version)
+    }
+}
+
+enum CompanionAppearance: String, Codable, Equatable, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    func resolvedColorScheme(using systemScheme: ColorScheme) -> ColorScheme {
+        switch self {
+        case .system: return systemScheme
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }
 
@@ -182,6 +207,7 @@ struct CompanionPreferences: Codable, Equatable {
 
     var launchAtLogin = false
     var hideDockIconWhenNoWindowsOpen = true
+    var appearance: CompanionAppearance = .system
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
@@ -229,6 +255,7 @@ extension CompanionPreferences {
     private enum CodingKeys: String, CodingKey {
         case launchAtLogin
         case hideDockIconWhenNoWindowsOpen
+        case appearance
         case menuBarDisplayMode
         case menuBarIdleTextMode
         case menuBarTimeFormat
@@ -259,6 +286,8 @@ extension CompanionPreferences {
         launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         hideDockIconWhenNoWindowsOpen =
             try values.decodeIfPresent(Bool.self, forKey: .hideDockIconWhenNoWindowsOpen) ?? true
+        appearance =
+            try values.decodeIfPresent(CompanionAppearance.self, forKey: .appearance) ?? .system
         menuBarDisplayMode =
             try values.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarDisplayMode)
             ?? .iconAndText
@@ -327,6 +356,7 @@ extension CompanionPreferences {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(launchAtLogin, forKey: .launchAtLogin)
         try values.encode(hideDockIconWhenNoWindowsOpen, forKey: .hideDockIconWhenNoWindowsOpen)
+        try values.encode(appearance, forKey: .appearance)
         try values.encode(menuBarDisplayMode, forKey: .menuBarDisplayMode)
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)

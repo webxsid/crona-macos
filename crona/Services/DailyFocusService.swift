@@ -59,14 +59,15 @@ final class DailyFocusService: ObservableObject {
         }
     }
 
-    func refresh() async {
+    func refresh(date requestedDate: String? = nil) async {
         do {
-            let today = Self.todayString()
+            let today = requestedDate ?? daemonConnection.currentDate
+            let resolvedDate = today.isEmpty ? Self.todayString() : today
             async let summary = daemonConnection.withClient { try await $0.issueTodaySummary() }
-            async let plan = daemonConnection.withClient { try await $0.dailyPlanGet(date: today) }
+            async let plan = daemonConnection.withClient { try await $0.dailyPlanGet(date: resolvedDate) }
             let (issueSummary, dailyPlan) = try await (summary, plan)
             let orderedIssues = Self.buildIssues(summary: issueSummary, plan: dailyPlan)
-            snapshot = DailyFocusSnapshot(date: today, issues: orderedIssues, isConnected: true)
+            snapshot = DailyFocusSnapshot(date: resolvedDate, issues: orderedIssues, isConnected: true)
             logger.debug("Applied daily focus issues: \(orderedIssues.count, privacy: .public)")
         } catch {
             logger.error("Daily focus refresh failed: \(error.localizedDescription, privacy: .public)")
@@ -130,7 +131,7 @@ final class DailyFocusService: ObservableObject {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: now)
     }

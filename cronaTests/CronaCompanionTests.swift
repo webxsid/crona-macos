@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import XCTest
 @testable import crona
 
@@ -349,7 +350,7 @@ final class CronaCompanionTests: XCTestCase {
             "transport":"unix_socket",
             "endpoint":"/tmp/kernel.sock",
             "socketPath":"/tmp/kernel.sock",
-            "protocolVersion":"1.0",
+            "protocolVersion":"1.1",
             "startedAt":"2026-06-09T00:00:00Z",
             "scratchDir":"/tmp",
             "env":"development",
@@ -364,7 +365,7 @@ final class CronaCompanionTests: XCTestCase {
 
         let fetchedInfo = try await client.kernelInfoGet()
 
-        XCTAssertEqual(fetchedInfo.protocolVersion, "1.0")
+        XCTAssertEqual(fetchedInfo.protocolVersion, "1.1")
         XCTAssertEqual(fetchedInfo.endpoint, "/tmp/kernel.sock")
 
         let request: Data = try XCTUnwrap(transport.requestData)
@@ -575,6 +576,7 @@ final class CronaCompanionTests: XCTestCase {
         defaults.removePersistentDomain(forName: #function)
 
         let service = PreferencesService(defaults: defaults)
+        service.preferences.appearance = .dark
         service.preferences.menuBarDisplayMode = .textOnly
         service.preferences.menuBarIdleTextMode = .focusToday
         service.preferences.menuBarTimeFormat = .adaptive
@@ -596,6 +598,7 @@ final class CronaCompanionTests: XCTestCase {
         service.preferences.tuiCommand = "crona tui"
 
         let reloaded = PreferencesService(defaults: defaults)
+        XCTAssertEqual(reloaded.preferences.appearance, .dark)
         XCTAssertEqual(reloaded.preferences.menuBarDisplayMode, .textOnly)
         XCTAssertEqual(reloaded.preferences.menuBarIdleTextMode, .focusToday)
         XCTAssertEqual(reloaded.preferences.menuBarTimeFormat, .adaptive)
@@ -617,6 +620,25 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(reloaded.preferences.tuiCommand, "crona tui")
     }
 
+    func testCompanionAppearanceResolvesExplicitAndSystemModes() {
+        XCTAssertEqual(
+            CompanionAppearance.system.resolvedColorScheme(using: .light),
+            .light
+        )
+        XCTAssertEqual(
+            CompanionAppearance.system.resolvedColorScheme(using: .dark),
+            .dark
+        )
+        XCTAssertEqual(
+            CompanionAppearance.light.resolvedColorScheme(using: .dark),
+            .light
+        )
+        XCTAssertEqual(
+            CompanionAppearance.dark.resolvedColorScheme(using: .light),
+            .dark
+        )
+    }
+
     func testPreferencesDecodeValuesSavedBeforeIdleTextSettingExisted() throws {
         let data = """
         {
@@ -632,6 +654,7 @@ final class CronaCompanionTests: XCTestCase {
         let preferences = try JSONDecoder().decode(CompanionPreferences.self, from: data)
 
         XCTAssertEqual(preferences.menuBarDisplayMode, .iconAndText)
+        XCTAssertEqual(preferences.appearance, .system)
         XCTAssertEqual(preferences.menuBarIdleTextMode, .idle)
         XCTAssertTrue(preferences.hideDockIconWhenNoWindowsOpen)
         XCTAssertFalse(preferences.smartPauseEnabled)
@@ -2071,7 +2094,7 @@ final class CronaCompanionTests: XCTestCase {
     func testDiagnosticsTextContainsCoreFields() {
         let snapshot = DiagnosticsSnapshot(
             connectionState: "Connected",
-            protocolVersion: "1.0",
+            protocolVersion: "1.1",
             kernelVersion: "stable",
             runtimeDirectory: "/tmp/crona",
             healthSummary: "ok | db=true | uptime=10s",
@@ -2104,43 +2127,84 @@ final class CronaCompanionTests: XCTestCase {
             MenuBarIconState.resolve(connectionState: .connected, timerSnapshot: TimerSnapshot()),
             .idle
         )
-        XCTAssertEqual(
-            MenuBarIconState.resolve(connectionState: .connected, timerSnapshot: activeSnapshot),
-            .focus
-        )
+        if case .focus(let progress) = MenuBarIconState.resolve(
+            connectionState: .connected,
+            timerSnapshot: activeSnapshot
+        ) {
+            XCTAssertGreaterThanOrEqual(progress, 0)
+            XCTAssertLessThanOrEqual(progress, 1)
+        } else {
+            XCTFail("Expected focus icon state")
+        }
 
         activeSnapshot.state = "paused"
-        XCTAssertEqual(
-            MenuBarIconState.resolve(connectionState: .connected, timerSnapshot: activeSnapshot),
-            .paused
-        )
+        if case .paused = MenuBarIconState.resolve(
+            connectionState: .connected,
+            timerSnapshot: activeSnapshot
+        ) {
+        } else {
+            XCTFail("Expected paused icon state")
+        }
 
         activeSnapshot.state = "running"
         activeSnapshot.segmentType = "short_break"
-        XCTAssertEqual(
-            MenuBarIconState.resolve(connectionState: .connected, timerSnapshot: activeSnapshot),
-            .breakTime
-        )
+        if case .breakTime = MenuBarIconState.resolve(
+            connectionState: .connected,
+            timerSnapshot: activeSnapshot
+        ) {
+        } else {
+            XCTFail("Expected break icon state")
+        }
 
         activeSnapshot.hardLimitExpired = true
         XCTAssertEqual(
             MenuBarIconState.resolve(connectionState: .connected, timerSnapshot: activeSnapshot),
-            .attention
+            .completed
         )
     }
 
-    func testMenuBarIconStatesHaveStableSVGAssetNames() {
+    func testMenuBarIconStateClampsProgressAndMapsConnectingAndErrors() {
         XCTAssertEqual(
-            Set(MenuBarIconState.allCases.map(\.assetName)),
-            [
-                "menu-icon-idle",
-                "menu-icon-focus",
-                "menu-icon-paused",
-                "menu-icon-break-time",
-                "menu-icon-attention",
-                "menu-icon-offline",
-            ]
+            MenuBarIconState.clamp(-1),
+            0
         )
+        XCTAssertEqual(
+            MenuBarIconState.clamp(2),
+            1
+        )
+
+        XCTAssertEqual(
+            MenuBarIconState.resolve(connectionState: .connecting, timerSnapshot: TimerSnapshot()),
+            .connecting
+        )
+        XCTAssertEqual(
+            MenuBarIconState.resolve(connectionState: .error, timerSnapshot: TimerSnapshot()),
+            .error
+        )
+        XCTAssertEqual(
+            MenuBarIconState.resolve(connectionState: .incompatible, timerSnapshot: TimerSnapshot()),
+            .error
+        )
+    }
+
+    func testMenuBarIconRendererReturnsTemplateImagesForAllStates() {
+        let renderer = CronaMenuBarIconRenderer()
+        let states: [MenuBarIconState] = [
+            .idle,
+            .focus(progress: 0.5),
+            .paused(progress: 0.5),
+            .breakTime(progress: 0.5),
+            .connecting,
+            .offline,
+            .error,
+            .completed
+        ]
+
+        for state in states {
+            let image = renderer.image(for: state, connectingPhase: 0.25)
+            XCTAssertEqual(image.size, NSSize(width: 18, height: 18))
+            XCTAssertTrue(image.isTemplate)
+        }
     }
 
     func testMenuBarFormatterAdaptiveUsesContextualUnits() {
@@ -2486,6 +2550,61 @@ final class CronaCompanionTests: XCTestCase {
         let event = try JSONDecoder().decode(CronaProtocolEvent.self, from: data)
 
         XCTAssertEqual(event.sessionID, "session-42")
+    }
+
+    func testHealthDecodesDaemonCurrentDateAndTimezone() throws {
+        let data = """
+        {"status":"ok","db":true,"ok":1,"uptime":42.5,"currentDate":"2026-07-29","timezone":"Asia/Kolkata"}
+        """.data(using: .utf8)!
+
+        let health = try JSONDecoder().decode(CronaHealth.self, from: data)
+
+        XCTAssertEqual(health.currentDate, "2026-07-29")
+        XCTAssertEqual(health.timezone, "Asia/Kolkata")
+    }
+
+    func testDayBoundaryScheduleDecodesIntegerWeekdayKeys() throws {
+        let data = """
+        {"enabled":true,"defaultTime":"08:30","weekdayOverrides":{"1":"09:00","7":"10:15"}}
+        """.data(using: .utf8)!
+
+        let schedule = try JSONDecoder().decode(CronaDayBoundarySchedule.self, from: data)
+
+        XCTAssertTrue(schedule.isValid)
+        XCTAssertEqual(schedule.weekdayOverrides[1], "09:00")
+        XCTAssertEqual(schedule.weekdayOverrides[7], "10:15")
+    }
+
+    func testDayBoundaryEventDecodesLogicalDateAndOccurrence() throws {
+        let data = """
+        {"type":"day.start","payload":{"kind":"start","dateBefore":"2026-07-28","dateAfter":"2026-07-29","effectiveLocalTime":"2026-07-29T08:30:00+05:30","effectiveUtcTime":"2026-07-29T03:00:00Z","timezone":"Asia/Kolkata","occurrenceId":"occurrence-1","logicalDate":"2026-07-29"}}
+        """.data(using: .utf8)!
+
+        let event = try JSONDecoder().decode(CronaProtocolEvent.self, from: data)
+        let payload = try event.decodePayload(CronaDayBoundaryEventPayload.self)
+
+        XCTAssertEqual(event.type, "day.start")
+        XCTAssertEqual(payload.logicalDate, "2026-07-29")
+        XCTAssertEqual(payload.occurrenceID, "occurrence-1")
+        XCTAssertEqual(payload.effectiveUTCTime, "2026-07-29T03:00:00Z")
+    }
+
+    func testDayBoundaryScheduleEncodingPreservesDaemonWireShape() throws {
+        let schedule = CronaDayBoundarySchedule(
+            enabled: true,
+            defaultTime: "17:30",
+            weekdayOverrides: [1: "16:30"]
+        )
+
+        let encoded = try JSONEncoder().encode(schedule)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["enabled"] as? Bool, true)
+        XCTAssertEqual(object["defaultTime"] as? String, "17:30")
+        let overrides = try XCTUnwrap(object["weekdayOverrides"] as? [String: String])
+        XCTAssertEqual(overrides["1"], "16:30")
     }
 
     func testQuickExtendRequestUsesSecondsNotSessions() {
