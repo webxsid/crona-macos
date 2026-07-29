@@ -69,8 +69,6 @@ struct SettingsRootView: View {
                     .disabled(!appState.settingsNavigation.canGoForward)
                     .help("Forward")
                 }
-                .visibilityPriority(.high)
-
                 ToolbarItem(placement: .navigation) {
                     Text(appState.selectedSettingsDestination.title)
                         .font(.headline.weight(.semibold))

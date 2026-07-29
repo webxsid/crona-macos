@@ -30,3 +30,10 @@ Recent history uses short, imperative commit subjects, for example `Switch DMG p
 ## Release & Configuration Notes
 
 The GitHub Actions release workflow in `.github/workflows/release.yml` builds, signs, notarizes, and publishes the app. DMG layout is configured in `scripts/dmgbuild_settings.py`. Version metadata lives in `crona.xcodeproj/project.pbxproj`; update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` deliberately when cutting releases.
+
+## macOS Window Chrome Notes
+
+- For the Settings window, prefer scene-level toolbar styling first. `Settings` needs an explicit `windowToolbarStyle(...)` on the scene to get the system toolbar surface to render correctly.
+- If the toolbar background reads as fully transparent, apply `toolbarBackground(.regularMaterial, for: .windowToolbar)` and `toolbarBackgroundVisibility(.visible, for: .windowToolbar)` on the view tree, not on the `Scene`.
+- `WindowService.registerSettingsWindow(_:)` should only adjust AppKit-level window behavior that the scene cannot express, such as `titlebarAppearsTransparent`, `backgroundColor`, `toolbarStyle`, and `titlebarSeparatorStyle`.
+- Keep the toolbar split by OS version narrow and verify against screenshots before adding custom chrome. If the system toolbar still does not paint a real background, switch to a custom toolbar rather than stacking more translucent overlays.
