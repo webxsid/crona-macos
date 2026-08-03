@@ -47,7 +47,7 @@ final class IssueActionsService: ObservableObject {
                     transitionsByIssueID[issue.id] = transitions
                 } catch {
                     logger.error(
-                        "Loading status transitions failed for issue \(issue.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        "Loading status transitions failed for issue \(issue.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)"
                     )
                     lastErrorMessage = error.localizedDescription
                 }
@@ -108,7 +108,7 @@ final class IssueActionsService: ObservableObject {
             return true
         } catch {
             logger.error(
-                "Issue action failed for issue \(issueID, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Issue action failed for issue \(issueID, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)"
             )
             lastErrorMessage = error.localizedDescription
             return false

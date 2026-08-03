@@ -50,7 +50,7 @@ final class DailyFocusService: ObservableObject {
         Task { await refresh() }
     }
 
-    deinit {
+    isolated deinit {
         if let eventObserver {
             NotificationCenter.default.removeObserver(eventObserver)
         }
@@ -70,7 +70,7 @@ final class DailyFocusService: ObservableObject {
             snapshot = DailyFocusSnapshot(date: resolvedDate, issues: orderedIssues, isConnected: true)
             logger.debug("Applied daily focus issues: \(orderedIssues.count, privacy: .public)")
         } catch {
-            logger.error("Daily focus refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Daily focus refresh failed: \(error.localizedDescription, privacy: .private)")
             snapshot = DailyFocusSnapshot()
         }
     }

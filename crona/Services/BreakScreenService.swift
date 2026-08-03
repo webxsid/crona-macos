@@ -248,7 +248,7 @@ final class BreakScreenService: ObservableObject {
                 recoveryMessage = nil
                 reconcile()
             } catch {
-                logger.error("Break transition failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Break transition failed: \(error.localizedDescription, privacy: .private)")
                 advanceTask = nil
                 lastAdvanceKey = nil
                 recoveryMessage = error.localizedDescription

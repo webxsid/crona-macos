@@ -10,7 +10,7 @@ protocol CronaDaemonTransport {
     func openEventStream(with request: Data) async throws -> AsyncThrowingStream<CronaProtocolEvent, Error>
 }
 
-private let ipcLogger = Logger(subsystem: "com.crona.macos", category: "ipc")
+nonisolated private let ipcLogger = Logger(subsystem: "com.crona.macos", category: "ipc")
 
 struct CronaUnixDomainSocketTransport: CronaDaemonTransport {
     let endpoint: String
@@ -32,7 +32,7 @@ struct CronaUnixDomainSocketTransport: CronaDaemonTransport {
             let endpoint = endpoint
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    ipcLogger.debug("Opening daemon event stream for endpoint: \(endpoint, privacy: .public)")
+                    ipcLogger.debug("Opening daemon event stream for endpoint: \(endpoint, privacy: .private(mask: .hash))")
                     let descriptor = try connectSocket(endpoint: endpoint)
                     try writeAll(descriptor, requestWithNewline(request))
                     var pending = Data()
@@ -42,14 +42,14 @@ struct CronaUnixDomainSocketTransport: CronaDaemonTransport {
                         let bytesRead = read(descriptor, &buffer, buffer.count)
                         guard bytesRead >= 0 else {
                             let error = CronaConnectionFailure.transport("Failed to read from the daemon socket.")
-                            ipcLogger.error("Daemon event stream read failed for endpoint: \(endpoint, privacy: .public)")
+                            ipcLogger.error("Daemon event stream read failed for endpoint: \(endpoint, privacy: .private(mask: .hash))")
                             close(descriptor)
                             continuation.finish(throwing: error)
                             return
                         }
 
                         guard bytesRead > 0 else {
-                            ipcLogger.debug("Daemon event stream closed by peer for endpoint: \(endpoint, privacy: .public)")
+                            ipcLogger.debug("Daemon event stream closed by peer for endpoint: \(endpoint, privacy: .private(mask: .hash))")
                             close(descriptor)
                             continuation.finish()
                             return
@@ -71,13 +71,13 @@ struct CronaUnixDomainSocketTransport: CronaDaemonTransport {
                                 continuation.yield(event)
                             } catch {
                                 let rawLine = String(data: Data(line), encoding: .utf8) ?? "<non-utf8>"
-                                ipcLogger.error("Failed to decode daemon event frame: \(rawLine, privacy: .public)")
+                                ipcLogger.error("Failed to decode daemon event frame: \(rawLine, privacy: .private)")
                                 continue
                             }
                         }
                     }
                 } catch {
-                    ipcLogger.error("Failed to open daemon event stream for endpoint: \(endpoint, privacy: .public), error: \(error.localizedDescription, privacy: .public)")
+                    ipcLogger.error("Failed to open daemon event stream for endpoint: \(endpoint, privacy: .private(mask: .hash)), error: \(error.localizedDescription, privacy: .private)")
                     continuation.finish(throwing: error)
                 }
             }
@@ -343,21 +343,21 @@ private struct CronaDayBoundarySettingPatch: Encodable {
 
 struct CronaDailyPlanQuery: Codable { let date: String }
 
-private func requestWithNewline(_ request: Data) -> Data {
+nonisolated private func requestWithNewline(_ request: Data) -> Data {
     var payload = Data(request)
     payload.append(0x0A)
     return payload
 }
 
 #if os(macOS)
-private func sendOverUnixSocket(_ request: Data, endpoint: String) throws -> Data {
+nonisolated private func sendOverUnixSocket(_ request: Data, endpoint: String) throws -> Data {
     let descriptor = try connectSocket(endpoint: endpoint)
     defer { close(descriptor) }
     try writeAll(descriptor, requestWithNewline(request))
     return try readLine(descriptor)
 }
 
-private func connectSocket(endpoint: String) throws -> Int32 {
+nonisolated private func connectSocket(endpoint: String) throws -> Int32 {
     let fileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fileDescriptor >= 0 else {
         throw CronaConnectionFailure.transport("Failed to create socket.")
@@ -394,7 +394,7 @@ private func connectSocket(endpoint: String) throws -> Int32 {
     return fileDescriptor
 }
 
-private func writeAll(_ fileDescriptor: Int32, _ data: Data) throws {
+nonisolated private func writeAll(_ fileDescriptor: Int32, _ data: Data) throws {
     try data.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
             throw CronaConnectionFailure.transport("Failed to encode daemon request.")
@@ -414,7 +414,7 @@ private func writeAll(_ fileDescriptor: Int32, _ data: Data) throws {
     }
 }
 
-private func readLine(_ fileDescriptor: Int32) throws -> Data {
+nonisolated private func readLine(_ fileDescriptor: Int32) throws -> Data {
     var buffer = [UInt8](repeating: 0, count: 4096)
     var data = Data()
 
@@ -440,14 +440,14 @@ private func readLine(_ fileDescriptor: Int32) throws -> Data {
 #endif
 
 private extension JSONDecoder {
-    static var crona: JSONDecoder {
+    nonisolated static var crona: JSONDecoder {
         let decoder = JSONDecoder()
         return decoder
     }
 }
 
 private extension JSONEncoder {
-    static var crona: JSONEncoder {
+    nonisolated static var crona: JSONEncoder {
         let encoder = JSONEncoder()
         return encoder
     }

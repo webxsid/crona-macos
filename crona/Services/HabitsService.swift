@@ -60,7 +60,7 @@ final class HabitsService: ObservableObject {
         Task { await refresh() }
     }
 
-    deinit {
+    isolated deinit {
         if let eventObserver {
             NotificationCenter.default.removeObserver(eventObserver)
         }
@@ -76,7 +76,7 @@ final class HabitsService: ObservableObject {
         snapshot.isLoading = true
 
         do {
-            logger.debug("Refreshing due habits for date: \(date, privacy: .public)")
+            logger.debug("Refreshing due habits for date: \(date, privacy: .private)")
             let items = try await daemonConnection.withClient { try await $0.listDueHabits(date: date) }
             snapshot = HabitsSnapshot(
                 date: date,
@@ -87,7 +87,7 @@ final class HabitsService: ObservableObject {
             )
             logger.debug("Applied due habits: \(items.count, privacy: .public)")
         } catch {
-            logger.error("Habits refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Habits refresh failed: \(error.localizedDescription, privacy: .private)")
             snapshot.isLoading = false
             snapshot.isConnected = false
             snapshot.lastRefreshError = error.localizedDescription
@@ -118,7 +118,7 @@ final class HabitsService: ObservableObject {
 
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
-            logger.debug("Setting habit id=\(habit.id, privacy: .public) status=\(status, privacy: .public) date=\(date, privacy: .public)")
+            logger.debug("Setting habit id=\(habit.id, privacy: .private(mask: .hash)) status=\(status, privacy: .public) date=\(date, privacy: .private)")
             _ = try await daemonConnection.withClient {
                 try await $0.completeHabit(
                     habitID: habit.id,
@@ -131,7 +131,7 @@ final class HabitsService: ObservableObject {
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
         } catch {
-            logger.error("Habit status failed for id=\(habit.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Habit status failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)")
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription
@@ -146,7 +146,7 @@ final class HabitsService: ObservableObject {
 
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
-            logger.debug("Clearing habit completion id=\(habit.id, privacy: .public) date=\(date, privacy: .public)")
+            logger.debug("Clearing habit completion id=\(habit.id, privacy: .private(mask: .hash)) date=\(date, privacy: .private)")
             _ = try await daemonConnection.withClient {
                 try await $0.uncompleteHabit(habitID: habit.id, date: date)
             }
@@ -154,7 +154,7 @@ final class HabitsService: ObservableObject {
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
         } catch {
-            logger.error("Habit uncomplete failed for id=\(habit.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Habit uncomplete failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)")
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription

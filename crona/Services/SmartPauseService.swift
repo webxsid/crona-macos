@@ -278,7 +278,7 @@ final class SmartPauseService {
                     managedSessionID = sessionID
                 }
             } catch {
-                logger.error("Automatic pause failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Automatic pause failed: \(error.localizedDescription, privacy: .private)")
                 scheduleRetry()
             }
             actionTask = nil
@@ -299,7 +299,7 @@ final class SmartPauseService {
                     onAutomaticResume(snapshot)
                 }
             } catch {
-                logger.error("Automatic resume failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Automatic resume failed: \(error.localizedDescription, privacy: .private)")
                 scheduleRetry()
             }
             actionTask = nil

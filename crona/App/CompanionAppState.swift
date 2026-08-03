@@ -257,13 +257,12 @@ final class CompanionAppState: ObservableObject {
                 guard let self else { return }
                 await self.alertSettingsService.refresh()
                 await self.dayBoundarySettingsService.refresh()
-                self.notificationService.reconcileDelivery()
             }
         }
         bindChildChanges()
     }
 
-    deinit {
+    isolated deinit {
         if let daemonEventObserver {
             NotificationCenter.default.removeObserver(daemonEventObserver)
         }
@@ -539,7 +538,7 @@ final class CompanionAppState: ObservableObject {
                 try await daemonConnection.shutdownAndWait()
                 NSApp.terminate(nil)
             } catch {
-                logger.error("Failed to stop Crona: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to stop Crona: \(error.localizedDescription, privacy: .private)")
                 windowService.showStopCronaError(error.localizedDescription)
             }
         }
@@ -586,7 +585,7 @@ final class CompanionAppState: ObservableObject {
                 _ = try await daemonConnection.withClient { try await $0.timerExtend(request) }
                 await timerService.refresh()
             } catch {
-                logger.error("Failed to extend timer: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to extend timer: \(error.localizedDescription, privacy: .private)")
             }
         }
     }
@@ -728,7 +727,7 @@ final class CompanionAppState: ObservableObject {
                     self.presentExtendSuccess()
                 }
             } catch {
-                logger.error("Failed to extend timer from popup: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to extend timer from popup: \(error.localizedDescription, privacy: .private)")
                 await MainActor.run {
                     self.isSubmittingHardLimitAction = false
                     self.hardLimitPopupErrorMessage = error.localizedDescription
@@ -919,7 +918,7 @@ final class CompanionAppState: ObservableObject {
                     self.startEndSessionFallback(for: sessionID)
                 }
             } catch {
-                logger.error("Failed to end timer: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to end timer: \(error.localizedDescription, privacy: .private)")
                 await MainActor.run {
                     self.isSubmittingEndSession = false
                     self.endSessionErrorMessage = error.localizedDescription
@@ -940,7 +939,7 @@ final class CompanionAppState: ObservableObject {
                 await habitsService.refresh()
                 selectedFocusIssue = nil
             } catch {
-                logger.error("Failed to start focus session: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to start focus session: \(error.localizedDescription, privacy: .private)")
             }
         }
     }
@@ -987,6 +986,16 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func bindChildChanges() {
+        preferences.$preferences
+            .map(\.hideDockIconWhenNoWindowsOpen)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.windowService.refreshApplicationActivationPolicy()
+            }
+            .store(in: &cancellables)
+
         dailyFocusService.$snapshot
             .map(\.issues)
             .removeDuplicates()
@@ -1037,8 +1046,6 @@ final class CompanionAppState: ObservableObject {
                     self?.reconcileHardLimitPopupPresentation()
                     self?.reconcileHardLimitWarningIndicatorPresentation()
                     self?.reconcileInactivityPopupPresentation()
-                    self?.notificationService.reconcileDelivery()
-                    self?.windowService.refreshApplicationActivationPolicy()
                 }
                 .store(in: &cancellables)
         }
@@ -1160,7 +1167,7 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func handleHardLimitReached(_ event: CronaProtocolEvent) {
-        logger.debug("Handling hard limit popup for session: \(event.sessionID ?? "nil", privacy: .public)")
+        logger.debug("Handling hard limit popup for session: \(event.sessionID ?? "nil", privacy: .private(mask: .hash))")
         Task { [self] in
             await timerService.refresh()
             await contextService.refresh()

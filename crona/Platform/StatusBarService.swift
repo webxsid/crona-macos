@@ -135,7 +135,7 @@ final class StatusBarService: NSObject {
     private lazy var contextMenu = makeContextMenu()
     private weak var appUpdateMenuItem: NSMenuItem?
 
-    deinit {
+    isolated deinit {
         iconAnimationTimer?.invalidate()
         statusDisplayTimer?.invalidate()
         completionTask?.cancel()

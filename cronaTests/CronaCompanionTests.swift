@@ -451,6 +451,57 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertFalse(CompanionAlertRouting.isTimerCompletion(kind: "timer.hard_limit_reached"))
     }
 
+    func testNotificationDeliveryReconciliationIsIdempotentWhenUnavailable() {
+        let service = NotificationService()
+        var publicationCount = 0
+        let cancellable = service.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        for _ in 0..<1_000 {
+            service.reconcileDelivery()
+        }
+
+        XCTAssertEqual(service.deliveryState, .unavailable)
+        XCTAssertEqual(publicationCount, 0)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testNotificationDeliveryStatePublishesOnlyDistinctTransitions() {
+        let service = NotificationService()
+        var publicationCount = 0
+        let cancellable = service.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        XCTAssertFalse(service.setDeliveryState(.unavailable))
+        XCTAssertTrue(service.setDeliveryState(.connecting))
+        XCTAssertFalse(service.setDeliveryState(.connecting))
+        XCTAssertTrue(service.setDeliveryState(.unavailable))
+        XCTAssertFalse(service.setDeliveryState(.unavailable))
+
+        XCTAssertEqual(publicationCount, 2)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testWindowServiceAppliesOnlyDistinctActivationPolicies() {
+        var appliedPolicies: [NSApplication.ActivationPolicy] = []
+        let service = WindowService { policy in
+            appliedPolicies.append(policy)
+        }
+
+        service.initializeApplicationActivationPolicy()
+        service.initializeApplicationActivationPolicy()
+        service.refreshApplicationActivationPolicy()
+        service.beginExternalWindowPresentation()
+        service.beginExternalWindowPresentation()
+        service.endExternalWindowPresentation()
+        service.endExternalWindowPresentation()
+        service.refreshApplicationActivationPolicy()
+
+        XCTAssertEqual(appliedPolicies, [.accessory, .regular, .accessory])
+    }
+
     func testCompanionAlertRoutingMapsReminderCategories() {
         XCTAssertTrue(CompanionAlertRouting.isReminder(kind: "checkin.reminder"))
         XCTAssertTrue(CompanionAlertRouting.isReminder(kind: "daily_plan.reminder"))

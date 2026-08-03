@@ -33,7 +33,7 @@ final class AlertSettingsService: ObservableObject {
             lastErrorDescription = nil
         } catch {
             lastErrorDescription = error.localizedDescription
-            logger.error("Failed to load alert settings: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to load alert settings: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -83,7 +83,7 @@ final class AlertSettingsService: ObservableObject {
             lastErrorDescription = nil
         } catch {
             lastErrorDescription = error.localizedDescription
-            logger.error("Failed to save alert settings: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to save alert settings: \(error.localizedDescription, privacy: .private)")
             if pendingValues[key] == value {
                 pendingValues.removeValue(forKey: key)
             }
@@ -144,7 +144,7 @@ final class DayBoundarySettingsService: ObservableObject {
             lastErrorDescription = nil
         } catch {
             lastErrorDescription = error.localizedDescription
-            logger.error("Failed to load day-boundary settings: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to load day-boundary settings: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -176,7 +176,7 @@ final class DayBoundarySettingsService: ObservableObject {
                 lastErrorDescription = nil
             } catch {
                 lastErrorDescription = error.localizedDescription
-                logger.error("Failed to save day-boundary setting: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to save day-boundary setting: \(error.localizedDescription, privacy: .private)")
                 await refresh()
             }
             isSaving = false

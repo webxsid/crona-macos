@@ -10,7 +10,7 @@ struct CronaCompanionApp: App {
         self.appState = appState
         appDelegate.appState = appState
         NSApp.applicationIconImage = CronaAppIcon.image
-        NSApp.setActivationPolicy(.accessory)
+        appState.windowService.initializeApplicationActivationPolicy()
         appState.start()
     }
 

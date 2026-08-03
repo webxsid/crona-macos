@@ -2571,7 +2571,7 @@ final class SystemGlassSettings: ObservableObject {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let observer {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }

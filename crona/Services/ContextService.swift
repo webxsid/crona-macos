@@ -42,7 +42,7 @@ final class ContextService: ObservableObject {
         Task { await refresh() }
     }
 
-    deinit {
+    isolated deinit {
         if let eventObserver {
             NotificationCenter.default.removeObserver(eventObserver)
         }
@@ -66,9 +66,9 @@ final class ContextService: ObservableObject {
                 issueTitle: context.issueTitle,
                 isConnected: true
             )
-            logger.debug("Applied active context: repo=\(context.repoName ?? "nil", privacy: .public) stream=\(context.streamName ?? "nil", privacy: .public) issue=\(context.issueTitle ?? "nil", privacy: .public)")
+            logger.debug("Applied active context: repo=\(context.repoName ?? "nil", privacy: .private) stream=\(context.streamName ?? "nil", privacy: .private) issue=\(context.issueTitle ?? "nil", privacy: .private)")
         } catch {
-            logger.error("Context refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Context refresh failed: \(error.localizedDescription, privacy: .private)")
             snapshot = ContextSnapshot()
         }
     }

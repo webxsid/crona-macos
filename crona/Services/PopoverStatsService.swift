@@ -51,7 +51,7 @@ final class PopoverStatsService: ObservableObject {
         Task { await refresh() }
     }
 
-    deinit {
+    isolated deinit {
         if let eventObserver {
             NotificationCenter.default.removeObserver(eventObserver)
         }
@@ -96,7 +96,7 @@ final class PopoverStatsService: ObservableObject {
             }
         } catch {
             guard generation == refreshGeneration, date == selectedDate else { return }
-            logger.error("Popover stats refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Popover stats refresh failed: \(error.localizedDescription, privacy: .private)")
             if var cached = cache[date] {
                 cached.isLoading = false
                 cached.lastErrorDescription = error.localizedDescription
@@ -167,7 +167,7 @@ final class PopoverStatsService: ObservableObject {
                 )
                 cache[date] = refreshed
             } catch {
-                logger.debug("Calendar prefetch failed for \(date, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                logger.debug("Calendar prefetch failed for \(date, privacy: .private): \(error.localizedDescription, privacy: .private)")
             }
         }
     }
@@ -185,7 +185,7 @@ final class PopoverStatsService: ObservableObject {
                 cache[today] = cached
             }
         } catch {
-            logger.error("Today metrics refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Today metrics refresh failed: \(error.localizedDescription, privacy: .private)")
         }
     }
 

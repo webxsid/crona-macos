@@ -34,6 +34,8 @@ private enum PopupAnimationMetrics {
 
 @MainActor
 final class WindowService {
+    private let activationPolicyApplier: @MainActor (NSApplication.ActivationPolicy) -> Void
+    private var lastAppliedActivationPolicy: NSApplication.ActivationPolicy?
     private weak var appState: CompanionAppState?
     private weak var settingsWindow: NSWindow?
     private var settingsWindowCloseObserver: NSObjectProtocol?
@@ -54,6 +56,14 @@ final class WindowService {
     private var breakScreenPrimaryDisplayID: CGDirectDisplayID?
     private var screenParametersObserver: NSObjectProtocol?
     private var externalWindowPresentationCount = 0
+
+    init(
+        activationPolicyApplier: @escaping @MainActor (NSApplication.ActivationPolicy) -> Void = {
+            NSApp.setActivationPolicy($0)
+        }
+    ) {
+        self.activationPolicyApplier = activationPolicyApplier
+    }
 
     var breakScreensVisible: Bool {
         breakScreenPanels.values.contains(where: \.isVisible)
@@ -142,7 +152,7 @@ final class WindowService {
                 }
             }
             if isPrimary, !wasVisible {
-                NSApp.activate(ignoringOtherApps: true)
+                NSApp.activate()
                 panel.makeKeyAndOrderFront(nil)
             }
         }
@@ -158,9 +168,11 @@ final class WindowService {
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 panel.animator().alphaValue = 0
             }, completionHandler: {
-                panel.orderOut(nil)
-                panel.contentViewController = nil
-                panel.close()
+                MainActor.assumeIsolated {
+                    panel.orderOut(nil)
+                    panel.contentViewController = nil
+                    panel.close()
+                }
             })
         }
     }
@@ -184,7 +196,7 @@ final class WindowService {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -257,11 +269,11 @@ final class WindowService {
         presentAsRegularApplication()
         if let settingsWindow, settingsWindow.isVisible {
             settingsWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             return
         }
         openScene()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     func beginExternalWindowPresentation() {
@@ -326,14 +338,21 @@ final class WindowService {
 
         let shouldHideDockIcon = appState?.preferences.preferences.hideDockIconWhenNoWindowsOpen ?? true
         if shouldHideDockIcon {
-            NSApp.setActivationPolicy(.accessory)
+            applyActivationPolicyIfNeeded(.accessory)
         } else {
             presentAsRegularApplication()
         }
     }
 
+    func initializeApplicationActivationPolicy() {
+        applyActivationPolicyIfNeeded(.accessory)
+    }
+
     private func presentAsRegularApplication() {
-        NSApp.setActivationPolicy(.regular)
+        guard applyActivationPolicyIfNeeded(.regular) else {
+            NSApp.unhide(nil)
+            return
+        }
         NSApp.applicationIconImage = CronaAppIcon.image
         NSApp.unhide(nil)
 
@@ -343,8 +362,18 @@ final class WindowService {
             await Task.yield()
             NSApp.applicationIconImage = CronaAppIcon.image
             NSApp.dockTile.display()
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
         }
+    }
+
+    @discardableResult
+    private func applyActivationPolicyIfNeeded(
+        _ policy: NSApplication.ActivationPolicy
+    ) -> Bool {
+        guard lastAppliedActivationPolicy != policy else { return false }
+        activationPolicyApplier(policy)
+        lastAppliedActivationPolicy = policy
+        return true
     }
 
     func openTUI(using command: String) {
@@ -362,7 +391,7 @@ final class WindowService {
     }
 
     func confirmStopCrona(hasActiveSession: Bool) -> Bool {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = "Stop Crona?"
@@ -375,7 +404,7 @@ final class WindowService {
     }
 
     func showStopCronaError(_ message: String) {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Crona Couldn’t Stop"
@@ -385,7 +414,7 @@ final class WindowService {
     }
 
     func activateAppForPopup() {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     func showHardLimitPopup() {
@@ -408,7 +437,7 @@ final class WindowService {
         position(panel: panel, on: targetScreen)
     }
 
-    func closeHardLimitPopup(completion: (() -> Void)? = nil) {
+    func closeHardLimitPopup(completion: (@MainActor @Sendable () -> Void)? = nil) {
         guard let panel = hardLimitPanel else {
             completion?()
             return
@@ -541,7 +570,7 @@ final class WindowService {
         animatePopupEntrance(panel, style: .mouseFollowerFadeBlur, token: .hardLimitWarning)
     }
 
-    func closeHardLimitWarningIndicator(completion: (() -> Void)? = nil) {
+    func closeHardLimitWarningIndicator(completion: (@MainActor @Sendable () -> Void)? = nil) {
         if let panel = hardLimitWarningPanel {
             animatePopupExit(panel, style: .mouseFollowerFadeBlur, token: .hardLimitWarning) { [weak self] in
                 self?.removeHardLimitWarningMonitors()
@@ -880,7 +909,7 @@ final class WindowService {
         _ panel: NSPanel,
         style: PopupAnimationStyle,
         token: PopupAnimationToken,
-        completion: (() -> Void)? = nil
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) {
         let animationID = advanceAnimationID(for: token)
         switch style {

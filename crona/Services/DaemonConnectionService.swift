@@ -202,7 +202,7 @@ final class DaemonConnectionService: ObservableObject {
             connectionState = launchFailureLatched ? .error : .disconnected
             if !launchFailureLatched {
                 lastErrorDescription = runtime.config.discoveryMissingMessage
-                logger.error("Daemon discovery missing: \(runtime.config.discoveryMissingMessage, privacy: .public)")
+                logger.error("Daemon discovery missing: \(runtime.config.discoveryMissingMessage, privacy: .private)")
             }
             return
         }
@@ -219,7 +219,7 @@ final class DaemonConnectionService: ObservableObject {
         do {
             let health = try await client.healthGet()
             let info = try await client.kernelInfoGet()
-            logger.debug("Daemon handshake succeeded. endpoint=\(discovery.endpoint, privacy: .public) protocol=\(info.protocolVersion, privacy: .public)")
+            logger.debug("Daemon handshake succeeded. endpoint=\(discovery.endpoint, privacy: .private(mask: .hash)) protocol=\(info.protocolVersion, privacy: .public)")
 
             guard info.protocolVersion == CronaProtocolVersion.current.rawValue else {
                 self.client = nil
@@ -258,7 +258,7 @@ final class DaemonConnectionService: ObservableObject {
             self.client = nil
             self.connectionState = .disconnected
             self.lastErrorDescription = error.localizedDescription
-            logger.error("Daemon connect failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Daemon connect failed: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -286,7 +286,7 @@ final class DaemonConnectionService: ObservableObject {
                     self.connectionState = .disconnected
                     self.lastErrorDescription = error.localizedDescription
                     self.eventTask = nil
-                    self.logger.error("Daemon event stream failed: \(error.localizedDescription, privacy: .public)")
+                    self.logger.error("Daemon event stream failed: \(error.localizedDescription, privacy: .private)")
                 }
             }
         }
@@ -311,7 +311,7 @@ final class DaemonConnectionService: ObservableObject {
         } catch {
             latchLaunchFailure(message: error.localizedDescription)
             logger.error(
-                "Daemon recovery launch failed. trigger_error=\(String(describing: error), privacy: .public) launch_error=\(error.localizedDescription, privacy: .public)"
+                "Daemon recovery launch failed. trigger_error=\(String(describing: error), privacy: .private) launch_error=\(error.localizedDescription, privacy: .private)"
             )
             return false
         }

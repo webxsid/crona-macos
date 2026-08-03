@@ -326,7 +326,7 @@ final class TimerService: ObservableObject {
         requestRefresh()
     }
 
-    deinit {
+    isolated deinit {
         if let eventObserver {
             NotificationCenter.default.removeObserver(eventObserver)
         }
@@ -342,7 +342,7 @@ final class TimerService: ObservableObject {
             let state = try await daemonConnection.withClient { try await $0.timerGetState() }
             apply(state)
         } catch {
-            logger.error("Timer refresh failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Timer refresh failed: \(error.localizedDescription, privacy: .private)")
             snapshot = TimerSnapshot(state: "disconnected", isConnected: false)
         }
     }
@@ -395,7 +395,7 @@ final class TimerService: ObservableObject {
     }
 
     private func apply(_ state: CronaTimerState) {
-        logger.debug("Applying timer state: state=\(state.state, privacy: .public) sessionId=\(state.sessionID ?? "nil", privacy: .public) issueId=\(String(state.issueID ?? -1), privacy: .public) elapsed=\(state.elapsedSeconds ?? 0, privacy: .public)")
+        logger.debug("Applying timer state: state=\(state.state, privacy: .public) sessionId=\(state.sessionID ?? "nil", privacy: .private(mask: .hash)) issueId=\(String(state.issueID ?? -1), privacy: .private(mask: .hash)) elapsed=\(state.elapsedSeconds ?? 0, privacy: .public)")
         snapshot = .from(state)
     }
 

@@ -29,7 +29,7 @@ struct DaemonLaunchService {
         if let launchHandler {
             try launchHandler(request)
             logger.log(
-                "Launched daemon executable: \(request.executableURL.path, privacy: .public)"
+                "Launched daemon executable: \(request.executableURL.path, privacy: .private(mask: .hash))"
             )
             return
         }
@@ -42,7 +42,7 @@ struct DaemonLaunchService {
         process.standardError = FileHandle.nullDevice
         try process.run()
         logger.log(
-            "Launched daemon executable: \(request.executableURL.path, privacy: .public)"
+            "Launched daemon executable: \(request.executableURL.path, privacy: .private(mask: .hash))"
         )
     }
 

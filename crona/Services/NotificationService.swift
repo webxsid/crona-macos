@@ -80,6 +80,8 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private weak var daemonConnection: DaemonConnectionService?
     private var deliveryTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var deliveryTaskGeneration: UInt64 = 0
+    private var daemonStateCancellables: Set<AnyCancellable> = []
     private var appActivationObserver: NSObjectProtocol?
     private var activeSound: NSSound?
     private var onOpenCrona: (() -> Void)?
@@ -88,7 +90,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private var onFocusInactivity: ((CronaAlertDelivery) async -> Bool)?
     private var shouldSilenceAlert: ((String) -> Bool)?
 
-    @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var soundSetting: UNNotificationSetting = .notSupported
     @Published private(set) var deliveryState: NativeAlertDeliveryState = .unavailable
     @Published private(set) var lastErrorDescription: String?
@@ -114,6 +116,19 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         self.onAdvanceTimer = onAdvanceTimer
         self.onFocusInactivity = onFocusInactivity
         self.shouldSilenceAlert = shouldSilenceAlert
+
+        daemonStateCancellables.removeAll()
+        Publishers.CombineLatest(
+            daemonConnection.$connectionState.removeDuplicates(),
+            daemonConnection.$alertStatus
+                .map { $0?.companionDeliverySupported }
+                .removeDuplicates()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _, _ in
+            self?.reconcileDelivery()
+        }
+        .store(in: &daemonStateCancellables)
     }
 
     func start() {
@@ -131,11 +146,10 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     }
 
     func stop() {
-        deliveryTask?.cancel()
+        cancelDeliveryTask()
         retryTask?.cancel()
-        deliveryTask = nil
         retryTask = nil
-        deliveryState = .unavailable
+        setDeliveryState(.unavailable)
         if let appActivationObserver {
             NotificationCenter.default.removeObserver(appActivationObserver)
             self.appActivationObserver = nil
@@ -145,8 +159,8 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     func refreshAuthorizationStatus() {
         Task {
             let settings = await center.notificationSettings()
-            authorizationStatus = settings.authorizationStatus
-            soundSetting = settings.soundSetting
+            setAuthorizationStatus(settings.authorizationStatus)
+            setSoundSetting(settings.soundSetting)
             reconcileDelivery()
         }
     }
@@ -155,27 +169,30 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         do {
             _ = try await center.requestAuthorization(options: [.alert, .badge, .sound])
         } catch {
-            lastErrorDescription = error.localizedDescription
+            setLastErrorDescription(error.localizedDescription)
         }
         refreshAuthorizationStatus()
     }
 
     func reconcileDelivery() {
-        guard canClaimDelivery, deliveryTask == nil else {
-            if !canClaimDelivery {
-                deliveryTask?.cancel()
-                deliveryTask = nil
-                retryTask?.cancel()
-                retryTask = nil
-                deliveryState = .unavailable
+        guard canClaimDelivery else {
+            guard deliveryTask != nil || retryTask != nil || deliveryState != .unavailable else {
+                return
             }
+            cancelDeliveryTask()
+            retryTask?.cancel()
+            retryTask = nil
+            setDeliveryState(.unavailable)
             return
         }
+        guard deliveryTask == nil else { return }
         guard let client = daemonConnection?.client else { return }
 
         retryTask?.cancel()
         retryTask = nil
-        deliveryState = .connecting
+        setDeliveryState(.connecting)
+        deliveryTaskGeneration &+= 1
+        let generation = deliveryTaskGeneration
         deliveryTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -186,8 +203,8 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                         sounds: true
                     )
                 )
-                deliveryState = .active
-                lastErrorDescription = nil
+                setDeliveryState(.active)
+                setLastErrorDescription(nil)
                 daemonConnection?.alertStatus = try? await client.alertsStatusGet()
                 for try await event in stream {
                     if Task.isCancelled { break }
@@ -198,14 +215,44 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             } catch is CancellationError {
                 // Expected when authorization, connection, or app lifetime changes.
             } catch {
-                lastErrorDescription = error.localizedDescription
-                deliveryState = .failed
-                logger.error("Native alert stream failed: \(error.localizedDescription, privacy: .public)")
+                setLastErrorDescription(error.localizedDescription)
+                setDeliveryState(.failed)
+                logger.error("Native alert stream failed: \(error.localizedDescription, privacy: .private)")
             }
+            guard deliveryTaskGeneration == generation else { return }
             deliveryTask = nil
             daemonConnection?.alertStatus = try? await client.alertsStatusGet()
             scheduleRetry()
         }
+    }
+
+    @discardableResult
+    func setDeliveryState(_ state: NativeAlertDeliveryState) -> Bool {
+        guard deliveryState != state else { return false }
+        deliveryState = state
+        return true
+    }
+
+    private func setAuthorizationStatus(_ status: UNAuthorizationStatus) {
+        guard authorizationStatus != status else { return }
+        authorizationStatus = status
+    }
+
+    private func setSoundSetting(_ setting: UNNotificationSetting) {
+        guard soundSetting != setting else { return }
+        soundSetting = setting
+    }
+
+    private func setLastErrorDescription(_ description: String?) {
+        guard lastErrorDescription != description else { return }
+        lastErrorDescription = description
+    }
+
+    private func cancelDeliveryTask() {
+        guard let deliveryTask else { return }
+        deliveryTaskGeneration &+= 1
+        deliveryTask.cancel()
+        self.deliveryTask = nil
     }
 
     func playPresetPreview(_ preset: String) {
@@ -306,7 +353,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                     }
                 }
             } catch {
-                logger.error("Failed to schedule native notification: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to schedule native notification: \(error.localizedDescription, privacy: .private)")
             }
         } else if delivery.playSound {
             soundAccepted = playSound(for: delivery.alert.soundPreset)
@@ -330,7 +377,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                 )
             )
         } catch {
-            logger.error("Failed to acknowledge native notification: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to acknowledge native notification: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -519,10 +566,11 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             as? String
         let actionPath = response.notification.request.content.userInfo["actionPath"] as? String
         let kind = response.notification.request.content.userInfo["kind"] as? String ?? ""
+        let actionIdentifier = response.actionIdentifier
         await MainActor.run { [weak self] in
             guard let self else { return }
             if CompanionAlertRouting.isExportCompleted(kind: kind) {
-                switch response.actionIdentifier {
+                switch actionIdentifier {
                 case Action.openExport, UNNotificationDefaultActionIdentifier:
                     if let url = exportActionURL(for: actionPath) {
                         openExportFile(url)
@@ -546,7 +594,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                 }
                 return
             }
-            switch response.actionIdentifier {
+            switch actionIdentifier {
             case Action.startBreak, Action.resumeFocus:
                 if let expected, !expected.isEmpty {
                     onAdvanceTimer?(expected)
