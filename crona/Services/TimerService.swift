@@ -368,6 +368,22 @@ final class TimerService: ObservableObject {
         return snapshot
     }
 
+    func extendCurrentSession(additionalSeconds: Int) async throws -> TimerSnapshot {
+        guard let sessionID = snapshot.sessionID else {
+            throw NSError(domain: "TimerService", code: 1, userInfo: [NSLocalizedDescriptionKey: "No active timer session"])
+        }
+        let state = try await daemonConnection.withClient {
+            try await $0.timerExtendCurrentSession(
+                CronaTimerExtendCurrentSessionRequest(
+                    sessionID: sessionID,
+                    additionalSeconds: additionalSeconds
+                )
+            )
+        }
+        apply(state)
+        return snapshot
+    }
+
     func endTimer(commitMessage: String) async {
         do {
             _ = try await daemonConnection.withClient { try await $0.timerEnd(commitMessage: commitMessage) }

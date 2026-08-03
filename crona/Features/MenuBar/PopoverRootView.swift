@@ -245,12 +245,20 @@ struct NowTabView: View {
             }
         case .incompatible, .error:
             fitOrScroll {
-                PlaceholderPanel(
-                    icon: "exclamationmark.triangle.fill",
-                    title: "Connection Error",
-                    subtitle: appState.daemonConnection.lastErrorDescription
-                        ?? "Unable to reach Crona."
-                )
+                VStack(spacing: 12) {
+                    PlaceholderPanel(
+                        icon: "exclamationmark.triangle.fill",
+                        title: "Connection Error",
+                        subtitle: appState.daemonConnection.lastErrorDescription
+                            ?? "Unable to reach Crona."
+                    )
+                    if appState.daemonConnection.connectionState == .incompatible {
+                        Link(destination: CronaConnectionFailure.updateURL) {
+                            Label("Update Crona", systemImage: "arrow.up.circle")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
             }
         }
     }

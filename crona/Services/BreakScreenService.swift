@@ -59,11 +59,15 @@ final class BreakScreenService: ObservableObject {
     private let preferences: PreferencesService
     private let timerService: TimerService
     private let windowService: WindowService
+    private let activityMonitor: UserActivityMonitor
     private var cancellables: Set<AnyCancellable> = []
     private var advanceTask: Task<Void, Never>?
     private var managedSessionID: String?
     private var inFlightTransition: BreakScreenTransition?
     private var lastAdvanceKey: String?
+    private var extensionTask: Task<Void, Never>?
+    private var activityTimer: Timer?
+    private var deferredSecondsBySession: [String: Int] = [:]
     private let logger = Logger(subsystem: "com.crona.macos", category: "break-screen")
 
     @Published private(set) var phase: BreakScreenPhase = .hidden
@@ -73,11 +77,13 @@ final class BreakScreenService: ObservableObject {
     init(
         preferences: PreferencesService,
         timerService: TimerService,
-        windowService: WindowService
+        windowService: WindowService,
+        activityMonitor: UserActivityMonitor = UserActivityMonitor()
     ) {
         self.preferences = preferences
         self.timerService = timerService
         self.windowService = windowService
+        self.activityMonitor = activityMonitor
     }
 
     var snapshot: TimerSnapshot { timerService.snapshot }
@@ -131,6 +137,10 @@ final class BreakScreenService: ObservableObject {
 
     func start() {
         guard cancellables.isEmpty else { return }
+        activityMonitor.start()
+        activityTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.reconcile() }
+        }
 
         timerService.$snapshot
             .receive(on: DispatchQueue.main)
@@ -148,6 +158,12 @@ final class BreakScreenService: ObservableObject {
     func stop() {
         advanceTask?.cancel()
         advanceTask = nil
+        extensionTask?.cancel()
+        extensionTask = nil
+        activityTimer?.invalidate()
+        activityTimer = nil
+        activityMonitor.stop()
+        deferredSecondsBySession.removeAll()
         cancellables.removeAll()
         managedSessionID = nil
         inFlightTransition = nil
@@ -176,6 +192,10 @@ final class BreakScreenService: ObservableObject {
 
     private func reconcile() {
         let snapshot = timerService.snapshot
+
+        if deferBreakIfNeeded(snapshot) {
+            return
+        }
 
         if phase == .recovery {
             guard
@@ -229,6 +249,49 @@ final class BreakScreenService: ObservableObject {
             phase = .resuming
             performAdvance(.resumeWork)
         }
+    }
+
+    private func deferBreakIfNeeded(_ snapshot: TimerSnapshot) -> Bool {
+        guard
+            snapshot.isConnected,
+            snapshot.hardLimitKind == .pomodoro,
+            snapshot.hardLimitActive,
+            snapshot.state == "running",
+            TimerSegmentKind(rawValue: snapshot.segmentType) == .work,
+            (TimerSegmentKind(rawValue: snapshot.nextSegmentType) == .shortBreak
+                || TimerSegmentKind(rawValue: snapshot.nextSegmentType) == .longBreak),
+            let sessionID = snapshot.sessionID,
+            activityMonitor.isRecentlyActive || activityMonitor.fallbackRecentlyActive()
+        else { return false }
+
+        let mode = preferences.preferences.breakScreenActivityDeferral
+        let currentMode = preferences.preferences.breakScreenMode
+        guard mode != .off, mode == .allModes || currentMode != .hard else { return false }
+        let remaining = TimerPresentation.projectedDisplaySeconds(for: snapshot, at: Date())
+        guard remaining <= 2 else { return false }
+        let used = deferredSecondsBySession[sessionID, default: 0]
+        let cap = preferences.preferences.breakScreenActivityDeferralCapSeconds
+        guard used < cap, extensionTask == nil else { return true }
+        let extensionSeconds = min(
+            preferences.preferences.breakScreenActivityExtensionSeconds,
+            cap - used
+        )
+        guard extensionSeconds > 0 else { return false }
+        deferredSecondsBySession[sessionID] = used + extensionSeconds
+        extensionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await timerService.extendCurrentSession(additionalSeconds: extensionSeconds)
+                extensionTask = nil
+                reconcile()
+            } catch {
+                extensionTask = nil
+                deferredSecondsBySession[sessionID] = used
+                logger.error("Activity deferral failed: \(error.localizedDescription, privacy: .private)")
+                reconcile()
+            }
+        }
+        return true
     }
 
     private func performAdvance(_ transition: BreakScreenTransition, force: Bool = false) {

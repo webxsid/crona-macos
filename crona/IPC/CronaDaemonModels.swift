@@ -726,6 +726,16 @@ struct CronaTimerExtendRequest: Codable, Equatable {
     }
 }
 
+struct CronaTimerExtendCurrentSessionRequest: Codable, Equatable {
+    let sessionID: String
+    let additionalSeconds: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "sessionId"
+        case additionalSeconds
+    }
+}
+
 struct CronaEndSessionRequest: Codable, Equatable {
     let commitMessage: String
 
@@ -869,6 +879,8 @@ enum CronaConnectionFailure: Error, Equatable, LocalizedError {
     case unsupportedTransport(String)
     case transport(String)
     case malformedResponse
+
+    static let updateURL = URL(string: "https://crona.work/docs/install/")!
 
     var errorDescription: String? { message }
 

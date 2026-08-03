@@ -1566,6 +1566,52 @@ private struct BreakScreenSettingsView: View {
                         }
                     }
                 }
+
+                SettingsPickerRow(
+                    title: "Activity Guard",
+                    subtitle: "Delay the break screen while you are typing or dragging.",
+                    selection: Binding(
+                        get: { preferences.breakScreenActivityDeferral },
+                        set: { appState.preferences.preferences.breakScreenActivityDeferral = $0 }
+                    )
+                ) {
+                    ForEach(BreakScreenActivityDeferral.allCases) { policy in
+                        Text(policy.title).tag(policy)
+                    }
+                }
+
+                if preferences.breakScreenActivityDeferral != .off {
+                    SettingsPickerRow(
+                        title: "Activity Extension",
+                        subtitle: "Extra work time granted when the boundary is reached during activity.",
+                        selection: Binding(
+                            get: { preferences.breakScreenActivityExtensionSeconds },
+                            set: { value in
+                                appState.preferences.preferences.breakScreenActivityExtensionSeconds =
+                                    CompanionPreferences.breakScreenActivityExtensionOptions.min {
+                                        abs($0 - value) < abs($1 - value)
+                                    } ?? 60
+                            }
+                        )
+                    ) {
+                        ForEach(CompanionPreferences.breakScreenActivityExtensionOptions, id: \.self) {
+                            Text("\($0) seconds").tag($0)
+                        }
+                    }
+
+                    SettingsPickerRow(
+                        title: "Maximum Deferral",
+                        subtitle: "Maximum extra time granted for one Pomodoro session.",
+                        selection: Binding(
+                            get: { preferences.breakScreenActivityDeferralCapSeconds },
+                            set: { appState.preferences.preferences.breakScreenActivityDeferralCapSeconds = $0 }
+                        )
+                    ) {
+                        ForEach(CompanionPreferences.breakScreenActivityCapOptions, id: \.self) {
+                            Text("\($0 / 60) minutes").tag($0)
+                        }
+                    }
+                }
             }
 
             SettingsCard("Background") {
