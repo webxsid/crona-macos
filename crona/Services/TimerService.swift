@@ -109,6 +109,8 @@ struct TimerPresentation: Equatable {
     let canPause: Bool
     let canResume: Bool
     let canEnd: Bool
+    let canAdvance: Bool
+    let advanceTitle: String?
     let currentFocusSeconds: Int
     let upcomingSegment: TimerUpcomingSegment?
 
@@ -165,6 +167,21 @@ struct TimerPresentation: Equatable {
             phaseSymbolName = snapshot.state == "paused" ? "pause.circle" : "bolt.fill"
         }
 
+        let canAdvance = mode == .pomodoro && snapshot.sessionID != nil
+            && !snapshot.hardLimitExpired
+            && (snapshot.state == "ready" || segment != nil)
+        let advanceSegment = TimerSegmentKind(rawValue: snapshot.readySegmentType ?? snapshot.nextSegmentType)
+        let advanceTitle: String?
+        if !canAdvance {
+            advanceTitle = nil
+        } else if segment?.isBreak == true {
+            advanceTitle = "End Break"
+        } else if let advanceSegment {
+            advanceTitle = advanceSegment == .work ? "Start Focus" : "Start Break"
+        } else {
+            advanceTitle = "Advance"
+        }
+
         return TimerPresentation(
             mode: mode,
             countsDown: countsDown,
@@ -175,6 +192,8 @@ struct TimerPresentation: Equatable {
             canPause: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "running",
             canResume: mode == .stopwatch && snapshot.sessionID != nil && snapshot.state == "paused",
             canEnd: snapshot.sessionID != nil,
+            canAdvance: canAdvance,
+            advanceTitle: advanceTitle,
             currentFocusSeconds: currentFocusSeconds(
                 for: snapshot,
                 displaySeconds: displaySeconds

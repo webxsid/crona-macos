@@ -414,6 +414,9 @@ enum TimerEndProjection {
         guard snapshot.sessionID != nil, snapshot.hardLimitActive else {
             return nil
         }
+        guard !snapshot.hardLimitExpired, snapshot.state != "idle", snapshot.state != "disconnected" else {
+            return nil
+        }
         let remaining = TimerPresentation.projectedDisplaySeconds(
             for: snapshot,
             at: now

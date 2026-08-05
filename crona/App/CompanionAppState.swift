@@ -567,6 +567,10 @@ final class CompanionAppState: ObservableObject {
         Task { _ = try? await timerService.resumeTimer() }
     }
 
+    func advanceTimer() {
+        Task { _ = try? await timerService.advanceTimer() }
+    }
+
     func endTimer() {
         beginEndSession(source: .menuPopover)
     }

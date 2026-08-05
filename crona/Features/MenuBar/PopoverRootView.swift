@@ -350,6 +350,15 @@ struct ActiveTimerView: View {
             }
 
             HStack(spacing: 10) {
+                if presentation.canAdvance, let title = presentation.advanceTitle {
+                    actionPill(
+                        title,
+                        fill: PopupVisualTheme.primaryText.opacity(0.18),
+                        shortcut: nil,
+                        shortcutLabel: nil,
+                        action: appState.advanceTimer
+                    )
+                }
                 if presentation.canPause {
                     actionPill(
                         "Pause",

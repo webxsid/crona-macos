@@ -1745,6 +1745,19 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(endDate, now.addingTimeInterval(600))
     }
 
+    func testActiveEndProjectionDisappearsAfterAuthoritativeExpiry() {
+        let snapshot = TimerSnapshot(
+            state: "expired",
+            sessionID: "session-1",
+            hardLimitActive: true,
+            hardLimitExpired: true,
+            hardLimitRemainingSeconds: 0,
+            isConnected: true
+        )
+
+        XCTAssertNil(TimerEndProjection.activeEndDate(snapshot: snapshot))
+    }
+
     func testTimerProjectionAdvancesWithoutMutatingAuthoritativeSnapshot() {
         let appliedAt = Date(timeIntervalSince1970: 10_000)
         let snapshot = TimerSnapshot(

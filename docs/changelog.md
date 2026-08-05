@@ -18,6 +18,28 @@ All notable changes to **Crona for macOS** are documented here.
 - Dock activation now returns release builds to menu-bar-only mode when the Settings window closes, unless the new Dock preference disables that behavior.
 - Release packaging now builds a styled DMG with pinned `dmgbuild` and an isolated virtualenv in CI.
 
+## [1.0.0-beta.8] - 2026-08-05
+
+Crona for macOS v1.0.0-beta.8 improves Pomodoro behavior, daemon compatibility, and timer-driven UI reliability.
+
+### Added
+
+- Activity-aware break-screen deferral while typing or dragging, with configurable extension intervals and per-session caps.
+- Pomodoro advance actions in the menu-bar popover for starting breaks early, starting focus, and ending breaks.
+- A direct installation/update link when the companion detects a daemon protocol mismatch.
+
+### Changed
+
+- Timer projections, break screens, warning indicators, reminders, and contextual end times now follow the daemon's authoritative Pomodoro timeline.
+- Notification delivery reconciliation and activation-policy updates are idempotent to prevent permission-related CPU feedback loops.
+- The companion now targets protocol version `1.2` and Swift 6 concurrency semantics.
+
+### Fixed
+
+- Repeated notification-permission failures no longer trigger recursive state publications or sustained CPU usage.
+- Warning countdowns no longer remain frozen at their initial value after timer transitions.
+- Expired Pomodoro sessions no longer show stale end-time projections.
+
 ## [1.0.0-beta.7] - 2026-07-29
 
 Crona for macOS v1.0.0-beta.7 is a hot-fix release focused on historical Stats navigation, popup sizing, and release packaging reliability.
