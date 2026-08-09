@@ -445,10 +445,181 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertNil(delivery.actions)
     }
 
+    func testAlertDeliveryDecodesBreakDeferralAction() throws {
+        let event = try JSONDecoder().decode(
+            CronaProtocolEvent.self,
+            from: """
+            {
+              "type":"alert.delivery",
+              "payload":{
+                "id":"alert-break",
+                "alert":{"kind":"timer.break_deferral_warning","title":"Keep working","body":"","urgency":"high","iconEnabled":true,"playSound":false},
+                "deliverNotification":true,
+                "playSound":false,
+                "actions":[{"id":"timer.defer_break","title":"Keep Working","sessionId":"session-1","suggestedSeconds":60}]
+              }
+            }
+            """.data(using: .utf8)!
+        )
+
+        let action = try XCTUnwrap(event.decodePayload(CronaAlertDelivery.self).actions?.first)
+        XCTAssertEqual(action.id, "timer.defer_break")
+        XCTAssertEqual(action.sessionID, "session-1")
+        XCTAssertEqual(action.suggestedSeconds, 60)
+    }
+
+    func testCoreSettingsDecodeAndClassifyAwayDates() throws {
+        let settings = try JSONDecoder().decode(
+            CronaCoreSettings.self,
+            from: """
+            {
+              "awayModeEnabled":false,
+              "awayDates":["2026-08-10"],
+              "restWeekdays":[0],
+              "restSpecificDates":["2026-08-12"]
+            }
+            """.data(using: .utf8)!
+        )
+
+        XCTAssertTrue(settings.isHistoricalAwayDate("2026-08-10"))
+        XCTAssertTrue(settings.isConfiguredRestDate("2026-08-12"))
+        XCTAssertTrue(settings.isConfiguredRestDate("2026-08-16"))
+        XCTAssertFalse(settings.isConfiguredRestDate("2026-08-10"))
+    }
+
+    func testCalendarPrefetchMergesScoreWithoutDiscardingMetrics() {
+        let metrics = CronaDailyMetricsDay(
+            date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, totalIssues: 5, completedIssues: 2, abandonedIssues: 0,
+            totalEstimatedMinutes: 120, habitDueCount: 1, habitCompletedCount: 1,
+            habitFailedCount: 0
+        )
+        let score = CronaFocusScoreSummary(
+            startDate: "2026-08-09", endDate: "2026-08-09", score: 87,
+            level: "strong", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, focusDays: 1, days: 1, targetWorkedSeconds: 7_200
+        )
+        let existing = PopoverStatsSnapshot(date: "2026-08-09", todayMetrics: metrics)
+
+        let merged = PopoverStatsService.mergingCalendarScore(
+            score,
+            into: existing,
+            date: "2026-08-09"
+        )
+
+        XCTAssertEqual(merged.todayMetrics, metrics)
+        XCTAssertEqual(merged.focusScore, score)
+        XCTAssertEqual(merged.scoreMessage, PopoverStatsService.message(for: "strong"))
+    }
+
+    func testTodayMetricsSuccessPreservesExistingFocusScore() {
+        let metrics = CronaDailyMetricsDay(
+            date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, totalIssues: 5, completedIssues: 2, abandonedIssues: 0,
+            totalEstimatedMinutes: 120, habitDueCount: 1, habitCompletedCount: 1,
+            habitFailedCount: 0
+        )
+        let score = CronaFocusScoreSummary(
+            startDate: "2026-08-09", endDate: "2026-08-09", score: 87,
+            level: "strong", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, focusDays: 1, days: 1, targetWorkedSeconds: 7_200
+        )
+        let existing = PopoverStatsSnapshot(date: "2026-08-09", focusScore: score)
+
+        let merged = PopoverStatsService.mergingTodayMetrics(metrics, into: existing)
+
+        XCTAssertEqual(merged.todayMetrics, metrics)
+        XCTAssertEqual(merged.focusScore, score)
+    }
+
+    func testTodayFocusScoreSuccessPreservesExistingMetrics() {
+        let metrics = CronaDailyMetricsDay(
+            date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, totalIssues: 5, completedIssues: 2, abandonedIssues: 0,
+            totalEstimatedMinutes: 120, habitDueCount: 1, habitCompletedCount: 1,
+            habitFailedCount: 0
+        )
+        let score = CronaFocusScoreSummary(
+            startDate: "2026-08-09", endDate: "2026-08-09", score: 87,
+            level: "strong", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, focusDays: 1, days: 1, targetWorkedSeconds: 7_200
+        )
+        let existing = PopoverStatsSnapshot(date: "2026-08-09", todayMetrics: metrics)
+
+        let merged = PopoverStatsService.mergingTodayFocusScore(score, into: existing)
+
+        XCTAssertEqual(merged.todayMetrics, metrics)
+        XCTAssertEqual(merged.focusScore, score)
+    }
+
+    func testCalendarDayAccessibilityDescribesStateWithoutColor() {
+        let label = CalendarDayAccessibility.label(
+            date: "2026-08-09",
+            isAway: true,
+            isToday: true,
+            isSelected: true,
+            score: 87,
+            locale: Locale(identifier: "en_US")
+        )
+
+        XCTAssertTrue(label.contains("Aug"))
+        XCTAssertTrue(label.contains("away day"))
+        XCTAssertTrue(label.contains("today"))
+        XCTAssertTrue(label.contains("selected"))
+        XCTAssertTrue(label.contains("focus score 87"))
+    }
+
+    func testCronaCalendarDateFormatsWireDateForLocale() {
+        let formatted = CronaCalendarDate.localizedString(
+            from: "2026-08-09",
+            locale: Locale(identifier: "en_US")
+        )
+
+        XCTAssertNotNil(formatted)
+        XCTAssertTrue(formatted?.contains("2026") == true)
+        XCTAssertNil(CronaCalendarDate.localizedString(from: "not-a-date"))
+    }
+
+    func testDaemonClientBuildsAwayModeRequest() async throws {
+        let transport = CapturingDaemonTransport(
+            responseData: #"{"id":"response-1","result":{"ok":true}}"#.data(using: .utf8)!
+        )
+        let client = CronaDaemonClient(transport: transport)
+
+        _ = try await client.setAwayMode(enabled: true)
+
+        let request = try XCTUnwrap(transport.requestData)
+        let probe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
+        XCTAssertEqual(probe.method, "settings.away_mode")
+        XCTAssertEqual(probe.params["enabled"]?.boolValue, true)
+    }
+
     func testCompanionAlertRoutingClassifiesTimerCompletionKinds() {
         XCTAssertTrue(CompanionAlertRouting.isTimerCompletion(kind: "timer.work_complete"))
         XCTAssertTrue(CompanionAlertRouting.isTimerCompletion(kind: "timer.break_complete"))
         XCTAssertFalse(CompanionAlertRouting.isTimerCompletion(kind: "timer.hard_limit_reached"))
+    }
+
+    func testBreakDeferralPolicyRequiresRecentActivity() {
+        var preferences = CompanionPreferences()
+        preferences.breakScreenActivityExtensionSeconds = 60
+
+        XCTAssertNil(BreakDeferralPolicy.seconds(preferences: preferences, recentlyActive: false))
+        XCTAssertEqual(BreakDeferralPolicy.seconds(preferences: preferences, recentlyActive: true), 60)
+    }
+
+    func testBreakDeferralPolicyHonorsModeAndAcceptedDurations() {
+        var preferences = CompanionPreferences()
+        preferences.breakScreenActivityDeferral = .easyAndStrict
+        preferences.breakScreenMode = .hard
+        XCTAssertNil(BreakDeferralPolicy.seconds(preferences: preferences, recentlyActive: true))
+
+        preferences.breakScreenActivityDeferral = .allModes
+        preferences.breakScreenActivityExtensionSeconds = 45
+        XCTAssertNil(BreakDeferralPolicy.seconds(preferences: preferences, recentlyActive: true))
+
+        preferences.breakScreenActivityExtensionSeconds = 120
+        XCTAssertEqual(BreakDeferralPolicy.seconds(preferences: preferences, recentlyActive: true), 120)
     }
 
     func testNotificationDeliveryReconciliationIsIdempotentWhenUnavailable() {
@@ -574,7 +745,9 @@ final class CronaCompanionTests: XCTestCase {
             CronaAlertDeliveryAck(
                 deliveryID: "alert-1",
                 notificationAccepted: true,
-                soundAccepted: false
+                soundAccepted: false,
+                actionID: "timer.defer_break",
+                actionSeconds: 60
             )
         )
 
@@ -584,6 +757,8 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(probe.params.deliveryID, "alert-1")
         XCTAssertTrue(probe.params.notificationAccepted)
         XCTAssertFalse(probe.params.soundAccepted)
+        XCTAssertEqual(probe.params.actionID, "timer.defer_break")
+        XCTAssertEqual(probe.params.actionSeconds, 60)
     }
 
     func testDaemonClientBuildsAlertDeliverySubscription() async throws {
@@ -2381,6 +2556,60 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(title, "Idle")
     }
 
+    func testMenuBarFormatterSupportsIssueBreakdownWhenIdle() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+        preferences.menuBarIdleTextMode = .issueBreakdown
+        let metrics = CronaDailyMetricsDay(
+            date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, totalIssues: 5, completedIssues: 2, abandonedIssues: 0,
+            totalEstimatedMinutes: 120, habitDueCount: 0, habitCompletedCount: 0, habitFailedCount: 0
+        )
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences, connectionState: .connected,
+            timerSnapshot: TimerSnapshot(), todayMetrics: metrics
+        )
+
+        XCTAssertEqual(title, "2/5")
+    }
+
+    func testMenuBarFormatterSupportsTotalTimeWhenIdle() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+        preferences.menuBarIdleTextMode = .totalTime
+        let metrics = CronaDailyMetricsDay(
+            date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, totalIssues: 0, completedIssues: 0, abandonedIssues: 0,
+            totalEstimatedMinutes: 0, habitDueCount: 0, habitCompletedCount: 0, habitFailedCount: 0
+        )
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences, connectionState: .connected,
+            timerSnapshot: TimerSnapshot(), todayMetrics: metrics
+        )
+
+        XCTAssertEqual(title, "1h10m")
+    }
+
+    func testMenuBarFormatterSupportsFocusScoreWhenIdle() {
+        var preferences = CompanionPreferences()
+        preferences.menuBarDisplayMode = .textOnly
+        preferences.menuBarIdleTextMode = .focusScore
+        let score = CronaFocusScoreSummary(
+            startDate: "2026-08-09", endDate: "2026-08-09", score: 87,
+            level: "strong", workedSeconds: 3_600, restSeconds: 600,
+            sessionCount: 2, focusDays: 1, days: 1, targetWorkedSeconds: 7_200
+        )
+
+        let title = MenuBarTextFormatter.statusItemTitle(
+            preferences: preferences, connectionState: .connected,
+            timerSnapshot: TimerSnapshot(), todayFocusScore: score
+        )
+
+        XCTAssertEqual(title, "87")
+    }
+
     func testMenuBarFormatterKeepsTextOnlyItemReachableWhenDisconnected() {
         var preferences = CompanionPreferences()
         preferences.menuBarDisplayMode = .textOnly
@@ -2576,9 +2805,11 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.params["commitMessage"]?.stringValue, "Ship macOS companion end flow")
     }
 
-    func testTimerServiceRefreshesForEndAndExtendEvents() {
+    func testTimerServiceRefreshesForEndExtendAndBreakDeferralEvents() {
         XCTAssertTrue(TimerService.shouldRefresh(for: "session.ended"))
         XCTAssertTrue(TimerService.shouldRefresh(for: "timer.extended"))
+        XCTAssertTrue(TimerService.shouldRefresh(for: "timer.break_deferral_warning"))
+        XCTAssertTrue(TimerService.shouldRefresh(for: "timer.break_deferred"))
         XCTAssertFalse(TimerService.shouldRefresh(for: "habit.completed"))
     }
 
@@ -2600,9 +2831,11 @@ final class CronaCompanionTests: XCTestCase {
         """.data(using: .utf8)!
     }
 
-    func testContextServiceRefreshesForEndAndExtendEvents() {
+    func testContextServiceRefreshesForEndExtendAndBreakDeferralEvents() {
         XCTAssertTrue(ContextService.shouldRefresh(for: "session.ended"))
         XCTAssertTrue(ContextService.shouldRefresh(for: "timer.extended"))
+        XCTAssertTrue(ContextService.shouldRefresh(for: "timer.break_deferral_warning"))
+        XCTAssertTrue(ContextService.shouldRefresh(for: "timer.break_deferred"))
         XCTAssertFalse(ContextService.shouldRefresh(for: "habit.completed"))
     }
 
@@ -2960,11 +3193,15 @@ private struct AlertDeliveryAckRequestProbe: Decodable {
         let deliveryID: String
         let notificationAccepted: Bool
         let soundAccepted: Bool
+        let actionID: String?
+        let actionSeconds: Int?
 
         enum CodingKeys: String, CodingKey {
             case deliveryID = "deliveryId"
             case notificationAccepted
             case soundAccepted
+            case actionID = "actionId"
+            case actionSeconds
         }
     }
 
@@ -3015,6 +3252,11 @@ private enum JSONScalar: Decodable {
 
     var intValue: Int? {
         if case let .int(value) = self { return value }
+        return nil
+    }
+
+    var boolValue: Bool? {
+        if case let .bool(value) = self { return value }
         return nil
     }
 }

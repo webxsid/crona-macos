@@ -50,6 +50,59 @@ struct CronaHealth: Codable, Equatable {
     }
 }
 
+struct CronaCoreSettings: Codable, Equatable {
+    let awayModeEnabled: Bool
+    let awayDates: [String]
+    let restWeekdays: [Int]
+    let restSpecificDates: [String]
+
+    init(
+        awayModeEnabled: Bool = false,
+        awayDates: [String] = [],
+        restWeekdays: [Int] = [],
+        restSpecificDates: [String] = []
+    ) {
+        self.awayModeEnabled = awayModeEnabled
+        self.awayDates = awayDates
+        self.restWeekdays = restWeekdays
+        self.restSpecificDates = restSpecificDates
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        awayModeEnabled = try values.decodeIfPresent(Bool.self, forKey: .awayModeEnabled) ?? false
+        awayDates = try values.decodeIfPresent([String].self, forKey: .awayDates) ?? []
+        restWeekdays = try values.decodeIfPresent([Int].self, forKey: .restWeekdays) ?? []
+        restSpecificDates = try values.decodeIfPresent([String].self, forKey: .restSpecificDates) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case awayModeEnabled
+        case awayDates
+        case restWeekdays
+        case restSpecificDates
+    }
+
+    func isConfiguredRestDate(_ date: String) -> Bool {
+        if restSpecificDates.contains(date) {
+            return true
+        }
+        guard let parsed = ISO8601DateFormatter().date(from: "\(date)T00:00:00Z") else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone.current
+        let weekday = calendar.component(.weekday, from: parsed) - 1
+        return restWeekdays.contains(weekday)
+    }
+
+    func isHistoricalAwayDate(_ date: String) -> Bool {
+        awayDates.contains(date)
+    }
+}
+
+struct CronaAwayModeRequest: Codable, Equatable {
+    let enabled: Bool
+}
+
 struct CronaDayBoundarySchedule: Codable, Equatable {
     var enabled: Bool
     var defaultTime: String
@@ -167,8 +220,19 @@ nonisolated struct CronaAlertDeliveryCapability: Codable, Equatable {
 nonisolated struct CronaAlertDeliveryAction: Codable, Equatable {
     let id: String
     let title: String
+    let sessionID: String?
+    let suggestedSeconds: Int?
     let expectedReadySegmentType: String?
     let path: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case sessionID = "sessionId"
+        case suggestedSeconds
+        case expectedReadySegmentType
+        case path
+    }
 }
 
 nonisolated struct CronaAlertRequest: Codable, Equatable {
@@ -194,11 +258,29 @@ nonisolated struct CronaAlertDeliveryAck: Codable, Equatable {
     let deliveryID: String
     let notificationAccepted: Bool
     let soundAccepted: Bool
+    let actionID: String?
+    let actionSeconds: Int?
+
+    init(
+        deliveryID: String,
+        notificationAccepted: Bool,
+        soundAccepted: Bool,
+        actionID: String? = nil,
+        actionSeconds: Int? = nil
+    ) {
+        self.deliveryID = deliveryID
+        self.notificationAccepted = notificationAccepted
+        self.soundAccepted = soundAccepted
+        self.actionID = actionID
+        self.actionSeconds = actionSeconds
+    }
 
     enum CodingKeys: String, CodingKey {
         case deliveryID = "deliveryId"
         case notificationAccepted
         case soundAccepted
+        case actionID = "actionId"
+        case actionSeconds
     }
 }
 
@@ -723,16 +805,6 @@ struct CronaTimerExtendRequest: Codable, Equatable {
         case hardLimitBreakSeconds = "hardLimitBreakSeconds"
         case hardLimitLongBreakSeconds = "hardLimitLongBreakSeconds"
         case hardLimitCyclesBeforeLongBreak = "hardLimitCyclesBeforeLongBreak"
-    }
-}
-
-struct CronaTimerExtendCurrentSessionRequest: Codable, Equatable {
-    let sessionID: String
-    let additionalSeconds: Int
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "sessionId"
-        case additionalSeconds
     }
 }
 

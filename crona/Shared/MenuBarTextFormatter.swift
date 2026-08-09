@@ -6,6 +6,8 @@ enum MenuBarTextFormatter {
         connectionState: CompanionConnectionState,
         timerSnapshot: TimerSnapshot,
         todayWorkedSeconds: Int? = nil,
+        todayMetrics: CronaDailyMetricsDay? = nil,
+        todayFocusScore: CronaFocusScoreSummary? = nil,
         now: Date = Date()
     ) -> String {
         guard preferences.menuBarDisplayMode.showsText else {
@@ -30,6 +32,17 @@ enum MenuBarTextFormatter {
             case .focusToday:
                 guard let todayWorkedSeconds else { return "Idle" }
                 return formatFocusDuration(seconds: todayWorkedSeconds)
+            case .issueBreakdown:
+                guard let todayMetrics else { return "Idle" }
+                return "\(todayMetrics.completedIssues)/\(todayMetrics.totalIssues)"
+            case .totalTime:
+                guard let todayMetrics else { return "Idle" }
+                return formatFocusDuration(
+                    seconds: todayMetrics.workedSeconds + todayMetrics.restSeconds
+                )
+            case .focusScore:
+                guard let todayFocusScore else { return "Idle" }
+                return "\(todayFocusScore.score)"
             }
         }
     }

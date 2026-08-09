@@ -1395,7 +1395,7 @@ private struct MenuBarSettingsView: View {
                 if appState.preferences.preferences.menuBarDisplayMode.showsText {
                 SettingsPickerRow(
                     title: "When Idle",
-                    subtitle: "Choose whether idle text shows a quiet Idle label or today’s focus time.",
+                    subtitle: "Choose what the menu bar shows when no timer is running.",
                         selection: Binding(
                             get: { appState.preferences.preferences.menuBarIdleTextMode },
                             set: { appState.preferences.preferences.menuBarIdleTextMode = $0 }
@@ -1428,7 +1428,9 @@ private struct MenuBarSettingsView: View {
             preferences: appState.preferences.preferences,
             connectionState: appState.daemonConnection.connectionState,
             timerSnapshot: appState.timerService.snapshot,
-            todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds
+            todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds,
+            todayMetrics: appState.popoverStatsService.todayMetrics,
+            todayFocusScore: appState.popoverStatsService.todayFocusScore
         )
     }
 }
@@ -1599,18 +1601,6 @@ private struct BreakScreenSettingsView: View {
                         }
                     }
 
-                    SettingsPickerRow(
-                        title: "Maximum Deferral",
-                        subtitle: "Maximum extra time granted for one Pomodoro session.",
-                        selection: Binding(
-                            get: { preferences.breakScreenActivityDeferralCapSeconds },
-                            set: { appState.preferences.preferences.breakScreenActivityDeferralCapSeconds = $0 }
-                        )
-                    ) {
-                        ForEach(CompanionPreferences.breakScreenActivityCapOptions, id: \.self) {
-                            Text("\($0 / 60) minutes").tag($0)
-                        }
-                    }
                 }
             }
 

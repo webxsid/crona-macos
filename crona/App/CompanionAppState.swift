@@ -81,6 +81,7 @@ final class CompanionAppState: ObservableObject {
     let notificationService: NotificationService
     let alertSettingsService: AlertSettingsService
     let dayBoundarySettingsService: DayBoundarySettingsService
+    let coreSettingsService: CoreSettingsService
     let launchAtLoginService: LaunchAtLoginService
     let daemonConnection: DaemonConnectionService
     let diagnosticsService: DiagnosticsService
@@ -96,6 +97,7 @@ final class CompanionAppState: ObservableObject {
     let statusBarService: StatusBarService
     let smartPauseService: SmartPauseService
     let breakScreenService: BreakScreenService
+    let userActivityMonitor: UserActivityMonitor
     let appUpdateService: AppUpdateService
     private var cancellables: Set<AnyCancellable> = []
     private var daemonEventObserver: NSObjectProtocol?
@@ -158,13 +160,17 @@ final class CompanionAppState: ObservableObject {
         )
         let alertSettingsService = AlertSettingsService(daemonConnection: daemonConnection)
         let dayBoundarySettingsService = DayBoundarySettingsService(daemonConnection: daemonConnection)
+        let coreSettingsService = CoreSettingsService(daemonConnection: daemonConnection)
         let appUpdateService = AppUpdateService(preferences: preferences)
+        let userActivityMonitor = UserActivityMonitor()
 
         self.preferences = preferences
         self.kernelDiscovery = kernelDiscovery
         self.notificationService = notificationService
         self.alertSettingsService = alertSettingsService
         self.dayBoundarySettingsService = dayBoundarySettingsService
+        self.coreSettingsService = coreSettingsService
+        self.userActivityMonitor = userActivityMonitor
         self.launchAtLoginService = launchAtLoginService
         self.daemonConnection = daemonConnection
         self.contextService = contextService
@@ -222,6 +228,14 @@ final class CompanionAppState: ObservableObject {
                 return windowService?.breakScreensVisible == true
                     || windowService?.hardLimitPopupVisible == true
                     || windowService?.inactivityPopupVisible == true
+            },
+            breakDeferralSeconds: { [weak preferences, weak userActivityMonitor] in
+                guard let preferences, let userActivityMonitor else { return nil }
+                return BreakDeferralPolicy.seconds(
+                    preferences: preferences.preferences,
+                    recentlyActive: userActivityMonitor.isRecentlyActive
+                        || userActivityMonitor.fallbackRecentlyActive()
+                )
             }
         )
 
@@ -257,6 +271,7 @@ final class CompanionAppState: ObservableObject {
                 guard let self else { return }
                 await self.alertSettingsService.refresh()
                 await self.dayBoundarySettingsService.refresh()
+                await self.coreSettingsService.refresh()
             }
         }
         bindChildChanges()
@@ -322,6 +337,12 @@ final class CompanionAppState: ObservableObject {
         )
     }
 
+    var todayIsAway: Bool { coreSettingsService.todayIsAway }
+
+    func setAwayMode(_ enabled: Bool) {
+        Task { await coreSettingsService.setAwayMode(enabled) }
+    }
+
     var hasActiveFocusSession: Bool {
         timerService.snapshot.sessionID != nil
             && timerService.snapshot.state != "idle"
@@ -343,6 +364,7 @@ final class CompanionAppState: ObservableObject {
     func start() {
         statusBarService.installIfNeeded()
         notificationService.start()
+        userActivityMonitor.start()
         launchAtLoginService.refresh()
         daemonConnection.start()
         smartPauseService.start()
@@ -355,6 +377,7 @@ final class CompanionAppState: ObservableObject {
         presentationTimer?.invalidate()
         presentationTimer = nil
         notificationService.stop()
+        userActivityMonitor.stop()
         inactivityPopupCountdownService.cancel()
         smartPauseService.stop()
         breakScreenService.stop()
@@ -1028,6 +1051,7 @@ final class CompanionAppState: ObservableObject {
             preferences.objectWillChange.eraseToAnyPublisher(),
             kernelDiscovery.objectWillChange.eraseToAnyPublisher(),
             notificationService.objectWillChange.eraseToAnyPublisher(),
+            coreSettingsService.objectWillChange.eraseToAnyPublisher(),
             launchAtLoginService.objectWillChange.eraseToAnyPublisher(),
             daemonConnection.objectWillChange.eraseToAnyPublisher(),
             diagnosticsService.objectWillChange.eraseToAnyPublisher(),
@@ -1086,6 +1110,7 @@ final class CompanionAppState: ObservableObject {
             guard let self else { return }
             await dailyFocusService.refresh(date: date)
             await habitsService.refresh(date: date)
+            await coreSettingsService.refresh()
             await popoverStatsService.handleDayStart(date: date, previousDate: previousDate)
             statusBarService.updateStatusItem()
         }

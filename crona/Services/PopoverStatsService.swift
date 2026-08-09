@@ -27,6 +27,8 @@ final class PopoverStatsService: ObservableObject {
         isLoading: true
     )
     @Published private(set) var todayWorkedSeconds: Int?
+    @Published private(set) var todayMetrics: CronaDailyMetricsDay?
+    @Published private(set) var todayFocusScore: CronaFocusScoreSummary?
 
     init(daemonConnection: DaemonConnectionService) {
         self.daemonConnection = daemonConnection
@@ -93,6 +95,8 @@ final class PopoverStatsService: ObservableObject {
             snapshot = refreshed
             if date == todayDate {
                 todayWorkedSeconds = metric?.workedSeconds
+                todayMetrics = metric
+                todayFocusScore = focusScore
             }
         } catch {
             guard generation == refreshGeneration, date == selectedDate else { return }
@@ -127,10 +131,18 @@ final class PopoverStatsService: ObservableObject {
         Task { await refresh() }
     }
 
-    func selectDate(_ date: String) {
+    func selectDate(_ date: String, isHistoricalAway: Bool = false) {
         guard !date.isEmpty, date != selectedDate else { return }
         selectedDate = date
         presentSelectedDate()
+        if isHistoricalAway {
+            refreshGeneration += 1
+            snapshot = cache[date] ?? PopoverStatsSnapshot(
+                date: date,
+                isConnected: daemonConnection.connectionState == .connected
+            )
+            return
+        }
         Task { await refresh() }
     }
 
@@ -152,46 +164,123 @@ final class PopoverStatsService: ObservableObject {
         let datesToLoad = dates.filter { !isCachedFocusScoreLoaded(for: $0) }
         guard !datesToLoad.isEmpty else { return }
 
-        for date in datesToLoad {
-            do {
-                let score = try await daemonConnection.withClient {
-                    try await $0.dashboardFocusScore(start: date, end: date)
+        for batchStart in stride(from: 0, to: datesToLoad.count, by: 4) {
+            let batchEnd = min(batchStart + 4, datesToLoad.count)
+            let tasks = datesToLoad[batchStart..<batchEnd].map { date in
+                Task { @MainActor [daemonConnection] in
+                    let score = try? await daemonConnection.withClient {
+                        try await $0.dashboardFocusScore(start: date, end: date)
+                    }
+                    return (date, score)
                 }
-                let refreshed = PopoverStatsSnapshot(
-                    date: date,
-                    focusScore: score,
-                    scoreMessage: Self.message(for: score.level),
-                    isConnected: true,
-                    isLoading: false,
-                    lastErrorDescription: nil
+            }
+            for task in tasks {
+                let (date, score) = await task.value
+                guard let score else {
+                    logger.debug("Calendar prefetch failed for \(date, privacy: .private)")
+                    continue
+                }
+                cache[date] = Self.mergingCalendarScore(
+                    score,
+                    into: cache[date],
+                    date: date
                 )
-                cache[date] = refreshed
-            } catch {
-                logger.debug("Calendar prefetch failed for \(date, privacy: .private): \(error.localizedDescription, privacy: .private)")
             }
         }
     }
 
     func refreshTodayMetrics() async {
         let today = todayDate
-        do {
-            let metricDays = try await daemonConnection.withClient {
+        async let metricResult = Self.capture {
+            try await self.daemonConnection.withClient {
                 try await $0.metricsRange(start: today, end: today)
             }
-            let metric = metricDays.first(where: { $0.date == today }) ?? metricDays.first
-            todayWorkedSeconds = metric?.workedSeconds
-            if var cached = cache[today] {
-                cached.todayMetrics = metric
-                cache[today] = cached
+        }
+        async let focusScoreResult = Self.capture {
+            try await self.daemonConnection.withClient {
+                try await $0.dashboardFocusScore(start: today, end: today)
             }
+        }
+        let (loadedMetricsResult, loadedFocusScoreResult) = await (metricResult, focusScoreResult)
+        var refreshed = cache[today] ?? PopoverStatsSnapshot(date: today)
+        var loadedAnyValue = false
+
+        switch loadedMetricsResult {
+        case let .success(loadedMetrics):
+            let metric = loadedMetrics.first(where: { $0.date == today }) ?? loadedMetrics.first
+            todayWorkedSeconds = metric?.workedSeconds
+            todayMetrics = metric
+            refreshed = Self.mergingTodayMetrics(metric, into: refreshed)
+            loadedAnyValue = true
+        case let .failure(error):
+            logger.error("Today metrics endpoint failed: \(error.localizedDescription, privacy: .private)")
+        }
+
+        switch loadedFocusScoreResult {
+        case let .success(loadedFocusScore):
+            todayFocusScore = loadedFocusScore
+            refreshed = Self.mergingTodayFocusScore(loadedFocusScore, into: refreshed)
+            loadedAnyValue = true
+        case let .failure(error):
+            logger.error("Today focus-score endpoint failed: \(error.localizedDescription, privacy: .private)")
+        }
+
+        if loadedAnyValue {
+            refreshed.isConnected = true
+            refreshed.lastErrorDescription = nil
+            cache[today] = refreshed
+        }
+    }
+
+    static func mergingCalendarScore(
+        _ score: CronaFocusScoreSummary,
+        into existing: PopoverStatsSnapshot?,
+        date: String
+    ) -> PopoverStatsSnapshot {
+        var snapshot = existing ?? PopoverStatsSnapshot(date: date)
+        snapshot.focusScore = score
+        snapshot.scoreMessage = message(for: score.level)
+        snapshot.isConnected = true
+        snapshot.isLoading = false
+        snapshot.lastErrorDescription = nil
+        return snapshot
+    }
+
+    static func mergingTodayMetrics(
+        _ metrics: CronaDailyMetricsDay?,
+        into existing: PopoverStatsSnapshot
+    ) -> PopoverStatsSnapshot {
+        var snapshot = existing
+        snapshot.todayMetrics = metrics
+        return snapshot
+    }
+
+    static func mergingTodayFocusScore(
+        _ score: CronaFocusScoreSummary,
+        into existing: PopoverStatsSnapshot
+    ) -> PopoverStatsSnapshot {
+        var snapshot = existing
+        snapshot.focusScore = score
+        snapshot.scoreMessage = message(for: score.level)
+        return snapshot
+    }
+
+    private static func capture<T>(
+        _ operation: @escaping () async throws -> T
+    ) async -> Result<T, Error> {
+        do {
+            return .success(try await operation())
         } catch {
-            logger.error("Today metrics refresh failed: \(error.localizedDescription, privacy: .private)")
+            return .failure(error)
         }
     }
 
     private func handle(event: CronaProtocolEvent) {
         switch event.type {
-        case "timer.state", "session.started", "session.stopped", "session.ended", "timer.extended", "timer.boundary", "context.issue.changed":
+        case "timer.state", "timer.break_deferral_warning", "timer.break_deferred",
+             "session.started", "session.stopped", "session.ended", "timer.extended", "timer.boundary",
+             "context.issue.changed", "issue.created", "issue.updated", "issue.deleted",
+             "habit.created", "habit.updated", "habit.deleted", "habit.completed", "habit.uncompleted":
             cache[selectedDate] = nil
             let today = todayDate
             cache[today] = nil

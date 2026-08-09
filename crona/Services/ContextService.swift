@@ -75,7 +75,7 @@ final class ContextService: ObservableObject {
 
     static func shouldRefresh(for eventType: String) -> Bool {
         switch eventType {
-        case "context.repo.changed", "context.stream.changed", "context.issue.changed", "context.cleared", "timer.state", "session.started", "session.stopped", "session.ended", "timer.extended":
+        case "context.repo.changed", "context.stream.changed", "context.issue.changed", "context.cleared", "timer.state", "timer.break_deferral_warning", "timer.break_deferred", "session.started", "session.stopped", "session.ended", "timer.extended":
             return true
         default:
             return false

@@ -223,6 +223,8 @@ final class StatusBarService: NSObject {
             connectionState: model.connectionState,
             timerSnapshot: model.timerSnapshot,
             todayWorkedSeconds: appState.popoverStatsService.todayWorkedSeconds,
+            todayMetrics: appState.popoverStatsService.todayMetrics,
+            todayFocusScore: appState.popoverStatsService.todayFocusScore,
             now: now
         )
         let displayMode = appState.preferences.preferences.menuBarDisplayMode
@@ -462,6 +464,7 @@ final class StatusBarService: NSObject {
 
     private func showPopup() {
         guard let panel = popupPanel, let button = statusItem.button else { return }
+        Task { await appState?.coreSettingsService.refresh() }
         let interval = signposter.beginInterval("Open Popup")
         defer { signposter.endInterval("Open Popup", interval) }
         animationGeneration &+= 1

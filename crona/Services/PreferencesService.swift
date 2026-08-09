@@ -175,6 +175,9 @@ enum MenuBarDisplayMode: String, Codable, Equatable, CaseIterable, Identifiable 
 enum MenuBarIdleTextMode: String, Codable, Equatable, CaseIterable, Identifiable {
     case idle
     case focusToday
+    case issueBreakdown
+    case totalTime
+    case focusScore
 
     var id: String { rawValue }
 
@@ -184,6 +187,12 @@ enum MenuBarIdleTextMode: String, Codable, Equatable, CaseIterable, Identifiable
             return "Idle"
         case .focusToday:
             return "Focus Today"
+        case .issueBreakdown:
+            return "Issue Breakdown"
+        case .totalTime:
+            return "Total Time"
+        case .focusScore:
+            return "Focus Score"
         }
     }
 }
@@ -220,7 +229,6 @@ struct CompanionPreferences: Codable, Equatable {
     static let hardLimitWarningLeadTimeOptions = [10, 20, 30]
     static let breakScreenStrictDelayOptions = [5, 10, 15, 30, 60]
     static let breakScreenActivityExtensionOptions = [30, 60, 120]
-    static let breakScreenActivityCapOptions = [120, 300, 600]
     static let smartPauseIdleOptions = [30, 60, 120, 300, 600]
 
     var launchAtLogin = false
@@ -244,7 +252,6 @@ struct CompanionPreferences: Codable, Equatable {
     var breakScreenStrictDelaySeconds = 15
     var breakScreenActivityDeferral: BreakScreenActivityDeferral = .allModes
     var breakScreenActivityExtensionSeconds = 60
-    var breakScreenActivityDeferralCapSeconds = 300
     var breakScreenBackgroundStyle: BreakScreenBackgroundStyle = .systemWallpaper
     var breakScreenSolidColor = CompanionRGBAColor.breakScreenDefault
     var breakScreenGradientPreset: BreakScreenGradientPreset = .graphite
@@ -295,7 +302,6 @@ extension CompanionPreferences {
         case breakScreenStrictDelaySeconds
         case breakScreenActivityDeferral
         case breakScreenActivityExtensionSeconds
-        case breakScreenActivityDeferralCapSeconds
         case breakScreenBackgroundStyle
         case breakScreenSolidColor
         case breakScreenGradientPreset
@@ -365,8 +371,6 @@ extension CompanionPreferences {
             ?? .allModes
         breakScreenActivityExtensionSeconds =
             try values.decodeIfPresent(Int.self, forKey: .breakScreenActivityExtensionSeconds) ?? 60
-        breakScreenActivityDeferralCapSeconds =
-            try values.decodeIfPresent(Int.self, forKey: .breakScreenActivityDeferralCapSeconds) ?? 300
         breakScreenBackgroundStyle =
             try values.decodeIfPresent(BreakScreenBackgroundStyle.self, forKey: .breakScreenBackgroundStyle)
             ?? .systemWallpaper
@@ -406,7 +410,6 @@ extension CompanionPreferences {
         try values.encode(breakScreenStrictDelaySeconds, forKey: .breakScreenStrictDelaySeconds)
         try values.encode(breakScreenActivityDeferral, forKey: .breakScreenActivityDeferral)
         try values.encode(breakScreenActivityExtensionSeconds, forKey: .breakScreenActivityExtensionSeconds)
-        try values.encode(breakScreenActivityDeferralCapSeconds, forKey: .breakScreenActivityDeferralCapSeconds)
         try values.encode(breakScreenBackgroundStyle, forKey: .breakScreenBackgroundStyle)
         try values.encode(breakScreenSolidColor, forKey: .breakScreenSolidColor)
         try values.encode(breakScreenGradientPreset, forKey: .breakScreenGradientPreset)
@@ -449,10 +452,6 @@ final class PreferencesService: ObservableObject {
                 CompanionPreferences.breakScreenActivityExtensionOptions.min {
                     abs($0 - decoded.breakScreenActivityExtensionSeconds) < abs($1 - decoded.breakScreenActivityExtensionSeconds)
                 } ?? 60
-            normalized.breakScreenActivityDeferralCapSeconds =
-                CompanionPreferences.breakScreenActivityCapOptions.min {
-                    abs($0 - decoded.breakScreenActivityDeferralCapSeconds) < abs($1 - decoded.breakScreenActivityDeferralCapSeconds)
-                } ?? 300
             self.preferences = normalized
         } else {
             self.preferences = CompanionPreferences()

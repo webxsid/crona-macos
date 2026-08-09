@@ -228,6 +228,8 @@ struct NowTabView: View {
                         displayClock: displayClock
                     )
                 }
+            } else if appState.todayIsAway {
+                AwayModeView(appState: appState)
             } else if let issue = appState.selectedFocusIssue {
                 FocusStartConfigView(appState: appState, issue: issue)
             } else {
@@ -274,6 +276,57 @@ struct NowTabView: View {
             .scrollIndicators(.hidden)
             .frame(maxHeight: 480)
         }
+    }
+}
+
+struct AwayModeView: View {
+    @ObservedObject var appState: CompanionAppState
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "figure.walk.circle.fill")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.red.opacity(0.82))
+
+            Text("Away Mode")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(PopupVisualTheme.primaryText)
+
+            Text("You chose to rest and recover today.")
+                .font(.subheadline)
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
+                .multilineTextAlignment(.center)
+
+            if appState.coreSettingsService.settings.awayModeEnabled {
+                Button {
+                    appState.setAwayMode(false)
+                } label: {
+                    if appState.coreSettingsService.isSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Disable Away", systemImage: "sun.max.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(appState.coreSettingsService.isSaving)
+            } else {
+                Text("Today is protected by a configured rest rule.")
+                    .font(.caption)
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.52))
+            }
+
+            if let error = appState.coreSettingsService.lastErrorDescription, !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.9))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .padding(.horizontal, 20)
+        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
     }
 }
 
@@ -439,6 +492,25 @@ struct IdleFocusView: View {
                 Text("Ready to Focus")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(PopupVisualTheme.primaryText)
+            }
+
+            Button {
+                appState.setAwayMode(true)
+            } label: {
+                if appState.coreSettingsService.isSaving {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("Enable Away Today", systemImage: "figure.walk.circle")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.coreSettingsService.isSaving)
+
+            if let error = appState.coreSettingsService.lastErrorDescription, !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.9))
             }
 
             if appState.dailyFocusService.snapshot.issues.isEmpty {
@@ -687,6 +759,7 @@ struct FocusStartConfigView: View {
 
 struct StatsTabView: View {
     @ObservedObject var appState: CompanionAppState
+    @ObservedObject private var systemGlass = SystemGlassSettings.shared
     @State private var isShowingCalendar = false
 
     var body: some View {
@@ -699,7 +772,7 @@ struct StatsTabView: View {
                 }
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
+                    withAnimation(statsAnimation) {
                         if isShowingCalendar {
                             appState.popoverStatsService.showToday()
                             isShowingCalendar = false
@@ -739,7 +812,9 @@ struct StatsTabView: View {
         ScrollView(.vertical) {
             ZStack {
                 VStack(spacing: 12) {
-                    if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
+                    if appState.coreSettingsService.isHistoricalAwayDate(snapshot.date) {
+                        HistoricalAwayStatsView(date: snapshot.date)
+                    } else if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
                         scoreHero(score: score, message: snapshot.scoreMessage)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
@@ -952,7 +1027,10 @@ struct StatsTabView: View {
         .padding(14)
         .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
         .task(id: visibleDates) {
-            await appState.popoverStatsService.prefetchCalendarDates(visibleDates)
+            let scoreDates = visibleDates.filter {
+                !appState.coreSettingsService.isHistoricalAwayDate($0)
+            }
+            await appState.popoverStatsService.prefetchCalendarDates(scoreDates)
         }
     }
 
@@ -967,11 +1045,15 @@ struct StatsTabView: View {
         let isFuture = date.map { calendar.compare($0, to: today, toGranularity: .day) == .orderedDescending } ?? false
         let cached = date.flatMap { appState.popoverStatsService.cachedSnapshot(for: calendarDateString(for: $0)) }
         let score = cached?.focusScore?.score
+        let isAway = date.map { appState.coreSettingsService.isHistoricalAwayDate(calendarDateString(for: $0)) } ?? false
 
         return Button {
             guard let date else { return }
-            withAnimation(.easeInOut(duration: 0.18)) {
-                appState.popoverStatsService.selectDate(calendarDateString(for: date))
+            withAnimation(statsAnimation) {
+                appState.popoverStatsService.selectDate(
+                    calendarDateString(for: date),
+                    isHistoricalAway: isAway
+                )
                 isShowingCalendar = false
             }
         } label: {
@@ -982,7 +1064,7 @@ struct StatsTabView: View {
                 Circle()
                     .strokeBorder(
                         isToday ? PopupVisualTheme.highlightedBorder : PopupVisualTheme.primaryText.opacity(isFuture ? 0.05 : 0.08),
-                        lineWidth: isToday ? 1.3 : 1
+                        lineWidth: systemGlass.increaseContrast ? 2 : (isToday ? 1.3 : 1)
                     )
 
                 if let score {
@@ -1006,7 +1088,22 @@ struct StatsTabView: View {
                 if let date {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(selected ? PopupVisualTheme.selectedControlText : PopupVisualTheme.primaryText)
+                        .foregroundStyle(
+                            isAway
+                                ? .red.opacity(0.9)
+                                : selected
+                                    ? PopupVisualTheme.selectedControlText
+                                    : PopupVisualTheme.primaryText
+                        )
+                }
+
+                if isAway {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: systemGlass.differentiateWithoutColor ? 9 : 7, weight: .bold))
+                        .foregroundStyle(.red)
+                        .padding(2)
+                        .background(Circle().fill(PopupVisualTheme.cardBackground))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
             }
             .frame(height: 34)
@@ -1014,6 +1111,49 @@ struct StatsTabView: View {
         }
         .buttonStyle(.plain)
         .disabled(date == nil || isFuture)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            date.map {
+                CalendarDayAccessibility.label(
+                    date: calendarDateString(for: $0),
+                    isAway: isAway,
+                    isToday: isToday,
+                    isSelected: selected,
+                    score: score
+                )
+            } ?? "Empty calendar day"
+        )
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private struct HistoricalAwayStatsView: View {
+        let date: String
+
+        var body: some View {
+            VStack(spacing: 14) {
+                Image(systemName: "figure.walk.circle.fill")
+                    .font(.system(size: 38, weight: .semibold))
+                    .foregroundStyle(.red.opacity(0.82))
+                Text("Away Mode")
+                    .font(.title3.weight(.bold))
+                Text("You chose to rest and recover on \(displayDate).")
+                    .font(.subheadline)
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 50)
+            .padding(.horizontal, 20)
+            .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
+        }
+
+        private var displayDate: String {
+            CronaCalendarDate.localizedString(from: date) ?? date
+        }
+    }
+
+    private var statsAnimation: Animation? {
+        systemGlass.reduceMotion ? nil : .easeInOut(duration: 0.18)
     }
 
     private func calendarGridDays(containing date: Date) -> [Date?] {
@@ -2573,6 +2713,9 @@ final class SystemGlassSettings: ObservableObject {
     static let shared = SystemGlassSettings()
 
     @Published private(set) var reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    @Published private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    @Published private(set) var increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+    @Published private(set) var differentiateWithoutColor = NSWorkspace.shared.accessibilityDisplayShouldDifferentiateWithoutColor
 
     private var observer: NSObjectProtocol?
 
@@ -2583,9 +2726,16 @@ final class SystemGlassSettings: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+                self?.refresh()
             }
         }
+    }
+
+    private func refresh() {
+        reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        differentiateWithoutColor = NSWorkspace.shared.accessibilityDisplayShouldDifferentiateWithoutColor
     }
 
     isolated deinit {

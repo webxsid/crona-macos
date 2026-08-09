@@ -160,6 +160,20 @@ enum CronaCalendarDate {
         formatter().string(from: date)
     }
 
+    static func localizedString(
+        from value: String,
+        locale: Locale = .autoupdatingCurrent
+    ) -> String? {
+        guard let date = date(from: value) else { return nil }
+        return date.formatted(
+            .dateTime
+                .year()
+                .month(.abbreviated)
+                .day()
+                .locale(locale)
+        )
+    }
+
     static func adding(days: Int, to value: String) -> String? {
         guard let date = date(from: value) else { return nil }
         var calendar = Calendar(identifier: .gregorian)

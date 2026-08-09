@@ -4,11 +4,20 @@ All notable changes to **Crona for macOS** are documented here.
 
 ## Unreleased
 
+No unreleased changes.
+
+## [1.0.0-beta.9] - 2026-08-09
+
+Crona for macOS v1.0.0-beta.9 moves break deferral authority into the daemon and refreshes the companion’s release and protocol integration.
+
 ### Added
 
 - A dedicated documentation set for the macOS client, covering installation, runtime behavior, development, release process, and troubleshooting.
 - A user-facing General setting to hide Crona from the Dock when no app window is open.
 - A branded DMG background and checked-in `dmgbuild` layout configuration for release packaging.
+- Away Today controls with a dedicated recovery view and daemon-owned live state.
+- Historical away-day summaries and red away dates in the Stats calendar.
+- Issue Breakdown, Total Time, and Focus Score options for idle menu-bar text.
 
 ### Changed
 
@@ -17,6 +26,23 @@ All notable changes to **Crona for macOS** are documented here.
 - Repeated daemon launch failures now latch the companion into the existing connection error state instead of reconnecting indefinitely.
 - Dock activation now returns release builds to menu-bar-only mode when the Settings window closes, unless the new Dock preference disables that behavior.
 - Release packaging now builds a styled DMG with pinned `dmgbuild` and an isolated virtualenv in CI.
+- The companion now targets daemon protocol version `1.3` for the daemon-owned break-deferral handoff.
+- The Stats Target card now uses the daemon's estimate-derived `targetWorkedSeconds` value.
+- Connected core settings reload from `settings.changed`, popup opening, and app activation.
+- Away dates use a non-color calendar marker, localized date presentation, and richer VoiceOver labels.
+- The popup adapts Stats animations and calendar contrast to macOS accessibility display settings.
+- Release CI runs the Release-optimized unit suite before importing signing credentials.
+
+### Fixed
+
+- Break deferral now follows the daemon’s five-second warning and authoritative timer transition instead of a companion-side activity timer.
+- Alert delivery ACKs now carry the configured break-deferral action and extension seconds.
+- Companion-owned per-session deferral caps and obsolete direct deferral requests were removed.
+- Activity Guard again requests deferral only after recent keyboard or drag activity while the daemon remains authoritative.
+- Live away state no longer remains enabled merely because the current date exists in historical `awayDates`.
+- Idle menu-bar metrics remain anchored to today while browsing historical Stats dates.
+- Today metrics and focus score update independently, so one failed daemon endpoint no longer leaves unrelated menu-bar values stale.
+- Calendar score prefetching no longer overwrites already-cached daily metrics.
 
 ## [1.0.0-beta.8] - 2026-08-05
 

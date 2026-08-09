@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import OSLog
@@ -181,6 +182,101 @@ final class DayBoundarySettingsService: ObservableObject {
             }
             isSaving = false
         }
+    }
+}
+
+@MainActor
+final class CoreSettingsService: ObservableObject {
+    private let daemonConnection: DaemonConnectionService
+    private let logger = Logger(subsystem: "com.crona.macos", category: "core-settings")
+    private var eventObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshToken: UUID?
+
+    @Published private(set) var settings = CronaCoreSettings()
+    @Published private(set) var lastErrorDescription: String?
+    @Published private(set) var isSaving = false
+
+    init(daemonConnection: DaemonConnectionService) {
+        self.daemonConnection = daemonConnection
+        eventObserver = NotificationCenter.default.addObserver(
+            forName: .cronaDaemonEventReceived,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let event = notification.object as? CronaProtocolEvent,
+                  event.type == "settings.changed"
+            else { return }
+            Task { await self?.refresh() }
+        }
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
+    }
+
+    isolated deinit {
+        if let eventObserver { NotificationCenter.default.removeObserver(eventObserver) }
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+    }
+
+    func refresh() async {
+        guard daemonConnection.connectionState == .connected else { return }
+        if let refreshTask {
+            await refreshTask.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performRefresh()
+        }
+        let token = UUID()
+        refreshTask = task
+        refreshToken = token
+        await task.value
+        if refreshToken == token {
+            refreshTask = nil
+            refreshToken = nil
+        }
+    }
+
+    private func performRefresh() async {
+        do {
+            settings = try await daemonConnection.withClient { try await $0.coreSettingsGet() }
+            lastErrorDescription = nil
+        } catch {
+            lastErrorDescription = error.localizedDescription
+            logger.error("Failed to load core settings: \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
+    func setAwayMode(_ enabled: Bool) async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            await refresh()
+            _ = try await daemonConnection.withClient { try await $0.setAwayMode(enabled: enabled) }
+            await refresh()
+        } catch {
+            lastErrorDescription = error.localizedDescription
+            logger.error("Failed to set away mode: \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
+    var todayIsAway: Bool {
+        let date = daemonConnection.currentDate.isEmpty
+            ? DailyFocusService.todayString()
+            : daemonConnection.currentDate
+        return settings.awayModeEnabled || settings.isConfiguredRestDate(date)
+    }
+
+    func isHistoricalAwayDate(_ date: String) -> Bool {
+        settings.isHistoricalAwayDate(date)
     }
 }
 

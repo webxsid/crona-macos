@@ -140,10 +140,6 @@ final class CronaDaemonClient {
         try await request(method: "timer.extend", params: AnyEncodable(input))
     }
 
-    func timerExtendCurrentSession(_ input: CronaTimerExtendCurrentSessionRequest) async throws -> CronaTimerState {
-        try await request(method: "timer.extend_current_session", params: AnyEncodable(input))
-    }
-
     func timerEnd(commitMessage: String) async throws -> CronaOKResponse {
         try await request(method: "timer.end", params: AnyEncodable(CronaEndSessionRequest(commitMessage: commitMessage)))
     }
@@ -232,6 +228,18 @@ final class CronaDaemonClient {
 
     func metricsRange(start: String, end: String) async throws -> [CronaDailyMetricsDay] {
         try await request(method: "metrics.range", params: AnyEncodable(CronaDateRangeQuery(start: start, end: end)))
+    }
+
+    func coreSettingsGet() async throws -> CronaCoreSettings {
+        let allSettings: [String: CronaCoreSettings] = try await request(method: "settings.get_all")
+        return allSettings["local"] ?? allSettings.values.first ?? CronaCoreSettings()
+    }
+
+    func setAwayMode(enabled: Bool) async throws -> CronaOKResponse {
+        try await request(
+            method: "settings.away_mode",
+            params: AnyEncodable(CronaAwayModeRequest(enabled: enabled))
+        )
     }
 
     func dashboardFocusScore(start: String, end: String) async throws -> CronaFocusScoreSummary {

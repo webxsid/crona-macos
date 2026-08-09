@@ -78,6 +78,18 @@ jobs:
             -scheme crona \
             -clonedSourcePackagesDirPath .build/SourcePackages
 
+      - name: Run Release unit tests
+        run: |
+          xcodebuild test \
+            -project crona.xcodeproj \
+            -scheme crona \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_TESTABILITY=YES \
+            -only-testing:cronaTests
+
       - name: Import Developer ID certificate
         env:
           CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}

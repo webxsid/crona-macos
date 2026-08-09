@@ -71,6 +71,24 @@ struct StatsPopoverModel: Equatable {
     let snapshot: PopoverStatsSnapshot
 }
 
+enum CalendarDayAccessibility {
+    static func label(
+        date: String,
+        isAway: Bool,
+        isToday: Bool,
+        isSelected: Bool,
+        score: Int?,
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        var parts = [CronaCalendarDate.localizedString(from: date, locale: locale) ?? date]
+        if isAway { parts.append("away day") }
+        if isToday { parts.append("today") }
+        if isSelected { parts.append("selected") }
+        if let score { parts.append("focus score \(score)") }
+        return parts.joined(separator: ", ")
+    }
+}
+
 enum FocusSessionMode: String, CaseIterable, Equatable, Identifiable {
     case stopwatch
     case pomodoro

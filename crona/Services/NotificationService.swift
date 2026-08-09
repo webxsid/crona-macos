@@ -11,6 +11,20 @@ enum NativeAlertDeliveryState: String {
     case failed
 }
 
+enum BreakDeferralPolicy {
+    static func seconds(preferences: CompanionPreferences, recentlyActive: Bool) -> Int? {
+        guard recentlyActive,
+              preferences.breakScreenActivityDeferral != .off,
+              preferences.breakScreenActivityDeferral == .allModes
+                || preferences.breakScreenMode != .hard,
+              CompanionPreferences.breakScreenActivityExtensionOptions.contains(
+                preferences.breakScreenActivityExtensionSeconds
+              )
+        else { return nil }
+        return preferences.breakScreenActivityExtensionSeconds
+    }
+}
+
 enum CompanionAlertRouting {
     static let timerCompletionKinds: Set<String> = [
         "timer.work_complete",
@@ -89,6 +103,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private var onAdvanceTimer: ((String) -> Void)?
     private var onFocusInactivity: ((CronaAlertDelivery) async -> Bool)?
     private var shouldSilenceAlert: ((String) -> Bool)?
+    private var breakDeferralSeconds: (() -> Int?)?
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var soundSetting: UNNotificationSetting = .notSupported
@@ -108,7 +123,8 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         onOpenTUI: @escaping () -> Void,
         onAdvanceTimer: @escaping (String) -> Void,
         onFocusInactivity: @escaping (CronaAlertDelivery) async -> Bool,
-        shouldSilenceAlert: @escaping (String) -> Bool
+        shouldSilenceAlert: @escaping (String) -> Bool,
+        breakDeferralSeconds: @escaping () -> Int?
     ) {
         self.daemonConnection = daemonConnection
         self.onOpenCrona = onOpenCrona
@@ -116,6 +132,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         self.onAdvanceTimer = onAdvanceTimer
         self.onFocusInactivity = onFocusInactivity
         self.shouldSilenceAlert = shouldSilenceAlert
+        self.breakDeferralSeconds = breakDeferralSeconds
 
         daemonStateCancellables.removeAll()
         Publishers.CombineLatest(
@@ -296,6 +313,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private func handle(_ delivery: CronaAlertDelivery, client: CronaDaemonClient) async {
         var notificationAccepted = !delivery.deliverNotification
         var soundAccepted = !delivery.playSound
+        let breakDeferralAction = action(for: delivery)
         let silence = shouldSilenceAlert?(delivery.alert.kind) == true
         let notificationCenterCanPlaySound = soundSetting == .enabled
 
@@ -313,7 +331,8 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
                 delivery: delivery,
                 client: client,
                 notificationAccepted: notificationAccepted,
-                soundAccepted: soundAccepted
+                soundAccepted: soundAccepted,
+                action: breakDeferralAction
             )
             return
         }
@@ -325,7 +344,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             if delivery.playSound {
                 soundAccepted = playSound(for: delivery.alert.soundPreset)
             }
-            await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted)
+            await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted, action: breakDeferralAction)
             return
         }
 
@@ -359,21 +378,33 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
             soundAccepted = playSound(for: delivery.alert.soundPreset)
         }
 
-        await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted)
+        await acknowledge(delivery: delivery, client: client, notificationAccepted: notificationAccepted, soundAccepted: soundAccepted, action: breakDeferralAction)
+    }
+
+    private func action(for delivery: CronaAlertDelivery) -> (id: String, seconds: Int)? {
+        guard delivery.alert.kind == "timer.break_deferral_warning",
+              delivery.actions?.contains(where: { $0.id == "timer.defer_break" }) == true,
+              let seconds = breakDeferralSeconds?(),
+              seconds > 0
+        else { return nil }
+        return ("timer.defer_break", seconds)
     }
 
     private func acknowledge(
         delivery: CronaAlertDelivery,
         client: CronaDaemonClient,
         notificationAccepted: Bool,
-        soundAccepted: Bool
+        soundAccepted: Bool,
+        action: (id: String, seconds: Int)? = nil
     ) async {
         do {
             _ = try await client.acknowledgeAlertDelivery(
                 CronaAlertDeliveryAck(
                     deliveryID: delivery.id,
                     notificationAccepted: notificationAccepted,
-                    soundAccepted: soundAccepted
+                    soundAccepted: soundAccepted,
+                    actionID: action?.id,
+                    actionSeconds: action?.seconds
                 )
             )
         } catch {
