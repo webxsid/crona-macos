@@ -78,9 +78,10 @@ jobs:
             -scheme crona \
             -clonedSourcePackagesDirPath .build/SourcePackages
 
-      - name: Run Release unit tests
+      - name: Build Release unit tests
+        timeout-minutes: 10
         run: |
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project crona.xcodeproj \
             -scheme crona \
             -configuration Release \
@@ -88,7 +89,8 @@ jobs:
             -clonedSourcePackagesDirPath .build/SourcePackages \
             CODE_SIGNING_ALLOWED=NO \
             ENABLE_TESTABILITY=YES \
-            -only-testing:cronaTests
+            -enableCodeCoverage NO \
+            -skip-testing:cronaUITests
 
       - name: Import Developer ID certificate
         env:

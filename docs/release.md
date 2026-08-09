@@ -61,7 +61,7 @@ Generate the Sparkle key pair once with Sparkle's `generate_keys` tool. Store th
 2. Increment `CURRENT_PROJECT_VERSION`.
 3. Add the release entry to `docs/changelog.md` and create `docs/release-notes/<tag>.md`.
 4. Run the macOS unit suite with Release optimization and testability enabled:
-   `xcodebuild -project crona.xcodeproj -scheme crona -configuration Release CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES test -destination "platform=macOS" -only-testing:cronaTests`.
+   `xcodebuild -project crona.xcodeproj -scheme crona -configuration Release CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES test -destination "platform=macOS" -enableCodeCoverage NO -only-testing:cronaTests`.
    For protocol releases, also run the matching core Crona tests and verify the documented protocol version and event contract.
 5. Commit the version metadata and release documentation.
 6. Create and push the tag.
@@ -84,7 +84,7 @@ The workflow validates:
 The workflow:
 
 - resolves Swift package dependencies
-- runs the unit suite with Release optimization and testability enabled before accessing signing credentials
+- builds the Release-optimized test products without launching GUI XCTest infrastructure before accessing signing credentials
 - imports the Developer ID certificate into a temporary keychain
 - archives a universal app for `arm64` and `x86_64`
 - injects `CRONA_RELEASE_CHANNEL` and full `CRONA_RELEASE_VERSION`

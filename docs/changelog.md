@@ -31,7 +31,7 @@ Crona for macOS v1.0.0-beta.9 moves break deferral authority into the daemon and
 - Connected core settings reload from `settings.changed`, popup opening, and app activation.
 - Away dates use a non-color calendar marker, localized date presentation, and richer VoiceOver labels.
 - The popup adapts Stats animations and calendar contrast to macOS accessibility display settings.
-- Release CI runs the Release-optimized unit suite before importing signing credentials.
+- Release CI builds the Release-optimized test products without launching GUI XCTest infrastructure before importing signing credentials.
 
 ### Fixed
 
