@@ -3,7 +3,9 @@ import Foundation
 import OSLog
 
 struct ContextSnapshot: Equatable {
+    var repoID: Int64?
     var repoName: String?
+    var streamID: Int64?
     var streamName: String?
     var issueTitle: String?
     var isConnected = false
@@ -61,7 +63,9 @@ final class ContextService: ObservableObject {
                 return
             }
             snapshot = ContextSnapshot(
+                repoID: context.repoID,
                 repoName: context.repoName,
+                streamID: context.streamID,
                 streamName: context.streamName,
                 issueTitle: context.issueTitle,
                 isConnected: true

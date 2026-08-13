@@ -2685,6 +2685,42 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(requestProbe.params["id"]?.intValue, 42)
     }
 
+    func testDaemonClientBuildsRepoAndStreamListRequests() async throws {
+        let repoTransport = CapturingDaemonTransport(responseData: Data(#"{"id":"response-1","result":[{"id":3,"name":"Crona"}]}"#.utf8))
+        let repos = try await CronaDaemonClient(transport: repoTransport).listRepos()
+        XCTAssertEqual(repos, [CronaRepo(id: 3, name: "Crona")])
+        let repoRequest = try JSONDecoder().decode(RequestProbe.self, from: XCTUnwrap(repoTransport.requestData))
+        XCTAssertEqual(repoRequest.method, "repo.list")
+
+        let streamTransport = CapturingDaemonTransport(responseData: Data(#"{"id":"response-1","result":[{"id":7,"repoId":3,"name":"macOS"}]}"#.utf8))
+        let streams = try await CronaDaemonClient(transport: streamTransport).listStreams(repoID: 3)
+        XCTAssertEqual(streams, [CronaStream(id: 7, repoID: 3, name: "macOS")])
+        let request = try JSONDecoder().decode(RequestWithParamsProbe.self, from: XCTUnwrap(streamTransport.requestData))
+        XCTAssertEqual(request.method, "stream.list")
+        XCTAssertEqual(request.params["repoId"]?.intValue, 3)
+    }
+
+    func testDaemonClientBuildsIssueCreateRequestAndOmitsEmptyOptions() async throws {
+        let transport = CapturingDaemonTransport(responseData: issueResponseData(status: "planned", todoForDate: "2026-08-13"))
+        let client = CronaDaemonClient(transport: transport)
+        _ = try await client.createIssue(CronaCreateIssueRequest(
+            streamID: 7,
+            title: "Ship quick create",
+            description: nil,
+            estimateMinutes: 45,
+            todoForDate: "2026-08-13"
+        ))
+
+        let request = try JSONDecoder().decode(RequestWithParamsProbe.self, from: XCTUnwrap(transport.requestData))
+        XCTAssertEqual(request.method, "issue.create")
+        XCTAssertEqual(request.params["streamId"]?.intValue, 7)
+        XCTAssertEqual(request.params["title"]?.stringValue, "Ship quick create")
+        XCTAssertEqual(request.params["estimateMinutes"]?.intValue, 45)
+        XCTAssertEqual(request.params["todoForDate"]?.stringValue, "2026-08-13")
+        XCTAssertNil(request.params["description"])
+        XCTAssertNil(request.params["notes"])
+    }
+
     func testDaemonClientBuildsIssueStatusChangeRequestWithNote() async throws {
         let response = issueResponseData(status: "blocked", todoForDate: nil)
         let transport = CapturingDaemonTransport(responseData: response)
@@ -2748,6 +2784,30 @@ final class CronaCompanionTests: XCTestCase {
         )
         let date = try XCTUnwrap(CronaCalendarDate.date(from: "2026-08-02"))
         XCTAssertEqual(CronaCalendarDate.string(from: date), "2026-08-02")
+    }
+
+    func testFlexibleEstimateParserMatchesTUIInputs() throws {
+        let cases: [(String, Int?)] = [
+            ("", nil),
+            ("90", 90),
+            ("90m", 90),
+            ("1h30m", 90),
+            ("1.5h", 90),
+            ("1H34M23S", 94),
+            (" 45m ", 45)
+        ]
+        for (input, expected) in cases {
+            let result = FlexibleDurationParser.optionalMinutes(input)
+            XCTAssertEqual(try result.get(), expected, "Unexpected parse for \(input)")
+        }
+    }
+
+    func testFlexibleEstimateParserRejectsMalformedAndNegativeInputs() {
+        for input in ["-1", "tomorrow", "1h30", "1:30"] {
+            if case .success = FlexibleDurationParser.optionalMinutes(input) {
+                XCTFail("Expected \(input) to be rejected")
+            }
+        }
     }
 
     func testDaemonClientBuildsHabitCompleteRequest() async throws {
@@ -3079,6 +3139,8 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(PopoverModalKind.statusNote.minimumHeight, 260)
         XCTAssertEqual(PopoverModalKind.endSession.minimumHeight, 360)
         XCTAssertEqual(PopoverModalKind.dueDate.minimumHeight, 430)
+        XCTAssertEqual(PopoverModalKind.issueCreate.minimumHeight, 560)
+        XCTAssertLessThan(PopoverModalKind.issueCreate.minimumHeight, StatusPopupSizing.maximumHeight)
         XCTAssertLessThan(PopoverModalKind.dueDate.minimumHeight, StatusPopupSizing.maximumHeight)
     }
 

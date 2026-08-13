@@ -6,12 +6,14 @@ enum PopoverModalKind: Equatable {
     case statusNote
     case endSession
     case dueDate
+    case issueCreate
 
     var minimumHeight: CGFloat {
         switch self {
         case .statusNote: return 260
         case .endSession: return 360
         case .dueDate: return 430
+        case .issueCreate: return 560
         }
     }
 }
@@ -22,8 +24,37 @@ struct PopoverRootView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
+        ZStack(alignment: .top) {
+            dashboardSurface
+                .offset(x: appState.isIssueCreatorContentVisible ? -420 : 0)
+                .allowsHitTesting(!appState.isIssueCreatorPresented)
+
+            if appState.isIssueCreatorPresented {
+                IssueCreatorView(appState: appState)
+                    .offset(x: appState.isIssueCreatorContentVisible ? 0 : 420)
+                    .allowsHitTesting(appState.isIssueCreatorContentVisible)
+            }
+        }
+        .frame(width: 420)
+        .frame(minHeight: modalMinimumHeight)
+        .background(PopoverGlassBackground())
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
+        .onAppear {
+            appState.registerSettingsSceneAction {
+                openSettings()
+            }
+        }
+        .companionAppearance(appState)
+    }
+
+    private var dashboardSurface: some View {
         VStack(spacing: 16) {
             header
+
+            if let success = appState.issueCreationSuccess {
+                IssueCreationSuccessView(appState: appState, success: success)
+            }
 
             if appState.appUpdateService.hasAvailableUpdate,
                 !appState.isUpdatePresentationBlocked
@@ -87,12 +118,10 @@ struct PopoverRootView: View {
         }
         .padding(14)
         .frame(width: 420)
-        .frame(minHeight: modalMinimumHeight)
-        .background(PopoverGlassBackground())
-        .opacity(hasPresentedModal ? 0.38 : 1)
-        .blur(radius: hasPresentedModal ? 3 : 0)
-        .scaleEffect(hasPresentedModal ? 0.985 : 1)
-        .allowsHitTesting(!hasPresentedModal)
+        .opacity(hasDashboardModal ? 0.38 : 1)
+        .blur(radius: hasDashboardModal ? 3 : 0)
+        .scaleEffect(hasDashboardModal ? 0.985 : 1)
+        .allowsHitTesting(!hasDashboardModal)
         .overlay {
             if appState.isEndSessionSheetPresented {
                 PopoverModalScrim {
@@ -125,24 +154,20 @@ struct PopoverRootView: View {
                     )
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         .animation(.easeInOut(duration: 0.16), value: appState.isEndSessionSheetPresented)
         .animation(.easeInOut(duration: 0.16), value: appState.issueActionEditor)
-        .onAppear {
-            appState.registerSettingsSceneAction {
-                openSettings()
-            }
-        }
-        .companionAppearance(appState)
     }
 
-    private var hasPresentedModal: Bool {
+    private var hasDashboardModal: Bool {
         appState.isEndSessionSheetPresented || appState.issueActionEditor != nil
     }
 
     private var modalMinimumHeight: CGFloat? {
         if appState.isEndSessionSheetPresented {
             return PopoverModalKind.endSession.minimumHeight
+        }
+        if appState.isIssueCreatorPresented {
+            return PopoverModalKind.issueCreate.minimumHeight
         }
         switch appState.issueActionEditor {
         case .status:
@@ -168,7 +193,27 @@ struct PopoverRootView: View {
             }
 
             HStack {
+                Button(action: appState.presentIssueCreator) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.7))
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(PopupVisualTheme.primaryText.opacity(0.06)))
+                        .menuBarIconHitTarget()
+                }
+                .buttonStyle(.plain)
+                .help("Create Issue")
+                .accessibilityLabel("Create Issue")
+                .disabled(
+                    appState.daemonConnection.connectionState != .connected
+                        || appState.isEndSessionSheetPresented
+                        || appState.issueActionEditor != nil
+                        || appState.isIssueCreatorPresented
+                        || appState.issueCreationService.isCreating
+                )
+
                 Spacer()
+
                 Menu {
                     Button("About Crona", action: appState.openAbout)
 
@@ -2846,7 +2891,7 @@ private struct PopoverModalScrim: View {
     }
 }
 
-private struct PopoverDialogBackground: View {
+struct PopoverDialogBackground: View {
     let cornerRadius: CGFloat
     @ObservedObject private var systemGlass = SystemGlassSettings.shared
 

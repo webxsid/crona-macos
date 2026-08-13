@@ -6,6 +6,31 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.10] - 2026-08-13
+
+Crona for macOS v1.0.0-beta.10 adds daily wellbeing check-ins, an optional floating timer, and fast issue creation directly from the menu bar.
+
+### Added
+
+- A Wellbeing tab for recording and updating today's mood, energy, stress, sleep quality, and note through the daemon.
+- An optional floating timer HUD that keeps the active timer visible outside the menu-bar popover.
+- A full-surface issue creator for creating issues in a selected repo and stream without opening the terminal UI.
+- Flexible estimate entry using the same minute and `HhMmSs` formats accepted by the TUI.
+- An option to add newly created issues to today's plan, with a follow-up action to start focus immediately.
+
+### Changed
+
+- Issue creation replaces the menu-bar dashboard with a dedicated navigation surface instead of appearing as a modal over it.
+- Repo and stream selection now uses a searchable two-column picker.
+- Settings use a consolidated sidebar and detail layout with clearer grouping and system toolbar treatment.
+- Menu-bar popup sizing and transitions are coordinated with the native panel to avoid repeated resizing during issue creation.
+
+### Fixed
+
+- Quick-create controls no longer collide with the menu-bar view tabs.
+- Expanding destination selection or additional issue fields no longer causes the outer panel to jump between sizes.
+- Interrupted issue-creator transitions no longer reveal stale or interactive hidden content.
+
 ## [1.0.0-beta.9] - 2026-08-09
 
 Crona for macOS v1.0.0-beta.9 moves break deferral authority into the daemon and refreshes the companion’s release and protocol integration.

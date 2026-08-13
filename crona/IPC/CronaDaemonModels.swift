@@ -415,6 +415,43 @@ struct CronaActiveContext: Codable, Equatable {
     }
 }
 
+struct CronaRepo: Codable, Equatable, Identifiable {
+    let id: Int64
+    let name: String
+}
+
+struct CronaStream: Codable, Equatable, Identifiable {
+    let id: Int64
+    let repoID: Int64
+    let name: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case repoID = "repoId"
+    }
+}
+
+struct CronaRepoIDRequest: Codable, Equatable {
+    let repoID: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case repoID = "repoId"
+    }
+}
+
+struct CronaCreateIssueRequest: Codable, Equatable {
+    let streamID: Int64
+    let title: String
+    let description: String?
+    let estimateMinutes: Int?
+    let todoForDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, description, estimateMinutes, todoForDate
+        case streamID = "streamId"
+    }
+}
+
 struct CronaTimerState: Codable, Equatable {
     let state: String
     let sessionID: String?

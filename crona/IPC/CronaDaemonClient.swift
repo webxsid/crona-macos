@@ -116,6 +116,14 @@ final class CronaDaemonClient {
         try await request(method: "context.get")
     }
 
+    func listRepos() async throws -> [CronaRepo] {
+        try await request(method: "repo.list")
+    }
+
+    func listStreams(repoID: Int64) async throws -> [CronaStream] {
+        try await request(method: "stream.list", params: AnyEncodable(CronaRepoIDRequest(repoID: repoID)))
+    }
+
     func timerGetState() async throws -> CronaTimerState {
         try await request(method: "timer.get_state")
     }
@@ -146,6 +154,10 @@ final class CronaDaemonClient {
 
     func issueTodaySummary() async throws -> CronaDailyIssueSummary {
         try await request(method: "issue.today_summary")
+    }
+
+    func createIssue(_ input: CronaCreateIssueRequest) async throws -> CronaIssue {
+        try await request(method: "issue.create", params: AnyEncodable(input))
     }
 
     func issueStatusTransitions(issueID: Int64) async throws -> CronaIssueStatusTransitions {

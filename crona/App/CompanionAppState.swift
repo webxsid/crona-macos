@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import OSLog
+import SwiftUI
 
 enum SettingsDestination: String, CaseIterable, Hashable, Identifiable {
     case general
@@ -36,6 +37,11 @@ struct SmartPauseResumeNotice: Equatable {
     let resumedAt: Date
 }
 
+struct IssueCreationSuccess: Equatable {
+    let issue: DailyFocusIssue
+    let plannedForToday: Bool
+}
+
 #if DEBUG
 enum DeveloperPreviewKind: Equatable {
     case hardLimit
@@ -61,6 +67,7 @@ final class CompanionAppState: ObservableObject {
     let contextService: ContextService
     let dailyFocusService: DailyFocusService
     let issueActionsService: IssueActionsService
+    let issueCreationService: IssueCreationService
     let habitsService: HabitsService
     let wellbeingService: WellbeingService
     let popoverStatsService: PopoverStatsService
@@ -78,6 +85,7 @@ final class CompanionAppState: ObservableObject {
     private var endSessionFallbackTask: Task<Void, Never>?
     private var hardLimitPopupDismissTask: Task<Void, Never>?
     private var smartPauseResumeNoticeDismissTask: Task<Void, Never>?
+    private var issueCreationSuccessDismissTask: Task<Void, Never>?
     private var presentationTimer: Timer?
     private var lastWarningIndicatorKey: String?
     private var settingsSceneAction: (() -> Void)?
@@ -86,6 +94,16 @@ final class CompanionAppState: ObservableObject {
     @Published var issueActionEditor: IssueActionEditor?
     @Published var issueActionNote = ""
     @Published var issueActionDate = Date()
+    @Published var isIssueCreatorPresented = false
+    @Published var isIssueCreatorContentVisible = false
+    @Published var issueCreateTitle = ""
+    @Published var issueCreateDescription = ""
+    @Published var issueCreateEstimate = ""
+    @Published var issueCreateForToday = true
+    @Published var issueCreateDestinationID: Int64?
+    @Published var issueCreateShowsMoreOptions = false
+    private var issueCreatorPresentationGeneration: UInt = 0
+    @Published var issueCreationSuccess: IssueCreationSuccess?
     @Published var selectedPopoverTab: PopoverTab = .now
     @Published private(set) var selectedSettingsDestination: SettingsDestination = .general
     @Published var isEndSessionSheetPresented = false
@@ -125,6 +143,7 @@ final class CompanionAppState: ObservableObject {
             daemonConnection: daemonConnection,
             dailyFocusService: dailyFocusService
         )
+        let issueCreationService = IssueCreationService(daemonConnection: daemonConnection)
         let habitsService = HabitsService(daemonConnection: daemonConnection)
         let wellbeingService = WellbeingService(daemonConnection: daemonConnection)
         let popoverStatsService = PopoverStatsService(daemonConnection: daemonConnection)
@@ -151,6 +170,7 @@ final class CompanionAppState: ObservableObject {
         self.timerService = timerService
         self.dailyFocusService = dailyFocusService
         self.issueActionsService = issueActionsService
+        self.issueCreationService = issueCreationService
         self.habitsService = habitsService
         self.wellbeingService = wellbeingService
         self.popoverStatsService = popoverStatsService
@@ -331,6 +351,7 @@ final class CompanionAppState: ObservableObject {
             || windowService.hardLimitPopupVisible
             || isEndSessionSheetPresented
             || issueActionEditor != nil
+            || isIssueCreatorPresented
     }
 
     func start() {
@@ -786,6 +807,153 @@ final class CompanionAppState: ObservableObject {
         selectedFocusIssue = nil
     }
 
+    func presentIssueCreator() {
+        guard daemonConnection.connectionState == .connected,
+              !isEndSessionSheetPresented,
+              issueActionEditor == nil
+        else { return }
+        issueCreationService.clearError()
+        issueCreateTitle = ""
+        issueCreateDescription = ""
+        issueCreateEstimate = ""
+        issueCreateForToday = true
+        issueCreateDestinationID = contextService.snapshot.streamID
+        issueCreateShowsMoreOptions = false
+        isIssueCreatorContentVisible = false
+        isIssueCreatorPresented = true
+        issueCreatorPresentationGeneration &+= 1
+        let presentationGeneration = issueCreatorPresentationGeneration
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.statusBarService.refreshPopupLayout { [weak self] in
+                guard let self,
+                      self.isIssueCreatorPresented,
+                      presentationGeneration == self.issueCreatorPresentationGeneration
+                else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    self.isIssueCreatorContentVisible = true
+                }
+            }
+        }
+        Task {
+            await issueCreationService.loadDestinations()
+            if !issueCreationService.destinations.contains(where: { $0.streamID == issueCreateDestinationID }) {
+                issueCreateDestinationID = nil
+            }
+            refreshPopupLayoutAfterStateChange()
+        }
+    }
+
+    func cancelIssueCreator() {
+        guard !issueCreationService.isCreating else { return }
+        issueCreationService.clearError()
+        dismissIssueCreatorPresentation()
+    }
+
+    func submitIssueCreator() {
+        let title = issueCreateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = issueCreateDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let estimateText = issueCreateEstimate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title.count <= 120,
+              description.count <= 2_000,
+              let streamID = issueCreateDestinationID
+        else { return }
+        guard case let .success(estimate) = FlexibleDurationParser.optionalMinutes(estimateText) else { return }
+        let logicalDate = daemonConnection.currentDate.isEmpty
+            ? (dailyFocusService.snapshot.date.isEmpty ? DailyFocusService.todayString() : dailyFocusService.snapshot.date)
+            : daemonConnection.currentDate
+        let request = CronaCreateIssueRequest(
+            streamID: streamID,
+            title: title,
+            description: description.isEmpty ? nil : description,
+            estimateMinutes: estimate,
+            todoForDate: issueCreateForToday ? logicalDate : nil
+        )
+        Task {
+            guard let created = await issueCreationService.create(request) else { return }
+            let issue = DailyFocusIssue(
+                id: created.id,
+                streamID: created.streamID,
+                title: created.title,
+                status: created.status,
+                estimateMinutes: created.estimateMinutes,
+                workedSeconds: created.workedSeconds,
+                todoForDate: created.todoForDate
+            )
+            issueCreationSuccess = IssueCreationSuccess(issue: issue, plannedForToday: issueCreateForToday)
+            await dismissIssueCreatorPresentationAndWait()
+            await dailyFocusService.refresh()
+            scheduleIssueCreationSuccessDismissal()
+            refreshPopupLayoutAfterStateChange()
+        }
+    }
+
+    func startFocusFromCreatedIssue() {
+        guard let success = issueCreationSuccess,
+              success.plannedForToday,
+              !hasActiveFocusSession
+        else { return }
+        issueCreationSuccessDismissTask?.cancel()
+        issueCreationSuccess = nil
+        selectedPopoverTab = .now
+        selectedFocusIssue = success.issue
+        refreshPopupLayoutAfterStateChange()
+    }
+
+    func dismissIssueCreationSuccess() {
+        issueCreationSuccessDismissTask?.cancel()
+        issueCreationSuccess = nil
+        refreshPopupLayoutAfterStateChange()
+    }
+
+    private func scheduleIssueCreationSuccessDismissal() {
+        issueCreationSuccessDismissTask?.cancel()
+        issueCreationSuccessDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.issueCreationSuccess = nil
+            self?.refreshPopupLayoutAfterStateChange()
+        }
+    }
+
+    private func dismissIssueCreatorPresentation() {
+        guard isIssueCreatorPresented else { return }
+        issueCreatorPresentationGeneration &+= 1
+        let presentationGeneration = issueCreatorPresentationGeneration
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isIssueCreatorContentVisible = false
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard let self,
+                  !self.isIssueCreatorContentVisible,
+                  presentationGeneration == self.issueCreatorPresentationGeneration
+            else { return }
+            self.isIssueCreatorPresented = false
+            await Task.yield()
+            self.statusBarService.refreshPopupLayout()
+        }
+    }
+
+    private func dismissIssueCreatorPresentationAndWait() async {
+        issueCreatorPresentationGeneration &+= 1
+        let presentationGeneration = issueCreatorPresentationGeneration
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isIssueCreatorContentVisible = false
+        }
+        try? await Task.sleep(for: .milliseconds(180))
+        guard !isIssueCreatorContentVisible,
+              presentationGeneration == issueCreatorPresentationGeneration
+        else { return }
+        isIssueCreatorPresented = false
+        await Task.yield()
+        await withCheckedContinuation { continuation in
+            statusBarService.refreshPopupLayout {
+                continuation.resume()
+            }
+        }
+    }
+
     func requestIssueStatusChange(
         issue: DailyFocusIssue,
         status: CronaIssueStatus
@@ -1045,6 +1213,7 @@ final class CompanionAppState: ObservableObject {
             contextService.objectWillChange.eraseToAnyPublisher(),
             dailyFocusService.objectWillChange.eraseToAnyPublisher(),
             issueActionsService.objectWillChange.eraseToAnyPublisher(),
+            issueCreationService.objectWillChange.eraseToAnyPublisher(),
             habitsService.objectWillChange.eraseToAnyPublisher(),
             wellbeingService.objectWillChange.eraseToAnyPublisher(),
             popoverStatsService.objectWillChange.eraseToAnyPublisher(),

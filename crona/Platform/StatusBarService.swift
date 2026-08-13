@@ -57,6 +57,7 @@ struct StatusPopupLayoutKey: Equatable {
     let wellbeingIsLoading: Bool
     let wellbeingIsSaving: Bool
     let wellbeingHasError: Bool
+    let hasIssueCreationSuccess: Bool
     let modalKind: PopoverModalKind?
     let showsUpdate: Bool
 
@@ -80,6 +81,7 @@ struct StatusPopupLayoutKey: Equatable {
         wellbeingIsLoading: Bool = false,
         wellbeingIsSaving: Bool = false,
         wellbeingHasError: Bool = false,
+        hasIssueCreationSuccess: Bool = false,
         modalKind: PopoverModalKind?,
         showsUpdate: Bool
     ) {
@@ -102,6 +104,7 @@ struct StatusPopupLayoutKey: Equatable {
         self.wellbeingIsLoading = wellbeingIsLoading
         self.wellbeingIsSaving = wellbeingIsSaving
         self.wellbeingHasError = wellbeingHasError
+        self.hasIssueCreationSuccess = hasIssueCreationSuccess
         self.modalKind = modalKind
         self.showsUpdate = showsUpdate
     }
@@ -178,9 +181,15 @@ final class StatusBarService: NSObject {
         }
     }
 
-    func refreshPopupLayout(animated: Bool = true) {
-        guard let panel = popupPanel, panel.isVisible else { return }
-        resizePanelToFit(panel, animated: animated, force: false)
+    func refreshPopupLayout(
+        animated: Bool = true,
+        completion: (@MainActor @Sendable () -> Void)? = nil
+    ) {
+        guard let panel = popupPanel, panel.isVisible else {
+            completion?()
+            return
+        }
+        resizePanelToFit(panel, animated: animated, force: false, completion: completion)
     }
 
     func dismissPopup(animated: Bool = true, completion: (() -> Void)? = nil) {
@@ -613,11 +622,15 @@ final class StatusBarService: NSObject {
     private func resizePanelToFit(
         _ panel: NSPanel,
         animated: Bool,
-        force: Bool
+        force: Bool,
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) {
         guard let hostingController, let appState else { return }
         let layoutKey = Self.layoutKey(for: appState)
-        guard force || layoutKey != lastLayoutKey else { return }
+        guard force || layoutKey != lastLayoutKey else {
+            completion?()
+            return
+        }
         let interval = signposter.beginInterval("Measure Popup")
         defer { signposter.endInterval("Measure Popup", interval) }
         let measured = hostingController.sizeThatFits(
@@ -625,7 +638,10 @@ final class StatusBarService: NSObject {
         )
         let height = StatusPopupSizing.resolvedHeight(for: measured.height)
         lastLayoutKey = layoutKey
-        guard abs(panel.frame.height - height) > 0.5 else { return }
+        guard abs(panel.frame.height - height) > 0.5 else {
+            completion?()
+            return
+        }
 
         var frame = panel.frame
         frame.origin.y += frame.height - height
@@ -633,12 +649,17 @@ final class StatusBarService: NSObject {
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = 0.24
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 panel.animator().setFrame(frame, display: true)
+            } completionHandler: {
+                MainActor.assumeIsolated {
+                    completion?()
+                }
             }
         } else {
             panel.setFrame(frame, display: true)
+            completion?()
         }
     }
 
@@ -648,6 +669,8 @@ final class StatusBarService: NSObject {
         let modalKind: PopoverModalKind?
         if appState.isEndSessionSheetPresented {
             modalKind = .endSession
+        } else if appState.isIssueCreatorPresented {
+            modalKind = .issueCreate
         } else {
             switch appState.issueActionEditor {
             case .status:
@@ -682,6 +705,7 @@ final class StatusBarService: NSObject {
             wellbeingIsLoading: appState.wellbeingService.snapshot.isLoading,
             wellbeingIsSaving: appState.wellbeingService.snapshot.isSaving,
             wellbeingHasError: appState.wellbeingService.snapshot.lastErrorDescription != nil,
+            hasIssueCreationSuccess: appState.issueCreationSuccess != nil,
             modalKind: modalKind,
             showsUpdate: appState.appUpdateService.hasAvailableUpdate
                 && !appState.isUpdatePresentationBlocked
