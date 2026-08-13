@@ -11,11 +11,20 @@ private enum HoverDismissPopupMetrics {
 private enum HardLimitPopupMetrics {
     static let contentWidth: CGFloat = 392
     static let panelWidth: CGFloat = 408
-    static let panelHeight: CGFloat = 434
+    static func panelHeight(for phase: HardLimitPopupPhase?) -> CGFloat {
+        switch phase {
+        case .decision: 434
+        case .endSession: 382
+        case .extend: 408
+        case .success: 268
+        case nil: 434
+        }
+    }
 }
 
 struct HardLimitPopupRootView: View {
     @ObservedObject var appState: CompanionAppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -23,6 +32,7 @@ struct HardLimitPopupRootView: View {
                 HoverDismissPopupChrome(
                     cornerRadius: 28,
                     showsDismissControl: phase != .endSession,
+                    dismissLabel: "End Session",
                     onClose: appState.handleHardLimitPopupClose
                 ) {
                     VStack(spacing: 0) {
@@ -32,14 +42,14 @@ struct HardLimitPopupRootView: View {
                 }
                 .frame(width: HardLimitPopupMetrics.contentWidth)
                 .opacity(appState.isHardLimitPopupAnimatingIn ? 1 : 0)
-                .blur(radius: appState.isHardLimitPopupAnimatingIn ? 0 : 28)
-                .scaleEffect(appState.isHardLimitPopupAnimatingIn ? 1 : 0.97)
-                .animation(.easeOut(duration: 0.24), value: appState.isHardLimitPopupAnimatingIn)
+                .blur(radius: reduceMotion || appState.isHardLimitPopupAnimatingIn ? 0 : 28)
+                .scaleEffect(reduceMotion || appState.isHardLimitPopupAnimatingIn ? 1 : 0.97)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: appState.isHardLimitPopupAnimatingIn)
             }
         }
         .frame(
             width: HardLimitPopupMetrics.panelWidth,
-            height: HardLimitPopupMetrics.panelHeight,
+            height: HardLimitPopupMetrics.panelHeight(for: appState.hardLimitPopupPhase),
             alignment: .center
         )
         .companionAppearance(appState)
@@ -68,6 +78,7 @@ struct InactivityPopupRootView: View {
             HoverDismissPopupChrome(
                 cornerRadius: 24,
                 showsDismissControl: phase != .endSession,
+                dismissLabel: "Keep Running",
                 onClose: appState.dismissInactivityPopup
             ) {
                 VStack(spacing: 0) {
@@ -95,6 +106,7 @@ struct SmartPauseResumeNoticeRootView: View {
                 HoverDismissPopupChrome(
                     cornerRadius: 24,
                 showsDismissControl: true,
+                dismissLabel: "Dismiss",
                 onClose: appState.dismissSmartPauseResumeNoticeNow
             ) {
                 HStack(spacing: 12) {
@@ -124,6 +136,7 @@ struct SmartPauseResumeNoticeRootView: View {
 private struct HoverDismissPopupChrome<Content: View>: View {
     let cornerRadius: CGFloat
     let showsDismissControl: Bool
+    let dismissLabel: String
     let onClose: () -> Void
     @ViewBuilder let content: () -> Content
 
@@ -162,7 +175,7 @@ private struct HoverDismissPopupChrome<Content: View>: View {
                     .frame(width: 16, height: 16)
 
                 if isButtonHovered {
-                    Text("Close")
+                    Text(dismissLabel)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -187,7 +200,7 @@ private struct HoverDismissPopupChrome<Content: View>: View {
         .buttonStyle(.plain)
         .fixedSize()
         .contentShape(Capsule(style: .continuous))
-        .help("Close")
+        .help(dismissLabel)
         .onHover { isButtonHovered = $0 }
         .onContinuousHover { phase in
             switch phase {
@@ -217,11 +230,16 @@ private struct InactivityDecisionView: View {
         VStack(spacing: 6) {
             summaryRow
 
+            Text("No action keeps the session running.")
+                .font(.caption2)
+                .foregroundStyle(PopupVisualTheme.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             HStack(spacing: 8) {
                 Button {
                     appState.chooseInactivityPopupEnd()
                 } label: {
-                    popupCompactButtonLabel(title: "End", shortcut: "E")
+                    popupCompactButtonLabel(title: "End Session", shortcut: "E")
                 }
                 .buttonStyle(InactivityPopupButtonStyle())
                 .frame(maxWidth: .infinity)
@@ -235,7 +253,7 @@ private struct InactivityDecisionView: View {
                     appState.dismissInactivityPopup()
                 } label: {
                     popupCompactButtonLabel(
-                        title: "Keep",
+                        title: "Keep Running",
                         detail: "\(countdown.state.displayedSeconds)s",
                         shortcut: "esc"
                     )
@@ -271,7 +289,7 @@ private struct InactivityDecisionView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(
                     appState.inactivityPopupDelivery?.alert.title
-                        ?? "Focus session still running"
+                        ?? "Still focusing?"
                 )
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(PopupVisualTheme.primaryText)
@@ -358,36 +376,31 @@ private struct HardLimitDecisionView: View {
 
             VStack(spacing: 8) {
                 Button {
-                    appState.chooseHardLimitExtend()
-                } label: {
-                    popupButtonLabel(title: "Extend", shortcut: "X")
-                }
-                .buttonStyle(PopupFullWidthButtonStyle(style: .primary))
-                .keyboardShortcut("x", modifiers: [])
-                .focused($focusedAction, equals: .extend)
-                .onHover {
-                    countdown.setPaused($0, reason: .hoverExtend)
-                }
-
-                Button {
                     appState.chooseHardLimitEnd()
                 } label: {
                     popupButtonLabel(
-                        title: "End",
-                        detail: "\(countdown.state.displayedSeconds)s",
+                        title: "End Session",
+                        detail: "in \(countdown.state.displayedSeconds)s",
                         shortcut: "E"
                     )
                 }
-                .buttonStyle(
-                    PopupFullWidthButtonStyle(
-                        style: .secondary,
-                        progress: countdown.state.progress
-                    )
-                )
+                .buttonStyle(PopupFullWidthButtonStyle(style: .primary, progress: countdown.state.progress))
                 .keyboardShortcut("e", modifiers: [])
                 .focused($focusedAction, equals: .end)
                 .onHover {
                     countdown.setPaused($0, reason: .hoverEnd)
+                }
+
+                Button {
+                    appState.chooseHardLimitExtend()
+                } label: {
+                    popupButtonLabel(title: "Extend…", shortcut: "X")
+                }
+                .buttonStyle(PopupFullWidthButtonStyle(style: .secondary))
+                .keyboardShortcut("x", modifiers: [])
+                .focused($focusedAction, equals: .extend)
+                .onHover {
+                    countdown.setPaused($0, reason: .hoverExtend)
                 }
             }
         }

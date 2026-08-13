@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HardLimitWarningIndicatorRootView: View {
     @ObservedObject var appState: CompanionAppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if let model = appState.hardLimitWarningIndicatorModel {
@@ -35,6 +36,8 @@ struct HardLimitWarningIndicatorRootView: View {
                         Text(String(format: "%02d", remaining))
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .monospacedDigit()
+                            .contentTransition(.numericText(countsDown: true))
+                            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: remaining)
                             .foregroundStyle(PopupVisualTheme.primaryText)
                     }
                     .padding(.horizontal, 9)
@@ -43,8 +46,8 @@ struct HardLimitWarningIndicatorRootView: View {
                 .frame(width: 184)
                 .clipShape(shape)
                 .opacity(appState.isHardLimitWarningIndicatorAnimatingIn ? 1 : 0.02)
-                .blur(radius: appState.isHardLimitWarningIndicatorAnimatingIn ? 0 : 16)
-                .animation(.easeOut(duration: 0.16), value: appState.isHardLimitWarningIndicatorAnimatingIn)
+                .blur(radius: reduceMotion || appState.isHardLimitWarningIndicatorAnimatingIn ? 0 : 16)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: appState.isHardLimitWarningIndicatorAnimatingIn)
                 .companionAppearance(appState)
             }
         }

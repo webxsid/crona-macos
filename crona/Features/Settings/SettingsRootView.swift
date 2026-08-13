@@ -5,6 +5,12 @@ import UserNotifications
 struct SettingsRootView: View {
     @ObservedObject var appState: CompanionAppState
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarSelection: SettingsDestination
+
+    init(appState: CompanionAppState) {
+        self.appState = appState
+        _sidebarSelection = State(initialValue: appState.selectedSettingsDestination)
+    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -14,103 +20,15 @@ struct SettingsRootView: View {
             settingsDetail
         }
         .frame(minWidth: 860, minHeight: 620)
-        .ignoresSafeArea(.container, edges: .top)
-        .background {
-            ZStack(alignment: .leading) {
-                PopupVisualTheme.windowBackground
-                SettingsSidebarBackground()
-                    .frame(width: SettingsChromeMetrics.sidebarWidth)
-                SettingsToolbarSurfaceBackground()
-                    .frame(height: SettingsChromeMetrics.toolbarSurfaceHeight)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .ignoresSafeArea()
-        }
         .background(SettingsWindowReader(windowService: appState.windowService))
         .companionAppearance(appState)
         .modifier(SettingsWindowToolbarBackgroundModifier())
         .toolbar {
-            if #available(macOS 27.0, *) {
-                ToolbarItem(placement: .navigation) {
-                    Button(action: appState.goBackInSettings) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoBack)
-                    .help("Back")
-                }
-                ToolbarSpacer(.fixed)
-
-                ToolbarItem(placement: .navigation) {
-                    Button(action: appState.goForwardInSettings) {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoForward)
-                    .help("Forward")
-                }
-                ToolbarSpacer(.fixed)
-
-                ToolbarItem(placement: .navigation) {
-                    Text(appState.selectedSettingsDestination.title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(PopupVisualTheme.primaryText)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else if #available(macOS 26.1, *) {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button(action: appState.goBackInSettings) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoBack)
-                    .help("Back")
-
-                    Button(action: appState.goForwardInSettings) {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoForward)
-                    .help("Forward")
-                }
-                ToolbarItem(placement: .navigation) {
-                    Text(appState.selectedSettingsDestination.title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(PopupVisualTheme.primaryText)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else if #available(macOS 26.0, *) {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button(action: appState.goBackInSettings) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoBack)
-                    .help("Back")
-
-                    Button(action: appState.goForwardInSettings) {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(!appState.settingsNavigation.canGoForward)
-                    .help("Forward")
-                }
-
-                ToolbarItem(placement: .navigation) {
-                    Text(appState.selectedSettingsDestination.title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(PopupVisualTheme.primaryText)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .navigation) {
-                    HStack(spacing: 12) {
-                        SettingsNavigationCluster(
-                            canGoBack: appState.settingsNavigation.canGoBack,
-                            canGoForward: appState.settingsNavigation.canGoForward,
-                            goBack: appState.goBackInSettings,
-                            goForward: appState.goForwardInSettings
-                        )
-
-                        Text(appState.selectedSettingsDestination.title)
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(PopupVisualTheme.primaryText)
-                    }
-                }
+            ToolbarItem(placement: .navigation) {
+                Text(sidebarSelection.title)
+                    .font(.headline.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
             }
         }
         .modifier(SettingsWindowToolbarChromeModifier())
@@ -122,100 +40,81 @@ struct SettingsRootView: View {
                 columnVisibility = .all
             }
         }
+        .onChange(of: sidebarSelection) { _, destination in
+            Task { @MainActor in
+                await Task.yield()
+                appState.setSelectedSettingsDestination(destination)
+            }
+        }
+        .onChange(of: appState.selectedSettingsDestination) { _, destination in
+            guard destination != sidebarSelection else { return }
+            sidebarSelection = destination
+        }
     }
 
     private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    SettingsSidebarSection(
-                        title: "Settings",
-                        items: [.general, .menuBar],
-                        selected: appState.selectedSettingsDestination,
-                        onSelect: appState.setSelectedSettingsDestination
-                    )
-
-                    SettingsSidebarSection(
-                        title: "Focus",
-                        items: [.smartPause, .breakScreen, .notifications],
-                        selected: appState.selectedSettingsDestination,
-                        onSelect: appState.setSelectedSettingsDestination
-                    )
-
-                    SettingsSidebarSection(
-                        title: "System",
-                        items: [.runtime, .diagnostics],
-                        selected: appState.selectedSettingsDestination,
-                        onSelect: appState.setSelectedSettingsDestination
-                    )
-
-                    SettingsSidebarSection(
-                        title: "Crona",
-                        items: [.updates, .about],
-                        selected: appState.selectedSettingsDestination,
-                        onSelect: appState.setSelectedSettingsDestination
-                    )
-
+        List(selection: $sidebarSelection) {
+            sidebarSection("Preferences", items: [.general, .menuBar])
+            sidebarSection("Focus", items: [.daySchedule, .smartPause, .breakScreen, .notifications])
+            sidebarSection("System", items: [.advanced])
+            sidebarSection("Crona", items: [.about])
 #if DEBUG
-                    SettingsSidebarSection(
-                        title: "Developer",
-                        items: [.developer],
-                        selected: appState.selectedSettingsDestination,
-                        onSelect: appState.setSelectedSettingsDestination
-                    )
+            sidebarSection("Developer", items: [.developer])
 #endif
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, SettingsLayoutMetrics.sidebarTopPadding)
-                .padding(.bottom, SettingsLayoutMetrics.sidebarBottomPadding)
-            }
-            .scrollIndicators(.visible)
-            .scrollContentBackground(.hidden)
         }
-        .frame(width: SettingsChromeMetrics.sidebarWidth, alignment: .topLeading)
-        .background(Color.clear)
+        .listStyle(.sidebar)
+        .frame(width: SettingsChromeMetrics.sidebarWidth)
+    }
+
+    @ViewBuilder
+    private func sidebarSection(_ title: String, items: [SettingsDestination]) -> some View {
+        Section(title) {
+            ForEach(items) { item in
+                Label(item.title, systemImage: item.iconName)
+                    .tag(item)
+                    .help(item.title)
+            }
+        }
     }
 
     private var settingsDetail: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    switch appState.selectedSettingsDestination {
+                    switch sidebarSelection {
                     case .general:
-                        SettingsPane(title: "General", subtitle: "Choose how Crona starts, appears, and marks the day.") {
+                        SettingsPane(title: "General", subtitle: "Control how Crona starts and appears on this Mac.") {
                             GeneralSettingsView(appState: appState)
                         }
                     case .menuBar:
-                        SettingsPane(title: "Menu Bar", subtitle: "Choose how Crona appears in the menu bar.") {
+                        SettingsPane(title: "Menu Bar", subtitle: "Choose what Crona shows while you work.") {
                             MenuBarSettingsView(appState: appState)
                         }
+                    case .daySchedule:
+                        SettingsPane(title: "Day Schedule", subtitle: "Set when work is counted toward each Crona day.") {
+                            DayBoundarySettingsCard(appState: appState)
+                        }
                     case .smartPause:
-                        SettingsPane(title: "Smart Pause", subtitle: "Choose when Crona pauses and resumes automatically.") {
+                        SettingsPane(title: "Smart Pause", subtitle: "Pause Stopwatch sessions when you leave your Mac.") {
                             SmartPauseSettingsView(appState: appState)
                         }
                     case .breakScreen:
-                        SettingsPane(title: "Break Screen", subtitle: "Choose how break time appears on your Mac.") {
+                        SettingsPane(title: "Breaks", subtitle: "Control how Pomodoro breaks take over your displays.") {
                             BreakScreenSettingsView(appState: appState)
                         }
                     case .notifications:
-                        SettingsPane(title: "Notifications", subtitle: "Choose how Crona alerts you.") {
+                        SettingsPane(title: "Notifications", subtitle: "Choose which alerts appear and how they get your attention.") {
                             NotificationSettingsView(appState: appState)
                         }
-                    case .runtime:
-                        SettingsPane(title: "Runtime", subtitle: "Review the active runtime and kernel connection.") {
+                    case .advanced:
+                        SettingsPane(title: "Advanced", subtitle: "Inspect and repair Crona’s connection to the local engine.") {
                             RuntimeSettingsView(appState: appState)
-                        }
-                    case .diagnostics:
-                        SettingsPane(title: "Diagnostics", subtitle: "Review runtime health and recent issues.") {
                             DiagnosticsSettingsView(appState: appState)
                         }
-                    case .updates:
-                        SettingsPane(title: "Updates", subtitle: "Review the installed build and update settings.") {
-                            UpdatesSettingsView(appState: appState)
-                        }
                     case .about:
-                        SettingsPane(title: "About", subtitle: "See the installed version and release channel.") {
+                        SettingsPane(title: "About", subtitle: "Version, updates, and release information.") {
                             AboutSettingsView(appState: appState)
+                            UpdatesSettingsView(appState: appState)
                         }
 #if DEBUG
                     case .developer:
@@ -514,7 +413,7 @@ private struct GeneralSettingsView: View {
             SettingsCard("Startup") {
                 SettingsToggleRow(
                     title: "Launch at Login",
-                    subtitle: "Choose whether Crona is ready in the menu bar when you sign in.",
+                    subtitle: "Open Crona when you sign in.",
                     isOn: Binding(
                         get: { appState.launchAtLoginService.isEnabled },
                         set: { appState.launchAtLoginService.setEnabled($0) }
@@ -522,11 +421,11 @@ private struct GeneralSettingsView: View {
                 )
 
                 SettingsToggleRow(
-                    title: "Hide Dock Icon When Closed",
-                    subtitle: "Choose whether Crona stays in the menu bar only unless a full app window is open.",
+                    title: "Show Dock Icon",
+                    subtitle: "Keep Crona in the Dock when no windows are open.",
                     isOn: Binding(
-                        get: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen },
-                        set: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen = $0 }
+                        get: { !appState.preferences.preferences.hideDockIconWhenNoWindowsOpen },
+                        set: { appState.preferences.preferences.hideDockIconWhenNoWindowsOpen = !$0 }
                     )
                 )
 
@@ -537,8 +436,8 @@ private struct GeneralSettingsView: View {
 
             SettingsCard("Appearance") {
                 SettingsPickerRow(
-                    title: "Theme",
-                    subtitle: "Choose a light or dark palette, or follow macOS.",
+                    title: "Appearance",
+                    subtitle: "Use the system appearance, Light, or Dark.",
                     selection: Binding(
                         get: { appState.preferences.preferences.appearance },
                         set: { appState.preferences.preferences.appearance = $0 }
@@ -550,10 +449,10 @@ private struct GeneralSettingsView: View {
                 }
             }
 
-            SettingsCard("Menu Popover") {
+            SettingsCard("Menu") {
                 SettingsToggleRow(
-                    title: "Pin Popover",
-                    subtitle: "Choose whether the popover stays open while you work with it.",
+                    title: "Keep Menu Open",
+                    subtitle: "Keep the menu open until you dismiss it.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.pinPopover },
                         set: { appState.preferences.preferences.pinPopover = $0 }
@@ -561,7 +460,6 @@ private struct GeneralSettingsView: View {
                 )
             }
 
-            DayBoundarySettingsCard(appState: appState)
         }
     }
 }
@@ -570,34 +468,34 @@ private struct DayBoundarySettingsCard: View {
     @ObservedObject var appState: CompanionAppState
 
     var body: some View {
-        SettingsCard("Crona Day") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Local times tell the daemon when a Crona day starts and ends.")
+        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
+            if !appState.daemonConnection.timezone.isEmpty {
+                Label(appState.daemonConnection.timezone, systemImage: "globe")
                     .font(.caption)
                     .foregroundStyle(PopupVisualTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-                DayBoundaryScheduleEditor(
-                    title: "Start of Day",
-                    subtitle: "Defines when a new Crona day begins.",
+            SettingsCard("Start of Day") {
+                VStack(alignment: .leading, spacing: 12) {
+                    DayBoundaryScheduleEditor(
+                    title: "Schedule",
+                    subtitle: "When a new Crona day begins.",
                     key: "startOfDay",
                     schedule: appState.dayBoundarySettingsService.settings.startOfDay,
                     service: appState.dayBoundarySettingsService
                 )
+                }
+            }
 
+            SettingsCard("End of Day") {
                 DayBoundaryScheduleEditor(
-                    title: "End of Day",
-                    subtitle: "Defines when Crona stops counting into the next day.",
+                    title: "Schedule",
+                    subtitle: "When Crona stops counting into the current day.",
                     key: "endOfDay",
                     schedule: appState.dayBoundarySettingsService.settings.endOfDay,
                     service: appState.dayBoundarySettingsService
                 )
-
-                if !appState.daemonConnection.timezone.isEmpty {
-                    Text("Timezone: \(appState.daemonConnection.timezone)")
-                        .font(.caption2)
-                        .foregroundStyle(PopupVisualTheme.secondaryText)
-                }
+            }
 
                 if let error = appState.dayBoundarySettingsService.lastErrorDescription,
                    !error.isEmpty {
@@ -605,7 +503,6 @@ private struct DayBoundarySettingsCard: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
-            }
         }
         .task {
             await appState.dayBoundarySettingsService.refresh()
@@ -1380,8 +1277,8 @@ private struct MenuBarSettingsView: View {
 
             SettingsCard("Display") {
                 SettingsPickerRow(
-                    title: "Show",
-                    subtitle: "Choose whether Crona appears as an icon, text, or both.",
+                    title: "Menu Bar Item",
+                    subtitle: "Show an icon, text, or both.",
                     selection: Binding(
                         get: { appState.preferences.preferences.menuBarDisplayMode },
                         set: { appState.preferences.preferences.menuBarDisplayMode = $0 }
@@ -1395,7 +1292,7 @@ private struct MenuBarSettingsView: View {
                 if appState.preferences.preferences.menuBarDisplayMode.showsText {
                 SettingsPickerRow(
                     title: "When Idle",
-                    subtitle: "Choose what the menu bar shows when no timer is running.",
+                    subtitle: "What to show when no timer is running.",
                         selection: Binding(
                             get: { appState.preferences.preferences.menuBarIdleTextMode },
                             set: { appState.preferences.preferences.menuBarIdleTextMode = $0 }
@@ -1413,6 +1310,15 @@ private struct MenuBarSettingsView: View {
                         )
                     )
                 }
+
+                SettingsToggleRow(
+                    title: "Floating Timer",
+                    subtitle: "Show a movable timer while a session is active.",
+                    isOn: Binding(
+                        get: { appState.preferences.preferences.showTimerHUD },
+                        set: { appState.preferences.preferences.showTimerHUD = $0 }
+                    )
+                )
             }
         }
         .onAppear {
@@ -1447,7 +1353,7 @@ private struct SmartPauseSettingsView: View {
             SettingsCard("Smart Pause") {
                 SettingsToggleRow(
                     title: "Pause Automatically",
-                    subtitle: "Choose whether a running stopwatch pauses when you step away from your Mac.",
+                    subtitle: "Pause a running Stopwatch when you step away.",
                     isOn: binding(\.smartPauseEnabled)
                 )
             }
@@ -1456,26 +1362,26 @@ private struct SmartPauseSettingsView: View {
                 Group {
                     SettingsToggleRow(
                         title: "Mac Is Locked",
-                        subtitle: "Pause immediately when your user session moves to the Lock Screen.",
+                        subtitle: "Pause when your Mac reaches the Lock Screen.",
                         isOn: binding(\.smartPauseOnLock)
                     )
 
                     SettingsToggleRow(
                         title: "Display Goes to Sleep",
-                        subtitle: "Pause immediately when your Mac turns its displays off.",
+                        subtitle: "Pause when your displays turn off.",
                         isOn: binding(\.smartPauseOnDisplaySleep)
                     )
 
                     SettingsToggleRow(
                         title: "No Keyboard or Mouse Input",
-                        subtitle: "Pause only after there has been no keyboard or mouse input for the selected time.",
+                        subtitle: "Pause after a period without input.",
                         isOn: binding(\.smartPauseOnInactivity)
                     )
 
                     if preferences.smartPauseOnInactivity {
                         SettingsPickerRow(
                             title: "No-Input Delay",
-                            subtitle: "Choose how long to wait before pausing for keyboard and mouse inactivity.",
+                            subtitle: "How long to wait before pausing.",
                             selection: binding(\.smartPauseIdleSeconds)
                         ) {
                             ForEach(CompanionPreferences.smartPauseIdleOptions, id: \.self) { seconds in
@@ -1520,6 +1426,7 @@ private struct SmartPauseSettingsView: View {
 
 private struct BreakScreenSettingsView: View {
     @ObservedObject var appState: CompanionAppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var preferences: CompanionPreferences {
         appState.preferences.preferences
@@ -1530,7 +1437,7 @@ private struct BreakScreenSettingsView: View {
             SettingsCard("Break Screen") {
                 SettingsToggleRow(
                     title: "Take Over the Screen",
-                    subtitle: "Cover every display when a pomodoro break begins.",
+                    subtitle: "Cover every display during Pomodoro breaks.",
                     isOn: Binding(
                         get: { preferences.breakScreenEnabled },
                         set: { appState.preferences.preferences.breakScreenEnabled = $0 }
@@ -1607,7 +1514,7 @@ private struct BreakScreenSettingsView: View {
             SettingsCard("Background") {
                 SettingsPickerRow(
                     title: "Style",
-                    subtitle: "Choose what appears behind the break countdown.",
+                    subtitle: "What appears behind the break countdown.",
                     selection: Binding(
                         get: { preferences.breakScreenBackgroundStyle },
                         set: { appState.preferences.preferences.breakScreenBackgroundStyle = $0 }
@@ -1646,8 +1553,8 @@ private struct BreakScreenSettingsView: View {
 
             BreakScreenSettingsPreview(preferences: preferences)
         }
-        .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenMode)
-        .animation(.easeInOut(duration: 0.16), value: preferences.breakScreenBackgroundStyle)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: preferences.breakScreenMode)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: preferences.breakScreenBackgroundStyle)
     }
 }
 
@@ -1856,7 +1763,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("System Notifications") {
                 SettingsValueRow(
                     title: "Permission",
-                    subtitle: "See whether Crona can deliver alerts with native actions and sounds.",
+                    subtitle: "Access to native alerts, actions, and sounds.",
                     value: notificationStatusText(
                         appState.notificationService.authorizationStatus
                     )
@@ -1882,7 +1789,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Alerts") {
                 SettingsToggleRow(
                     title: "Show Notifications",
-                    subtitle: "Choose whether focus boundaries, reminders, and Crona updates appear in Notification Center.",
+                    subtitle: "Show boundaries, reminders, and updates in Notification Center.",
                     isOn: Binding(
                         get: { settings?.boundaryNotificationsEnabled ?? true },
                         set: {
@@ -1897,7 +1804,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Play Alert Sounds",
-                    subtitle: "Choose whether the selected Crona sound plays when an alert needs your attention.",
+                    subtitle: "Play a sound when an alert needs attention.",
                     isOn: Binding(
                         get: { settings?.boundarySoundEnabled ?? true },
                         set: {
@@ -1933,7 +1840,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Prominence",
-                    subtitle: "Choose how strongly Crona alerts should break through.",
+                    subtitle: "How strongly alerts can interrupt you.",
                     selection: Binding(
                         get: {
                             alertSettings.settings?.alertUrgency ?? .standard
@@ -1964,7 +1871,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Focus Reminders") {
                 SettingsToggleRow(
                     title: "Inactivity Reminder",
-                    subtitle: "Choose whether Crona nudges you when a focus session may have been left running.",
+                    subtitle: "Nudge you when a session may have been left running.",
                     isOn: Binding(
                         get: { settings?.inactivityAlertsEnabled ?? true },
                         set: {
@@ -1979,7 +1886,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Remind After",
-                    subtitle: "Choose how long to wait without activity before the first reminder.",
+                    subtitle: "Wait before the first reminder.",
                     selection: Binding(
                         get: { settings?.inactivityThresholdMinutes ?? 60 },
                         set: {
@@ -1998,7 +1905,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Repeat",
-                    subtitle: "Choose how often to repeat follow-up reminders while the session stays active.",
+                    subtitle: "Repeat while the session stays active.",
                     selection: Binding(
                         get: { settings?.inactivityRepeatMinutes ?? 60 },
                         set: {
@@ -2017,7 +1924,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Show Action Popup",
-                    subtitle: "Choose whether a small desktop prompt appears when that reminder fires.",
+                    subtitle: "Show desktop actions with the reminder.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showInactivityActionPopups },
                         set: {
@@ -2043,7 +1950,7 @@ private struct NotificationSettingsView: View {
             SettingsCard("Focus Boundaries") {
                 SettingsToggleRow(
                     title: "Show Action Popup",
-                    subtitle: "Choose whether End and Extend appear when a hard-limit session reaches its boundary.",
+                    subtitle: "Show End and Extend at a session boundary.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showHardLimitActionPopups },
                         set: { appState.preferences.preferences.showHardLimitActionPopups = $0 }
@@ -2052,7 +1959,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Show Early Warning",
-                    subtitle: "Choose whether a small warning appears beside the pointer before a session changes.",
+                    subtitle: "Show a pointer-side warning before a session changes.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showHardLimitWarningIndicator },
                         set: { appState.preferences.preferences.showHardLimitWarningIndicator = $0 }
@@ -2061,7 +1968,7 @@ private struct NotificationSettingsView: View {
 
                 SettingsPickerRow(
                     title: "Warn Me",
-                    subtitle: "Choose how soon the early warning appears.",
+                    subtitle: "Lead time for the early warning.",
                     selection: Binding(
                         get: {
                             CompanionPreferences.normalizedHardLimitWarningLeadSeconds(
@@ -2201,12 +2108,12 @@ private struct RuntimeSettingsView: View {
             )
             SettingsValueRow(
                 title: "Discovery File",
-                subtitle: "See the kernel.json currently used for discovery.",
+                subtitle: "kernel.json used for discovery.",
                 value: appState.kernelDiscovery.loadedRuntime.config.discoveryFilePath
             )
             SettingsValueRow(
                 title: "Endpoint",
-                subtitle: "See the socket Crona is connected through.",
+                subtitle: "Socket used by the current connection.",
                 value: appState.daemonConnection.kernelInfo?.endpoint ?? appState.kernelDiscovery.loadedRuntime.resolvedDiscovery?.endpoint ?? "Unavailable"
             )
 
@@ -2227,27 +2134,27 @@ private struct DiagnosticsSettingsView: View {
             SettingsCard("Snapshot") {
                 SettingsValueRow(
                     title: "Connection State",
-                    subtitle: "See whether the macOS app can reach Crona.",
+                    subtitle: "Whether this app can reach the engine.",
                     value: appState.diagnosticsService.snapshot.connectionState
                 )
                 SettingsValueRow(
                     title: "Protocol Version",
-                    subtitle: "See the protocol shared by the app and kernel.",
+                    subtitle: "Protocol shared by the app and engine.",
                     value: appState.diagnosticsService.snapshot.protocolVersion
                 )
                 SettingsValueRow(
                     title: "Kernel Version",
-                    subtitle: "See the kernel build currently running.",
+                    subtitle: "Engine build currently running.",
                     value: appState.diagnosticsService.snapshot.kernelVersion
                 )
                 SettingsValueRow(
                     title: "Runtime Directory",
-                    subtitle: "See the active Crona runtime location.",
+                    subtitle: "Active Crona runtime location.",
                     value: appState.diagnosticsService.snapshot.runtimeDirectory
                 )
                 SettingsValueRow(
                     title: "Health",
-                    subtitle: "See the kernel’s latest health report.",
+                    subtitle: "Latest engine health report.",
                     value: appState.diagnosticsService.snapshot.healthSummary
                 )
                 SettingsValueRow(
@@ -2285,7 +2192,7 @@ private struct UpdatesSettingsView: View {
             SettingsCard("Installed") {
                 SettingsValueRow(
                     title: "Crona",
-                    subtitle: "See the version currently installed on this Mac.",
+                    subtitle: "Installed version and build.",
                     value: "\(service.snapshot.currentVersion) (\(service.snapshot.currentBuild))"
                 )
 
@@ -2298,7 +2205,7 @@ private struct UpdatesSettingsView: View {
                 if let lastCheckedAt = service.snapshot.lastCheckedAt {
                     SettingsValueRow(
                         title: "Last Checked",
-                        subtitle: "See the most recent completed update check.",
+                        subtitle: "Most recent completed update check.",
                         value: lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
                     )
                 }
@@ -2330,7 +2237,7 @@ private struct UpdatesSettingsView: View {
             SettingsCard("Automatic Updates") {
                 SettingsToggleRow(
                     title: "Check Automatically",
-                    subtitle: "Choose whether Crona looks for new releases quietly in the background.",
+                    subtitle: "Look for releases in the background.",
                     isOn: Binding(
                         get: { service.automaticallyChecksForUpdates },
                         set: { service.setAutomaticallyChecksForUpdates($0) }
@@ -2339,7 +2246,7 @@ private struct UpdatesSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Download Automatically",
-                    subtitle: "Choose whether verified updates are prepared so they are ready when Crona next quits.",
+                    subtitle: "Prepare verified updates before Crona quits.",
                     isOn: Binding(
                         get: { service.automaticallyDownloadsUpdates },
                         set: { service.setAutomaticallyDownloadsUpdates($0) }
@@ -2393,43 +2300,41 @@ private struct AboutSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
-            SettingsCard("Crona for macOS") {
-                HStack(spacing: 14) {
-                    Image(nsImage: CronaAppIcon.image)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 64, height: 64)
+            HStack(spacing: 16) {
+                Image(nsImage: CronaAppIcon.image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 72, height: 72)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Crona")
-                            .font(.title3.weight(.semibold))
-                        Text("Focus stays in the daemon. Crona brings it naturally into macOS.")
-                            .font(.subheadline)
-                            .foregroundStyle(PopupVisualTheme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Crona")
+                        .font(.title2.weight(.semibold))
+                    Text("Focus, naturally integrated with macOS.")
+                        .font(.subheadline)
+                        .foregroundStyle(PopupVisualTheme.secondaryText)
                 }
             }
+            .padding(.vertical, 6)
 
             SettingsCard("Build") {
                 SettingsValueRow(
                     title: "Version",
-                    subtitle: "The version of Crona installed on this Mac.",
+                    subtitle: "Installed on this Mac.",
                     value: appState.appUpdateService.snapshot.currentVersion
                 )
                 SettingsValueRow(
                     title: "Protocol",
-                    subtitle: "The protocol this build expects from the kernel.",
+                    subtitle: "Expected engine protocol.",
                     value: CronaProtocolVersion.current.rawValue
                 )
                 SettingsValueRow(
                     title: "App Channel",
-                    subtitle: "The release track used by this macOS app.",
+                    subtitle: "Release track for this app.",
                     value: appState.appUpdateService.selectedChannel.title
                 )
                 SettingsValueRow(
                     title: "Engine Channel",
-                    subtitle: "The channel reported by the running Crona engine.",
+                    subtitle: "Release track reported by the engine.",
                     value: appState.daemonConnection.kernelInfo?.runningChannel ?? "Unknown"
                 )
             }
@@ -2448,24 +2353,17 @@ private struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SettingsLayoutMetrics.cardHeaderSpacing) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 10)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PopupVisualTheme.secondaryText)
+                .textCase(.uppercase)
 
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(.horizontal, SettingsLayoutMetrics.cardContentHorizontalPadding)
-            .padding(.vertical, SettingsLayoutMetrics.cardContentVerticalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
-                    .fill(PopupVisualTheme.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: SettingsLayoutMetrics.detailCardCornerRadius, style: .continuous)
-                            .strokeBorder(PopupVisualTheme.border, lineWidth: 0.75)
-                    )
-            )
+            .padding(.horizontal, 14)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 }
@@ -2478,7 +2376,7 @@ private struct TimerDisplayStyleRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Timer Display")
                     .font(.subheadline.weight(.medium))
-                Text("Choose how an active timer fits into the menu bar.")
+                Text("How an active timer fits in the menu bar.")
                     .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
             }
@@ -2568,7 +2466,8 @@ private struct SettingsToggleRow: View {
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .frame(maxWidth: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -2602,7 +2501,8 @@ private struct SettingsPickerRow<SelectionValue: Hashable, Content: View>: View 
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .frame(maxWidth: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -2635,7 +2535,8 @@ private struct InactivityPopupPositionRow: View {
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .frame(maxWidth: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -2709,7 +2610,8 @@ private struct SettingsValueRow: View {
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .frame(maxWidth: SettingsLayoutMetrics.labelColumnWidth, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
@@ -2749,24 +2651,11 @@ private struct SettingsActionButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 16)
-                .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
-                .frame(minHeight: SettingsLayoutMetrics.actionButtonMinimumHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
-                        .fill(prominent ? PopupVisualTheme.primaryText.opacity(0.16) : PopupVisualTheme.primaryText.opacity(0.075))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
-                                .strokeBorder(
-                                    prominent ? PopupVisualTheme.primaryText.opacity(0.2) : PopupVisualTheme.primaryText.opacity(0.11),
-                                    lineWidth: 0.75
-                                )
-                        )
-                )
-                .foregroundStyle(Color.primary)
+                .frame(minHeight: 22)
         }
-        .buttonStyle(SettingsPressButtonStyle())
+        .buttonStyle(.bordered)
+        .tint(prominent ? Color.accentColor : nil)
+        .controlSize(.regular)
     }
 }
 
@@ -2789,21 +2678,10 @@ private struct SettingsActionLink: View {
     var body: some View {
         Link(destination: destination) {
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 16)
-                .padding(.vertical, SettingsLayoutMetrics.rowVerticalPadding)
-                .frame(minHeight: SettingsLayoutMetrics.actionButtonMinimumHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
-                        .fill(PopupVisualTheme.primaryText.opacity(0.075))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: SettingsLayoutMetrics.actionButtonCornerRadius, style: .continuous)
-                                .strokeBorder(PopupVisualTheme.primaryText.opacity(0.11), lineWidth: 0.75)
-                        )
-                )
+                .frame(minHeight: 22)
         }
-        .foregroundStyle(Color.primary)
-        .buttonStyle(SettingsPressButtonStyle())
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
     }
 }
 
@@ -2850,12 +2728,11 @@ private extension SettingsDestination {
         switch self {
         case .general: return "General"
         case .menuBar: return "Menu Bar"
+        case .daySchedule: return "Day Schedule"
         case .smartPause: return "Smart Pause"
-        case .breakScreen: return "Break Screen"
+        case .breakScreen: return "Breaks"
         case .notifications: return "Notifications"
-        case .runtime: return "Runtime"
-        case .diagnostics: return "Diagnostics"
-        case .updates: return "Updates"
+        case .advanced: return "Advanced"
         case .about: return "About"
 #if DEBUG
         case .developer: return "Dev"
@@ -2867,12 +2744,11 @@ private extension SettingsDestination {
         switch self {
         case .general: return "gearshape.fill"
         case .menuBar: return "menubar.rectangle"
+        case .daySchedule: return "calendar.badge.clock"
         case .smartPause: return "pause.circle.fill"
         case .breakScreen: return "moon.stars.fill"
         case .notifications: return "bell.fill"
-        case .runtime: return "bolt.horizontal.circle.fill"
-        case .diagnostics: return "stethoscope"
-        case .updates: return "arrow.triangle.2.circlepath.circle.fill"
+        case .advanced: return "wrench.and.screwdriver.fill"
         case .about: return "info.circle.fill"
 #if DEBUG
         case .developer: return "hammer.fill"

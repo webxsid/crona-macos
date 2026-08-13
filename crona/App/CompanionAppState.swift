@@ -3,15 +3,14 @@ import Combine
 import Foundation
 import OSLog
 
-enum SettingsDestination: String, CaseIterable, Equatable, Identifiable {
+enum SettingsDestination: String, CaseIterable, Hashable, Identifiable {
     case general
     case menuBar
+    case daySchedule
     case smartPause
     case breakScreen
     case notifications
-    case runtime
-    case diagnostics
-    case updates
+    case advanced
     case about
 #if DEBUG
     case developer
@@ -20,36 +19,9 @@ enum SettingsDestination: String, CaseIterable, Equatable, Identifiable {
     var id: String { rawValue }
 }
 
-struct SettingsNavigationHistory: Equatable {
-    private(set) var current: SettingsDestination = .general
-    private(set) var backStack: [SettingsDestination] = []
-    private(set) var forwardStack: [SettingsDestination] = []
-
-    var canGoBack: Bool { !backStack.isEmpty }
-    var canGoForward: Bool { !forwardStack.isEmpty }
-
-    mutating func navigate(to destination: SettingsDestination) {
-        guard destination != current else { return }
-        backStack.append(current)
-        current = destination
-        forwardStack.removeAll()
-    }
-
-    mutating func goBack() {
-        guard let destination = backStack.popLast() else { return }
-        forwardStack.append(current)
-        current = destination
-    }
-
-    mutating func goForward() {
-        guard let destination = forwardStack.popLast() else { return }
-        backStack.append(current)
-        current = destination
-    }
-}
-
 enum EndSessionPresentationSource: Equatable {
     case menuPopover
+    case timerHUD
     case hardLimitPopup
     case inactivityPopup
 }
@@ -90,6 +62,7 @@ final class CompanionAppState: ObservableObject {
     let dailyFocusService: DailyFocusService
     let issueActionsService: IssueActionsService
     let habitsService: HabitsService
+    let wellbeingService: WellbeingService
     let popoverStatsService: PopoverStatsService
     let hardLimitCountdownService: HardLimitCountdownService
     let inactivityPopupCountdownService: HardLimitCountdownService
@@ -114,7 +87,7 @@ final class CompanionAppState: ObservableObject {
     @Published var issueActionNote = ""
     @Published var issueActionDate = Date()
     @Published var selectedPopoverTab: PopoverTab = .now
-    @Published private(set) var settingsNavigation = SettingsNavigationHistory()
+    @Published private(set) var selectedSettingsDestination: SettingsDestination = .general
     @Published var isEndSessionSheetPresented = false
     @Published var endSessionCommitMessage = ""
     @Published var isSubmittingEndSession = false
@@ -153,6 +126,7 @@ final class CompanionAppState: ObservableObject {
             dailyFocusService: dailyFocusService
         )
         let habitsService = HabitsService(daemonConnection: daemonConnection)
+        let wellbeingService = WellbeingService(daemonConnection: daemonConnection)
         let popoverStatsService = PopoverStatsService(daemonConnection: daemonConnection)
         let diagnosticsService = DiagnosticsService(
             daemonConnection: daemonConnection,
@@ -178,6 +152,7 @@ final class CompanionAppState: ObservableObject {
         self.dailyFocusService = dailyFocusService
         self.issueActionsService = issueActionsService
         self.habitsService = habitsService
+        self.wellbeingService = wellbeingService
         self.popoverStatsService = popoverStatsService
         self.hardLimitCountdownService = HardLimitCountdownService()
         self.inactivityPopupCountdownService = HardLimitCountdownService()
@@ -272,6 +247,7 @@ final class CompanionAppState: ObservableObject {
                 await self.alertSettingsService.refresh()
                 await self.dayBoundarySettingsService.refresh()
                 await self.coreSettingsService.refresh()
+                await self.wellbeingService.refresh()
             }
         }
         bindChildChanges()
@@ -347,10 +323,6 @@ final class CompanionAppState: ObservableObject {
         timerService.snapshot.sessionID != nil
             && timerService.snapshot.state != "idle"
             && timerService.snapshot.state != "disconnected"
-    }
-
-    var selectedSettingsDestination: SettingsDestination {
-        settingsNavigation.current
     }
 
     var isUpdatePresentationBlocked: Bool {
@@ -480,6 +452,10 @@ final class CompanionAppState: ObservableObject {
         }
         selectedPopoverTab = tab
 
+        if tab == .wellbeing {
+            Task { await wellbeingService.refresh() }
+        }
+
         selectedPopoverTabLayoutRefreshTask?.cancel()
         selectedPopoverTabLayoutRefreshTask = Task { @MainActor [weak self] in
             await Task.yield()
@@ -489,15 +465,7 @@ final class CompanionAppState: ObservableObject {
     }
 
     func setSelectedSettingsDestination(_ destination: SettingsDestination) {
-        settingsNavigation.navigate(to: destination)
-    }
-
-    func goBackInSettings() {
-        settingsNavigation.goBack()
-    }
-
-    func goForwardInSettings() {
-        settingsNavigation.goForward()
+        selectedSettingsDestination = destination
     }
 
     func openSettings() {
@@ -519,7 +487,7 @@ final class CompanionAppState: ObservableObject {
     }
 
     func openUpdates() {
-        setSelectedSettingsDestination(.updates)
+        setSelectedSettingsDestination(.about)
         openSettings()
     }
 
@@ -596,6 +564,11 @@ final class CompanionAppState: ObservableObject {
 
     func endTimer() {
         beginEndSession(source: .menuPopover)
+    }
+
+    func endTimerFromHUD() {
+        beginEndSession(source: .timerHUD)
+        windowService.setTimerHUDCommitPresented(true)
     }
 
     func extendTimer() {
@@ -911,10 +884,14 @@ final class CompanionAppState: ObservableObject {
 
     func cancelEndSession() {
         guard !isSubmittingEndSession else { return }
+        let wasPresentedInHUD = endSessionPresentationSource == .timerHUD
         endSessionFallbackTask?.cancel()
         endSessionFallbackTask = nil
         isEndSessionSheetPresented = false
         clearEndSessionState()
+        if wasPresentedInHUD {
+            windowService.setTimerHUDCommitPresented(false)
+        }
         refreshPopupLayoutAfterStateChange()
     }
 
@@ -1044,6 +1021,15 @@ final class CompanionAppState: ObservableObject {
                     self.selectedPopoverTab = .now
                 }
                 self.statusBarService.refreshPopupLayout()
+                self.windowService.reconcileTimerHUD()
+            }
+            .store(in: &cancellables)
+
+        wellbeingService.$snapshot
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.statusBarService.refreshPopupLayout(animated: false)
             }
             .store(in: &cancellables)
 
@@ -1060,6 +1046,7 @@ final class CompanionAppState: ObservableObject {
             dailyFocusService.objectWillChange.eraseToAnyPublisher(),
             issueActionsService.objectWillChange.eraseToAnyPublisher(),
             habitsService.objectWillChange.eraseToAnyPublisher(),
+            wellbeingService.objectWillChange.eraseToAnyPublisher(),
             popoverStatsService.objectWillChange.eraseToAnyPublisher(),
             breakScreenService.objectWillChange.eraseToAnyPublisher(),
             appUpdateService.objectWillChange.eraseToAnyPublisher()
@@ -1074,6 +1061,7 @@ final class CompanionAppState: ObservableObject {
                     self?.reconcileHardLimitPopupPresentation()
                     self?.reconcileHardLimitWarningIndicatorPresentation()
                     self?.reconcileInactivityPopupPresentation()
+                    self?.windowService.reconcileTimerHUD()
                 }
                 .store(in: &cancellables)
         }
@@ -1176,7 +1164,11 @@ final class CompanionAppState: ObservableObject {
         endSessionFallbackTask = nil
         isSubmittingEndSession = false
         isEndSessionSheetPresented = false
+        let wasPresentedInHUD = endSessionPresentationSource == .timerHUD
         clearEndSessionState()
+        if wasPresentedInHUD {
+            windowService.setTimerHUDCommitPresented(false)
+        }
         refreshPopupLayoutAfterStateChange()
         selectedFocusIssue = nil
         if hardLimitPopupSessionID != nil {
@@ -1400,13 +1392,15 @@ final class CompanionAppState: ObservableObject {
 
     private func finalizeInactivityPopup() {
         inactivityPopupCountdownService.cancel()
-        inactivityPopupPhase = nil
-        inactivityPopupDelivery = nil
-        inactivityPopupSessionID = nil
-        if endSessionPresentationSource == .inactivityPopup {
-            clearEndSessionState()
+        windowService.closeInactivityPopup { [weak self] in
+            guard let self else { return }
+            self.inactivityPopupPhase = nil
+            self.inactivityPopupDelivery = nil
+            self.inactivityPopupSessionID = nil
+            if self.endSessionPresentationSource == .inactivityPopup {
+                self.clearEndSessionState()
+            }
         }
-        windowService.closeInactivityPopup()
     }
 
     private func presentSmartPauseResumeNotice(for snapshot: TimerSnapshot) {
@@ -1429,8 +1423,9 @@ final class CompanionAppState: ObservableObject {
     func dismissSmartPauseResumeNotice() {
         smartPauseResumeNoticeDismissTask?.cancel()
         smartPauseResumeNoticeDismissTask = nil
-        smartPauseResumeNotice = nil
-        windowService.closeSmartPauseResumeNotice()
+        windowService.closeSmartPauseResumeNotice { [weak self] in
+            self?.smartPauseResumeNotice = nil
+        }
     }
 
     private func finalizeHardLimitWarningIndicator() {

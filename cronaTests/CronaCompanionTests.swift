@@ -6,46 +6,68 @@ import XCTest
 
 @MainActor
 final class CronaCompanionTests: XCTestCase {
-    func testSettingsNavigationTracksBackAndForwardHistory() {
-        var history = SettingsNavigationHistory()
+    func testTransientPopupCollectionBehaviorSupportsSpacesAndFullScreen() {
+        let behavior = WindowService.transientPopupCollectionBehavior
 
-        history.navigate(to: .menuBar)
-        history.navigate(to: .notifications)
-        history.goBack()
-
-        XCTAssertEqual(history.current, .menuBar)
-        XCTAssertTrue(history.canGoBack)
-        XCTAssertTrue(history.canGoForward)
-
-        history.goForward()
-
-        XCTAssertEqual(history.current, .notifications)
-        XCTAssertTrue(history.canGoBack)
-        XCTAssertFalse(history.canGoForward)
+        XCTAssertTrue(behavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(behavior.contains(.fullScreenAuxiliary))
+        XCTAssertTrue(behavior.contains(.stationary))
     }
 
-    func testSettingsNavigationClearsForwardHistoryAfterNewSelection() {
-        var history = SettingsNavigationHistory()
-        history.navigate(to: .menuBar)
-        history.navigate(to: .notifications)
-        history.goBack()
+    func testPreferencesDefaultFloatingTimerHUDOffAndPersistsOptIn() throws {
+        let legacy = try JSONDecoder().decode(CompanionPreferences.self, from: Data("{}".utf8))
+        XCTAssertFalse(legacy.showTimerHUD)
 
-        history.navigate(to: .runtime)
-
-        XCTAssertEqual(history.current, .runtime)
-        XCTAssertFalse(history.canGoForward)
+        var enabled = legacy
+        enabled.showTimerHUD = true
+        let decoded = try JSONDecoder().decode(
+            CompanionPreferences.self,
+            from: JSONEncoder().encode(enabled)
+        )
+        XCTAssertTrue(decoded.showTimerHUD)
     }
 
-    func testSettingsNavigationIgnoresDuplicateAndBoundaryActions() {
-        var history = SettingsNavigationHistory()
+    func testTimerHUDVisibilityRequiresEnabledActiveTimerWithoutMenuPopover() {
+        XCTAssertTrue(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: true,
+            activeTimer: true,
+            menuBarPopoverPresented: false
+        ))
+        XCTAssertFalse(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: true,
+            activeTimer: true,
+            menuBarPopoverPresented: true
+        ))
+        XCTAssertFalse(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: false,
+            activeTimer: true,
+            menuBarPopoverPresented: false
+        ))
+        XCTAssertFalse(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: true,
+            activeTimer: false,
+            menuBarPopoverPresented: false
+        ))
+    }
 
-        history.goBack()
-        history.goForward()
-        history.navigate(to: .general)
+    func testDailyCheckInDecodesOptionalWellbeingFields() throws {
+        let data = Data(#"{"date":"2026-08-13","mood":4,"energy":3,"sleepHours":7.5,"sleepScore":82,"screenTimeMinutes":95,"notes":"Steady day","createdAt":"now","updatedAt":"now"}"#.utf8)
+        let checkIn = try JSONDecoder().decode(CronaDailyCheckIn.self, from: data)
 
-        XCTAssertEqual(history.current, .general)
-        XCTAssertFalse(history.canGoBack)
-        XCTAssertFalse(history.canGoForward)
+        XCTAssertEqual(checkIn.mood, 4)
+        XCTAssertEqual(checkIn.energy, 3)
+        XCTAssertEqual(checkIn.sleepHours, 7.5)
+        XCTAssertEqual(checkIn.sleepScore, 82)
+        XCTAssertEqual(checkIn.screenTimeMinutes, 95)
+        XCTAssertEqual(checkIn.notes, "Steady day")
+    }
+
+    func testSettingsDestinationsUseConsolidatedInformationArchitecture() {
+        XCTAssertTrue(SettingsDestination.allCases.contains(.daySchedule))
+        XCTAssertTrue(SettingsDestination.allCases.contains(.advanced))
+        XCTAssertFalse(SettingsDestination.allCases.map(\.rawValue).contains("runtime"))
+        XCTAssertFalse(SettingsDestination.allCases.map(\.rawValue).contains("diagnostics"))
+        XCTAssertFalse(SettingsDestination.allCases.map(\.rawValue).contains("updates"))
     }
 
     func testDiscoveryResolvesEndpointAndDefaultsTransport() {

@@ -186,6 +186,18 @@ final class CronaDaemonClient {
         try await request(method: "daily_plan.get", params: AnyEncodable(CronaDailyPlanQuery(date: date)))
     }
 
+    func checkInGet(date: String) async throws -> CronaDailyCheckIn? {
+        let result: CronaDailyCheckIn = try await request(
+            method: "checkin.get",
+            params: AnyEncodable(CronaDailyCheckInQuery(date: date))
+        )
+        return result.date.isEmpty ? nil : result
+    }
+
+    func checkInUpsert(_ input: CronaDailyCheckInUpsertRequest) async throws -> CronaDailyCheckIn {
+        try await request(method: "checkin.upsert", params: AnyEncodable(input))
+    }
+
     func listDueHabits(date: String) async throws -> [CronaHabitDailyItem] {
         try await request(method: "habit.list_due", params: AnyEncodable(CronaListHabitsDueQuery(date: date)))
     }

@@ -816,6 +816,30 @@ struct CronaEndSessionRequest: Codable, Equatable {
     }
 }
 
+struct CronaDailyCheckIn: Codable, Equatable {
+    let date: String
+    let mood: Int
+    let energy: Int
+    let sleepHours: Double?
+    let sleepScore: Int?
+    let screenTimeMinutes: Int?
+    let notes: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
+struct CronaDailyCheckInQuery: Codable, Equatable { let date: String }
+
+struct CronaDailyCheckInUpsertRequest: Codable, Equatable {
+    let date: String
+    let mood: Int
+    let energy: Int
+    let sleepHours: Double?
+    let sleepScore: Int?
+    let screenTimeMinutes: Int?
+    let notes: String?
+}
+
 struct CronaListHabitsDueQuery: Codable, Equatable {
     let date: String
 }

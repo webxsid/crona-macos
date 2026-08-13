@@ -5,6 +5,7 @@ where T.AllCases: RandomAccessCollection {
 
     @Binding var selection: T
     let title: (T) -> String
+    var fitsContent = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -24,7 +25,8 @@ where T.AllCases: RandomAccessCollection {
                                 ? PopupVisualTheme.selectedControlText
                                 : PopupVisualTheme.secondaryText
                         )
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: fitsContent ? nil : .infinity)
+                        .padding(.horizontal, fitsContent ? 12 : 0)
                         .padding(.vertical, 8)
                         .contentShape(Capsule())
                 }

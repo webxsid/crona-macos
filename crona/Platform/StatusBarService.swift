@@ -53,6 +53,10 @@ struct StatusPopupLayoutKey: Equatable {
     let statsIsLoading: Bool
     let statsHasError: Bool
     let statsHasScore: Bool
+    let wellbeingHasCheckIn: Bool
+    let wellbeingIsLoading: Bool
+    let wellbeingIsSaving: Bool
+    let wellbeingHasError: Bool
     let modalKind: PopoverModalKind?
     let showsUpdate: Bool
 
@@ -72,6 +76,10 @@ struct StatusPopupLayoutKey: Equatable {
         statsIsLoading: Bool = false,
         statsHasError: Bool = false,
         statsHasScore: Bool = false,
+        wellbeingHasCheckIn: Bool = false,
+        wellbeingIsLoading: Bool = false,
+        wellbeingIsSaving: Bool = false,
+        wellbeingHasError: Bool = false,
         modalKind: PopoverModalKind?,
         showsUpdate: Bool
     ) {
@@ -90,6 +98,10 @@ struct StatusPopupLayoutKey: Equatable {
         self.statsIsLoading = statsIsLoading
         self.statsHasError = statsHasError
         self.statsHasScore = statsHasScore
+        self.wellbeingHasCheckIn = wellbeingHasCheckIn
+        self.wellbeingIsLoading = wellbeingIsLoading
+        self.wellbeingIsSaving = wellbeingIsSaving
+        self.wellbeingHasError = wellbeingHasError
         self.modalKind = modalKind
         self.showsUpdate = showsUpdate
     }
@@ -134,6 +146,7 @@ final class StatusBarService: NSObject {
     private var lastLayoutKey: StatusPopupLayoutKey?
     private lazy var contextMenu = makeContextMenu()
     private weak var appUpdateMenuItem: NSMenuItem?
+    private weak var awayMenuItem: NSMenuItem?
 
     isolated deinit {
         iconAnimationTimer?.invalidate()
@@ -172,6 +185,7 @@ final class StatusBarService: NSObject {
 
     func dismissPopup(animated: Bool = true, completion: (() -> Void)? = nil) {
         guard let panel = popupPanel, panel.isVisible else {
+            appState?.windowService.setMenuBarPopoverPresented(false)
             completion?()
             return
         }
@@ -185,6 +199,7 @@ final class StatusBarService: NSObject {
         guard animated else {
             panel.orderOut(nil)
             panel.alphaValue = 1
+            appState?.windowService.setMenuBarPopoverPresented(false)
             completion?()
             return
         }
@@ -206,6 +221,7 @@ final class StatusBarService: NSObject {
             panel.orderOut(nil)
             panel.alphaValue = 1
             panel.setFrame(restingFrame, display: false)
+            self.appState?.windowService.setMenuBarPopoverPresented(false)
             completion?()
         }
     }
@@ -399,6 +415,12 @@ final class StatusBarService: NSObject {
         menu.addItem(updates)
         menu.addItem(.separator())
 
+        let away = menuItem("Mark Today as Away", action: #selector(toggleAwayMode))
+        away.image = NSImage(systemSymbolName: "figure.walk.circle", accessibilityDescription: nil)
+        awayMenuItem = away
+        menu.addItem(away)
+        menu.addItem(.separator())
+
         menu.addItem(menuItem("Documentation", action: #selector(openDocumentation)))
         menu.addItem(menuItem("GitHub", action: #selector(openGitHub)))
         menu.addItem(menuItem("Support", action: #selector(openSupport)))
@@ -416,11 +438,18 @@ final class StatusBarService: NSObject {
     }
 
     private func refreshContextMenu() {
-        guard let appState, let item = appUpdateMenuItem else { return }
-        item.title = appState.appUpdateService.hasAvailableUpdate
+        guard let appState else { return }
+        appUpdateMenuItem?.title = appState.appUpdateService.hasAvailableUpdate
             ? "Update Available…"
             : "Check for Updates…"
-        item.isEnabled = appState.appUpdateService.canCheckForUpdates
+        appUpdateMenuItem?.isEnabled = appState.appUpdateService.canCheckForUpdates
+        let explicitAway = appState.coreSettingsService.settings.awayModeEnabled
+        awayMenuItem?.title = explicitAway
+            ? "Disable Away"
+            : (appState.todayIsAway ? "Away Today (Rest Rule)" : "Mark Today as Away")
+        awayMenuItem?.isEnabled = appState.daemonConnection.connectionState == .connected
+            && !appState.coreSettingsService.isSaving
+            && (explicitAway || !appState.todayIsAway)
     }
 
     private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
@@ -432,6 +461,11 @@ final class StatusBarService: NSObject {
 
     @objc private func openAbout() {
         appState?.openAbout()
+    }
+
+    @objc private func toggleAwayMode() {
+        guard let appState else { return }
+        appState.setAwayMode(!appState.coreSettingsService.settings.awayModeEnabled)
     }
 
     @objc private func openSettings() {
@@ -464,6 +498,7 @@ final class StatusBarService: NSObject {
 
     private func showPopup() {
         guard let panel = popupPanel, let button = statusItem.button else { return }
+        appState?.windowService.setMenuBarPopoverPresented(true)
         Task { await appState?.coreSettingsService.refresh() }
         let interval = signposter.beginInterval("Open Popup")
         defer { signposter.endInterval("Open Popup", interval) }
@@ -643,6 +678,10 @@ final class StatusBarService: NSObject {
             statsHasError: appState.popoverStatsService.snapshot.lastErrorDescription != nil,
             statsHasScore: appState.popoverStatsService.snapshot.focusScore != nil
                 || appState.popoverStatsService.snapshot.todayMetrics != nil,
+            wellbeingHasCheckIn: appState.wellbeingService.snapshot.checkIn != nil,
+            wellbeingIsLoading: appState.wellbeingService.snapshot.isLoading,
+            wellbeingIsSaving: appState.wellbeingService.snapshot.isSaving,
+            wellbeingHasError: appState.wellbeingService.snapshot.lastErrorDescription != nil,
             modalKind: modalKind,
             showsUpdate: appState.appUpdateService.hasAvailableUpdate
                 && !appState.isUpdatePresentationBlocked

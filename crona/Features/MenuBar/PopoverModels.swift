@@ -54,6 +54,7 @@ struct FocusStartConfigModel: Equatable {
 enum PopoverTab: String, CaseIterable, Equatable, Identifiable {
     case now
     case habits
+    case wellbeing
     case stats
 
     var id: String { rawValue }
@@ -62,6 +63,7 @@ enum PopoverTab: String, CaseIterable, Equatable, Identifiable {
         switch self {
         case .now: return "Daily"
         case .habits: return "Habits"
+        case .wellbeing: return "Wellbeing"
         case .stats: return "Stats"
         }
     }

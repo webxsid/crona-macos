@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BreakScreenRootView: View {
     @ObservedObject var appState: CompanionAppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let screen: NSScreen
     let isPrimary: Bool
 
@@ -38,6 +39,7 @@ struct BreakScreenRootView: View {
                         .font(.system(size: 86, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText(countsDown: true))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: presentation.displaySeconds)
 
                     Text("Ends at \(endDate(presentation: presentation, now: now).formatted(date: .omitted, time: .shortened))")
                         .font(.system(size: 15, weight: .medium))
@@ -47,12 +49,10 @@ struct BreakScreenRootView: View {
                 progressBar(presentation: presentation)
                     .frame(maxWidth: 460)
 
-                contextBlock
+                restPrompt
 
-                if isPrimary {
-                    actionArea(now: now)
-                        .frame(maxWidth: 360)
-                }
+                actionArea(now: now)
+                    .frame(maxWidth: 360)
 
                 Spacer()
             }
@@ -85,27 +85,17 @@ struct BreakScreenRootView: View {
         .accessibilityValue("\(Int((presentation.progressFraction ?? 0) * 100)) percent remaining")
     }
 
-    private var contextBlock: some View {
-        let context = appState.contextService.snapshot
-        return VStack(spacing: 8) {
-            Text(context.issueTitle ?? "Step away for a moment")
+    private var restPrompt: some View {
+        VStack(spacing: 8) {
+            Text(segment == .longBreak ? "Take a proper pause." : "Step away for a moment.")
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
 
-            HStack(spacing: 7) {
-                if let repo = context.repoName {
-                    Text(repo)
-                }
-                if context.repoName != nil, context.streamName != nil {
-                    Text("•")
-                }
-                if let stream = context.streamName {
-                    Text(stream)
-                }
-            }
+            Text("Look away from the screen, move around, and let your attention reset.")
             .font(.subheadline)
             .foregroundStyle(.white.opacity(0.54))
+            .multilineTextAlignment(.center)
         }
         .frame(maxWidth: 560)
     }
@@ -124,6 +114,7 @@ struct BreakScreenRootView: View {
                 }
                 Button("Retry", action: service.retryTransition)
                     .buttonStyle(BreakScreenPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                 Button("Dismiss Screen", action: service.dismissRecovery)
                     .buttonStyle(BreakScreenSecondaryButtonStyle())
             }
@@ -132,6 +123,7 @@ struct BreakScreenRootView: View {
             case .easy:
                 Button("Skip Break", action: service.skipBreak)
                     .buttonStyle(BreakScreenPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!service.canSkip)
             case .strict:
                 let remaining = service.strictDelayRemaining(at: now)
@@ -143,6 +135,7 @@ struct BreakScreenRootView: View {
                 )
                 .buttonStyle(BreakScreenPrimaryButtonStyle())
                 .disabled(!service.canSkip(at: now))
+                .keyboardShortcut(.defaultAction)
             case .hard:
                 Label("Your break ends automatically", systemImage: "lock.fill")
                     .font(.subheadline.weight(.medium))
@@ -168,6 +161,15 @@ struct BreakScreenBackgroundView: View {
     let preferences: CompanionPreferences
     let screen: NSScreen?
     let date: Date
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var wallpaperImage: NSImage?
+
+    init(preferences: CompanionPreferences, screen: NSScreen?, date: Date) {
+        self.preferences = preferences
+        self.screen = screen
+        self.date = date
+        _wallpaperImage = State(initialValue: Self.loadWallpaper(for: screen))
+    }
 
     var body: some View {
         ZStack {
@@ -177,7 +179,13 @@ struct BreakScreenBackgroundView: View {
             case .solidColor:
                 Color(rgba: preferences.breakScreenSolidColor)
             case .gradient:
-                animatedAbstractBackground(preferences.breakScreenGradientPreset, at: date)
+                if reduceMotion {
+                    animatedAbstractBackground(preferences.breakScreenGradientPreset, at: date)
+                } else {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                        animatedAbstractBackground(preferences.breakScreenGradientPreset, at: timeline.date)
+                    }
+                }
             }
 
             LinearGradient(
@@ -190,17 +198,21 @@ struct BreakScreenBackgroundView: View {
 
     @ViewBuilder
     private var wallpaper: some View {
-        if
-            let screen,
-            let url = NSWorkspace.shared.desktopImageURL(for: screen),
-            let image = NSImage(contentsOf: url)
-        {
+        if let image = wallpaperImage {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
         } else {
             animatedAbstractBackground(.graphite, at: date)
         }
+    }
+
+    private static func loadWallpaper(for screen: NSScreen?) -> NSImage? {
+        guard
+            let screen,
+            let url = NSWorkspace.shared.desktopImageURL(for: screen)
+        else { return nil }
+        return NSImage(contentsOf: url)
     }
 
     private func animatedAbstractBackground(_ preset: BreakScreenGradientPreset, at date: Date) -> some View {

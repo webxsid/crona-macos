@@ -237,6 +237,7 @@ struct CompanionPreferences: Codable, Equatable {
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
+    var showTimerHUD = false
     var smartPauseEnabled = false
     var smartPauseOnLock = true
     var smartPauseOnDisplaySleep = true
@@ -287,6 +288,7 @@ extension CompanionPreferences {
         case menuBarDisplayMode
         case menuBarIdleTextMode
         case menuBarTimeFormat
+        case showTimerHUD
         case smartPauseEnabled
         case smartPauseOnLock
         case smartPauseOnDisplaySleep
@@ -327,6 +329,7 @@ extension CompanionPreferences {
         menuBarTimeFormat =
             try values.decodeIfPresent(MenuBarTimeFormat.self, forKey: .menuBarTimeFormat)
             ?? .clock
+        showTimerHUD = try values.decodeIfPresent(Bool.self, forKey: .showTimerHUD) ?? false
         smartPauseEnabled =
             try values.decodeIfPresent(Bool.self, forKey: .smartPauseEnabled)
             ?? false
@@ -395,6 +398,7 @@ extension CompanionPreferences {
         try values.encode(menuBarDisplayMode, forKey: .menuBarDisplayMode)
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)
+        try values.encode(showTimerHUD, forKey: .showTimerHUD)
         try values.encode(smartPauseEnabled, forKey: .smartPauseEnabled)
         try values.encode(smartPauseOnLock, forKey: .smartPauseOnLock)
         try values.encode(smartPauseOnDisplaySleep, forKey: .smartPauseOnDisplaySleep)

@@ -63,6 +63,8 @@ struct PopoverRootView: View {
                     )
                 case .habits:
                     HabitsTabView(appState: appState)
+                case .wellbeing:
+                    WellbeingTabView(appState: appState)
                 case .stats:
                     StatsTabView(appState: appState)
                 }
@@ -157,9 +159,9 @@ struct PopoverRootView: View {
             if !appState.hasActiveFocusSession {
                 SegmentedControl(
                     selection: $appState.selectedPopoverTab,
-                    title: \.title
+                    title: \.title,
+                    fitsContent: true
                 )
-                .frame(width: 210)
                 .onChange(of: appState.selectedPopoverTab) { _, newTab in
                     appState.setSelectedPopoverTab(newTab)
                 }
@@ -333,6 +335,7 @@ struct AwayModeView: View {
 struct ActiveTimerView: View {
     @ObservedObject var appState: CompanionAppState
     @ObservedObject var displayClock: PopupDisplayClock
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let now = displayClock.now
@@ -354,6 +357,8 @@ struct ActiveTimerView: View {
                 Text(timeText(for: presentation))
                     .font(.system(size: 58, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: presentation.mode != .stopwatch))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: presentation.displaySeconds)
                     .foregroundStyle(PopupVisualTheme.primaryText)
             }
             .frame(maxWidth: .infinity)
@@ -492,20 +497,28 @@ struct IdleFocusView: View {
                 Text("Ready to Focus")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(PopupVisualTheme.primaryText)
+                Spacer()
+                Menu {
+                    Button {
+                        appState.setAwayMode(true)
+                    } label: {
+                        Label("Mark Today as Away", systemImage: "figure.walk.circle")
+                    }
+                    .disabled(appState.coreSettingsService.isSaving)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
+                        .menuBarIconHitTarget()
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Daily actions")
             }
 
-            Button {
-                appState.setAwayMode(true)
-            } label: {
-                if appState.coreSettingsService.isSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Label("Enable Away Today", systemImage: "figure.walk.circle")
-                }
+            if appState.coreSettingsService.isSaving {
+                ProgressView().controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .disabled(appState.coreSettingsService.isSaving)
 
             if let error = appState.coreSettingsService.lastErrorDescription, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
