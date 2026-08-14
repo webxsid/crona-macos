@@ -18,12 +18,52 @@ enum PopoverModalKind: Equatable {
     }
 }
 
+private struct PopupSurfaceHeightKey: PreferenceKey {
+    static let defaultValue = StatusPopupSizing.viewportHeight
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct PopoverRootView: View {
     @ObservedObject var appState: CompanionAppState
     let displayClock: PopupDisplayClock
+    let onVisibleSurfaceHeightChange: ((CGFloat) -> Void)?
     @Environment(\.openSettings) private var openSettings
 
+    init(
+        appState: CompanionAppState,
+        displayClock: PopupDisplayClock,
+        onVisibleSurfaceHeightChange: ((CGFloat) -> Void)? = nil
+    ) {
+        self.appState = appState
+        self.displayClock = displayClock
+        self.onVisibleSurfaceHeightChange = onVisibleSurfaceHeightChange
+    }
+
     var body: some View {
+        ZStack(alignment: .top) {
+            visibleSurface
+        }
+        .frame(
+            width: StatusPopupSizing.width,
+            height: StatusPopupSizing.viewportHeight,
+            alignment: .top
+        )
+        .clipped()
+        .onPreferenceChange(PopupSurfaceHeightKey.self) { height in
+            onVisibleSurfaceHeightChange?(height)
+        }
+        .onAppear {
+            appState.registerSettingsSceneAction {
+                openSettings()
+            }
+        }
+        .companionAppearance(appState)
+    }
+
+    private var visibleSurface: some View {
         ZStack(alignment: .top) {
             dashboardSurface
                 .offset(x: appState.isIssueCreatorContentVisible ? -420 : 0)
@@ -35,17 +75,19 @@ struct PopoverRootView: View {
                     .allowsHitTesting(appState.isIssueCreatorContentVisible)
             }
         }
-        .frame(width: 420)
-        .frame(minHeight: modalMinimumHeight)
+        .frame(width: StatusPopupSizing.width, alignment: .top)
+        .frame(minHeight: modalMinimumHeight, alignment: .top)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PopupSurfaceHeightKey.self,
+                    value: proxy.size.height
+                )
+            }
+        }
         .background(PopoverGlassBackground())
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
-        .onAppear {
-            appState.registerSettingsSceneAction {
-                openSettings()
-            }
-        }
-        .companionAppearance(appState)
     }
 
     private var dashboardSurface: some View {
@@ -117,7 +159,7 @@ struct PopoverRootView: View {
             }
         }
         .padding(14)
-        .frame(width: 420)
+        .frame(width: StatusPopupSizing.width)
         .opacity(hasDashboardModal ? 0.38 : 1)
         .blur(radius: hasDashboardModal ? 3 : 0)
         .scaleEffect(hasDashboardModal ? 0.985 : 1)

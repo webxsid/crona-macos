@@ -89,7 +89,6 @@ final class CompanionAppState: ObservableObject {
     private var presentationTimer: Timer?
     private var lastWarningIndicatorKey: String?
     private var settingsSceneAction: (() -> Void)?
-    private var selectedPopoverTabLayoutRefreshTask: Task<Void, Never>?
     @Published var selectedFocusIssue: DailyFocusIssue?
     @Published var issueActionEditor: IssueActionEditor?
     @Published var issueActionNote = ""
@@ -477,12 +476,6 @@ final class CompanionAppState: ObservableObject {
             Task { await wellbeingService.refresh() }
         }
 
-        selectedPopoverTabLayoutRefreshTask?.cancel()
-        selectedPopoverTabLayoutRefreshTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard let self, !Task.isCancelled else { return }
-            self.statusBarService.refreshPopupLayout(animated: false)
-        }
     }
 
     func setSelectedSettingsDestination(_ destination: SettingsDestination) {
@@ -558,13 +551,6 @@ final class CompanionAppState: ObservableObject {
 
     func dismissMenuBarPopup() {
         statusBarService.dismissPopup()
-    }
-
-    private func refreshPopupLayoutAfterStateChange() {
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            self?.statusBarService.refreshPopupLayout()
-        }
     }
 
     func openTUI() {
@@ -825,14 +811,12 @@ final class CompanionAppState: ObservableObject {
         let presentationGeneration = issueCreatorPresentationGeneration
         Task { @MainActor [weak self] in
             await Task.yield()
-            self?.statusBarService.refreshPopupLayout { [weak self] in
-                guard let self,
-                      self.isIssueCreatorPresented,
-                      presentationGeneration == self.issueCreatorPresentationGeneration
-                else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    self.isIssueCreatorContentVisible = true
-                }
+            guard let self,
+                  self.isIssueCreatorPresented,
+                  presentationGeneration == self.issueCreatorPresentationGeneration
+            else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                self.isIssueCreatorContentVisible = true
             }
         }
         Task {
@@ -840,7 +824,6 @@ final class CompanionAppState: ObservableObject {
             if !issueCreationService.destinations.contains(where: { $0.streamID == issueCreateDestinationID }) {
                 issueCreateDestinationID = nil
             }
-            refreshPopupLayoutAfterStateChange()
         }
     }
 
@@ -884,7 +867,6 @@ final class CompanionAppState: ObservableObject {
             await dismissIssueCreatorPresentationAndWait()
             await dailyFocusService.refresh()
             scheduleIssueCreationSuccessDismissal()
-            refreshPopupLayoutAfterStateChange()
         }
     }
 
@@ -897,13 +879,11 @@ final class CompanionAppState: ObservableObject {
         issueCreationSuccess = nil
         selectedPopoverTab = .now
         selectedFocusIssue = success.issue
-        refreshPopupLayoutAfterStateChange()
     }
 
     func dismissIssueCreationSuccess() {
         issueCreationSuccessDismissTask?.cancel()
         issueCreationSuccess = nil
-        refreshPopupLayoutAfterStateChange()
     }
 
     private func scheduleIssueCreationSuccessDismissal() {
@@ -912,7 +892,6 @@ final class CompanionAppState: ObservableObject {
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             self?.issueCreationSuccess = nil
-            self?.refreshPopupLayoutAfterStateChange()
         }
     }
 
@@ -931,7 +910,6 @@ final class CompanionAppState: ObservableObject {
             else { return }
             self.isIssueCreatorPresented = false
             await Task.yield()
-            self.statusBarService.refreshPopupLayout()
         }
     }
 
@@ -947,11 +925,6 @@ final class CompanionAppState: ObservableObject {
         else { return }
         isIssueCreatorPresented = false
         await Task.yield()
-        await withCheckedContinuation { continuation in
-            statusBarService.refreshPopupLayout {
-                continuation.resume()
-            }
-        }
     }
 
     func requestIssueStatusChange(
@@ -971,7 +944,6 @@ final class CompanionAppState: ObservableObject {
         }
         issueActionNote = ""
         issueActionEditor = .status(issue: issue, status: status)
-        refreshPopupLayoutAfterStateChange()
     }
 
     func setIssueDueDate(_ issue: DailyFocusIssue, date: String) {
@@ -993,14 +965,12 @@ final class CompanionAppState: ObservableObject {
         let initialValue = issue.todoForDate ?? dailyFocusService.snapshot.date
         issueActionDate = CronaCalendarDate.date(from: initialValue) ?? Date()
         issueActionEditor = .dueDate(issue: issue)
-        refreshPopupLayoutAfterStateChange()
     }
 
     func cancelIssueActionEditor() {
         guard issueActionsService.actionInFlightIssueID == nil else { return }
         issueActionEditor = nil
         issueActionNote = ""
-        refreshPopupLayoutAfterStateChange()
     }
 
     func submitIssueActionEditor() {
@@ -1020,7 +990,6 @@ final class CompanionAppState: ObservableObject {
                 if succeeded {
                     issueActionEditor = nil
                     issueActionNote = ""
-                    refreshPopupLayoutAfterStateChange()
                 }
             }
         case let .dueDate(issue):
@@ -1029,7 +998,6 @@ final class CompanionAppState: ObservableObject {
                 let succeeded = await issueActionsService.setDueDate(issue: issue, date: date)
                 if succeeded {
                     issueActionEditor = nil
-                    refreshPopupLayoutAfterStateChange()
                 }
             }
         }
@@ -1047,7 +1015,6 @@ final class CompanionAppState: ObservableObject {
         endSessionErrorMessage = nil
         isEndSessionSheetPresented = source == .menuPopover
         requestEndSessionFocus()
-        refreshPopupLayoutAfterStateChange()
     }
 
     func cancelEndSession() {
@@ -1060,7 +1027,6 @@ final class CompanionAppState: ObservableObject {
         if wasPresentedInHUD {
             windowService.setTimerHUDCommitPresented(false)
         }
-        refreshPopupLayoutAfterStateChange()
     }
 
     func confirmEndSession() {
@@ -1188,16 +1154,7 @@ final class CompanionAppState: ObservableObject {
                 if isActive, self.selectedPopoverTab != .now {
                     self.selectedPopoverTab = .now
                 }
-                self.statusBarService.refreshPopupLayout()
                 self.windowService.reconcileTimerHUD()
-            }
-            .store(in: &cancellables)
-
-        wellbeingService.$snapshot
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.statusBarService.refreshPopupLayout(animated: false)
             }
             .store(in: &cancellables)
 
@@ -1338,7 +1295,6 @@ final class CompanionAppState: ObservableObject {
         if wasPresentedInHUD {
             windowService.setTimerHUDCommitPresented(false)
         }
-        refreshPopupLayoutAfterStateChange()
         selectedFocusIssue = nil
         if hardLimitPopupSessionID != nil {
             finalizeHardLimitPopup()

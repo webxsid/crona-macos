@@ -1975,133 +1975,6 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.elapsedSeconds, 90)
     }
 
-    func testStatusPopupLayoutKeyIgnoresTimerDisplayChanges() {
-        let first = StatusPopupLayoutKey(
-            connectionState: .connected,
-            selectedTab: .now,
-            hasActiveSession: true,
-            hasSelectedIssue: false,
-            hasContext: true,
-            hasUpcomingSegment: false,
-            modalKind: nil,
-            showsUpdate: false
-        )
-        let afterSeveralHours = StatusPopupLayoutKey(
-            connectionState: .connected,
-            selectedTab: .now,
-            hasActiveSession: true,
-            hasSelectedIssue: false,
-            hasContext: true,
-            hasUpcomingSegment: false,
-            modalKind: nil,
-            showsUpdate: false
-        )
-
-        XCTAssertEqual(first, afterSeveralHours)
-        XCTAssertNotEqual(
-            first,
-            StatusPopupLayoutKey(
-                connectionState: .connected,
-                selectedTab: .now,
-                hasActiveSession: true,
-                hasSelectedIssue: false,
-                hasContext: true,
-                hasUpcomingSegment: true,
-                modalKind: nil,
-                showsUpdate: false
-            )
-        )
-    }
-
-    func testStatusPopupLayoutKeyTracksAsyncContentChanges() {
-        let base = StatusPopupLayoutKey(
-            connectionState: .connected,
-            selectedTab: .now,
-            hasActiveSession: false,
-            hasSelectedIssue: false,
-            hasContext: false,
-            hasUpcomingSegment: false,
-            dailyIssueCount: 2,
-            habitsItemCount: 1,
-            habitsIsLoading: false,
-            habitsHasError: false,
-            habitActionInFlightID: nil,
-            statsDate: "2026-07-28",
-            statsIsLoading: false,
-            statsHasError: false,
-            statsHasScore: true,
-            modalKind: nil,
-            showsUpdate: false
-        )
-
-        XCTAssertNotEqual(
-            base,
-            StatusPopupLayoutKey(
-                connectionState: .connected,
-                selectedTab: .now,
-                hasActiveSession: false,
-                hasSelectedIssue: false,
-                hasContext: false,
-                hasUpcomingSegment: false,
-                dailyIssueCount: 3,
-                habitsItemCount: 1,
-                habitsIsLoading: false,
-                habitsHasError: false,
-                habitActionInFlightID: nil,
-                statsDate: "2026-07-28",
-                statsIsLoading: false,
-                statsHasError: false,
-                statsHasScore: true,
-                modalKind: nil,
-                showsUpdate: false
-            )
-        )
-        XCTAssertNotEqual(
-            base,
-            StatusPopupLayoutKey(
-                connectionState: .connected,
-                selectedTab: .habits,
-                hasActiveSession: false,
-                hasSelectedIssue: false,
-                hasContext: false,
-                hasUpcomingSegment: false,
-                dailyIssueCount: 2,
-                habitsItemCount: 2,
-                habitsIsLoading: true,
-                habitsHasError: false,
-                habitActionInFlightID: 42,
-                statsDate: "2026-07-28",
-                statsIsLoading: false,
-                statsHasError: false,
-                statsHasScore: true,
-                modalKind: nil,
-                showsUpdate: false
-            )
-        )
-        XCTAssertNotEqual(
-            base,
-            StatusPopupLayoutKey(
-                connectionState: .connected,
-                selectedTab: .stats,
-                hasActiveSession: false,
-                hasSelectedIssue: false,
-                hasContext: false,
-                hasUpcomingSegment: false,
-                dailyIssueCount: 2,
-                habitsItemCount: 1,
-                habitsIsLoading: false,
-                habitsHasError: false,
-                habitActionInFlightID: nil,
-                statsDate: "2026-07-27",
-                statsIsLoading: true,
-                statsHasError: true,
-                statsHasScore: false,
-                modalKind: nil,
-                showsUpdate: false
-            )
-        )
-    }
-
     func testPopupDisplayClockStopsWhenDismissed() {
         let clock = PopupDisplayClock()
 
@@ -3129,10 +3002,9 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(origin.y, 568)
     }
 
-    func testStatusPopupSizingClampsTransientMeasurements() {
-        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 120), 180)
-        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 312.2), 313)
-        XCTAssertEqual(StatusPopupSizing.resolvedHeight(for: 800), 700)
+    func testStatusPopupUsesFixedViewportDimensions() {
+        XCTAssertEqual(StatusPopupSizing.width, 420)
+        XCTAssertEqual(StatusPopupSizing.viewportHeight, 700)
     }
 
     func testPopoverModalMinimumHeightsRemainBounded() {
@@ -3140,8 +3012,8 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(PopoverModalKind.endSession.minimumHeight, 360)
         XCTAssertEqual(PopoverModalKind.dueDate.minimumHeight, 430)
         XCTAssertEqual(PopoverModalKind.issueCreate.minimumHeight, 560)
-        XCTAssertLessThan(PopoverModalKind.issueCreate.minimumHeight, StatusPopupSizing.maximumHeight)
-        XCTAssertLessThan(PopoverModalKind.dueDate.minimumHeight, StatusPopupSizing.maximumHeight)
+        XCTAssertLessThan(PopoverModalKind.issueCreate.minimumHeight, StatusPopupSizing.viewportHeight)
+        XCTAssertLessThan(PopoverModalKind.dueDate.minimumHeight, StatusPopupSizing.viewportHeight)
     }
 
     func testAlertSettingsOptimisticProjectionMapsSoundAndProminence() throws {

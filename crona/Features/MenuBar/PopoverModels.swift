@@ -61,7 +61,7 @@ enum PopoverTab: String, CaseIterable, Equatable, Identifiable {
 
     var title: String {
         switch self {
-        case .now: return "Daily"
+        case .now: return "Issues"
         case .habits: return "Habits"
         case .wellbeing: return "Wellbeing"
         case .stats: return "Stats"

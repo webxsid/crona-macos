@@ -29,85 +29,9 @@ final class PopupDisplayClock: ObservableObject {
 }
 
 enum StatusPopupSizing {
+    static let width: CGFloat = 420
     static let minimumHeight: CGFloat = 180
-    static let maximumHeight: CGFloat = 700
-
-    static func resolvedHeight(for measuredHeight: CGFloat) -> CGFloat {
-        min(maximumHeight, max(minimumHeight, ceil(measuredHeight)))
-    }
-}
-
-struct StatusPopupLayoutKey: Equatable {
-    let connectionState: CompanionConnectionState
-    let selectedTab: PopoverTab
-    let hasActiveSession: Bool
-    let hasSelectedIssue: Bool
-    let hasContext: Bool
-    let hasUpcomingSegment: Bool
-    let dailyIssueCount: Int
-    let habitsItemCount: Int
-    let habitsIsLoading: Bool
-    let habitsHasError: Bool
-    let habitActionInFlightID: Int64?
-    let statsDate: String
-    let statsIsLoading: Bool
-    let statsHasError: Bool
-    let statsHasScore: Bool
-    let wellbeingHasCheckIn: Bool
-    let wellbeingIsLoading: Bool
-    let wellbeingIsSaving: Bool
-    let wellbeingHasError: Bool
-    let hasIssueCreationSuccess: Bool
-    let modalKind: PopoverModalKind?
-    let showsUpdate: Bool
-
-    init(
-        connectionState: CompanionConnectionState,
-        selectedTab: PopoverTab,
-        hasActiveSession: Bool,
-        hasSelectedIssue: Bool,
-        hasContext: Bool,
-        hasUpcomingSegment: Bool,
-        dailyIssueCount: Int = 0,
-        habitsItemCount: Int = 0,
-        habitsIsLoading: Bool = false,
-        habitsHasError: Bool = false,
-        habitActionInFlightID: Int64? = nil,
-        statsDate: String = "",
-        statsIsLoading: Bool = false,
-        statsHasError: Bool = false,
-        statsHasScore: Bool = false,
-        wellbeingHasCheckIn: Bool = false,
-        wellbeingIsLoading: Bool = false,
-        wellbeingIsSaving: Bool = false,
-        wellbeingHasError: Bool = false,
-        hasIssueCreationSuccess: Bool = false,
-        modalKind: PopoverModalKind?,
-        showsUpdate: Bool
-    ) {
-        self.connectionState = connectionState
-        self.selectedTab = selectedTab
-        self.hasActiveSession = hasActiveSession
-        self.hasSelectedIssue = hasSelectedIssue
-        self.hasContext = hasContext
-        self.hasUpcomingSegment = hasUpcomingSegment
-        self.dailyIssueCount = dailyIssueCount
-        self.habitsItemCount = habitsItemCount
-        self.habitsIsLoading = habitsIsLoading
-        self.habitsHasError = habitsHasError
-        self.habitActionInFlightID = habitActionInFlightID
-        self.statsDate = statsDate
-        self.statsIsLoading = statsIsLoading
-        self.statsHasError = statsHasError
-        self.statsHasScore = statsHasScore
-        self.wellbeingHasCheckIn = wellbeingHasCheckIn
-        self.wellbeingIsLoading = wellbeingIsLoading
-        self.wellbeingIsSaving = wellbeingIsSaving
-        self.wellbeingHasError = wellbeingHasError
-        self.hasIssueCreationSuccess = hasIssueCreationSuccess
-        self.modalKind = modalKind
-        self.showsUpdate = showsUpdate
-    }
+    static let viewportHeight: CGFloat = 700
 }
 
 enum StatusItemClickIntent: Equatable {
@@ -121,14 +45,13 @@ enum StatusItemClickIntent: Equatable {
 
 @MainActor
 final class StatusBarService: NSObject {
-    private weak var appState: CompanionAppState?
-    private let signposter = OSSignposter(
-        subsystem: "com.crona.macos",
-        category: "status-popup"
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.webxsid.crona.dev",
+        category: "MenuBarPopup"
     )
+    private weak var appState: CompanionAppState?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var popupPanel: StatusPopupPanel?
-    private var hostingController: NSHostingController<PopoverRootView>?
     private let popupDisplayClock = PopupDisplayClock()
     private var statusDisplayTimer: Timer?
     private var statusDisplayInterval: TimeInterval?
@@ -146,7 +69,6 @@ final class StatusBarService: NSObject {
     private var completedSessionID: String?
     private var pendingUpdate = false
     private var animationGeneration = 0
-    private var lastLayoutKey: StatusPopupLayoutKey?
     private lazy var contextMenu = makeContextMenu()
     private weak var appUpdateMenuItem: NSMenuItem?
     private weak var awayMenuItem: NSMenuItem?
@@ -159,14 +81,24 @@ final class StatusBarService: NSObject {
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
+        logger.info("Configured with app state")
     }
 
     func installIfNeeded() {
-        guard let button = statusItem.button, let appState else { return }
+        guard let button = statusItem.button else {
+            logger.error("Install skipped: status item has no button")
+            return
+        }
+        guard let appState else {
+            logger.error("Install skipped: app state is nil")
+            return
+        }
+        logger.info("Installing status item action")
         button.target = self
         button.action = #selector(handleStatusItemClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         makePopupPanel(appState: appState)
+        logger.info("Status item installed; popup panel exists: \(self.popupPanel != nil, privacy: .public)")
         updateStatusItem()
     }
 
@@ -181,25 +113,16 @@ final class StatusBarService: NSObject {
         }
     }
 
-    func refreshPopupLayout(
-        animated: Bool = true,
-        completion: (@MainActor @Sendable () -> Void)? = nil
-    ) {
-        guard let panel = popupPanel, panel.isVisible else {
-            completion?()
-            return
-        }
-        resizePanelToFit(panel, animated: animated, force: false, completion: completion)
-    }
-
     func dismissPopup(animated: Bool = true, completion: (() -> Void)? = nil) {
         guard let panel = popupPanel, panel.isVisible else {
+            logger.debug("Dismiss requested while panel is not visible")
             appState?.windowService.setMenuBarPopoverPresented(false)
             completion?()
             return
         }
 
         animationGeneration &+= 1
+        logger.info("Dismissing popup; animated=\(animated, privacy: .public)")
         let generation = animationGeneration
         stopDismissalMonitoring()
         popupDisplayClock.stop()
@@ -383,6 +306,7 @@ final class StatusBarService: NSObject {
 
     @objc
     private func handleStatusItemClick(_ sender: AnyObject?) {
+        logger.info("Status item click received: event=\(String(describing: NSApp.currentEvent?.type), privacy: .public)")
         switch StatusItemClickIntent.resolve(eventType: NSApp.currentEvent?.type) {
         case .togglePopup:
             togglePopup()
@@ -392,7 +316,11 @@ final class StatusBarService: NSObject {
     }
 
     private func togglePopup() {
-        guard let panel = popupPanel else { return }
+        guard let panel = popupPanel else {
+            logger.error("Toggle skipped: popup panel is nil")
+            return
+        }
+        logger.info("Toggling popup; visible=\(panel.isVisible, privacy: .public)")
         if panel.isVisible {
             dismissPopup()
         } else {
@@ -506,56 +434,70 @@ final class StatusBarService: NSObject {
     }
 
     private func showPopup() {
-        guard let panel = popupPanel, let button = statusItem.button else { return }
+        guard let panel = popupPanel else {
+            logger.error("Show skipped: popup panel is nil")
+            return
+        }
+        guard let button = statusItem.button else {
+            logger.error("Show skipped: status item button is nil")
+            return
+        }
+        let viewportSize = NSSize(
+            width: StatusPopupSizing.width,
+            height: StatusPopupSizing.viewportHeight
+        )
+        // NSPanel may normalize its frame while its hosting controller is
+        // attached. Reassert the fixed viewport immediately before ordering.
+        panel.setContentSize(viewportSize)
+        panel.setFrame(
+            NSRect(origin: panel.frame.origin, size: viewportSize),
+            display: false
+        )
+        logger.info("Showing popup; frame=\(String(describing: panel.frame), privacy: .public)")
         appState?.windowService.setMenuBarPopoverPresented(true)
         Task { await appState?.coreSettingsService.refresh() }
-        let interval = signposter.beginInterval("Open Popup")
-        defer { signposter.endInterval("Open Popup", interval) }
         animationGeneration &+= 1
-        let generation = animationGeneration
         popupDisplayClock.start()
 
-        resizePanelToFit(panel, animated: false, force: true)
+        panel.alphaValue = 0
+
         let restingOrigin = Self.popupOrigin(
             iconRect: statusIconScreenRect(for: button),
             menuBarBottomY: button.window?.frame.minY ?? button.window?.screen?.visibleFrame.maxY ?? 0,
-            panelSize: panel.frame.size,
+            panelSize: viewportSize,
             visibleFrame: button.window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         )
         var openingOrigin = restingOrigin
         openingOrigin.y += 8
 
-        panel.alphaValue = 0
         panel.setFrameOrigin(openingOrigin)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        // Keep presentation visible even if ordering interrupts the animation.
+        panel.alphaValue = 1
+        logger.info("Popup ordered front; visible=\(panel.isVisible, privacy: .public), frame=\(String(describing: panel.frame), privacy: .public)")
         startDismissalMonitoring()
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
             panel.animator().setFrameOrigin(restingOrigin)
-        }
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(180))
-            guard let self, generation == self.animationGeneration else { return }
-            self.popupPanel?.alphaValue = 1
         }
     }
 
     private func makePopupPanel(appState: CompanionAppState) {
-        guard popupPanel == nil else { return }
+        guard popupPanel == nil else {
+            logger.debug("Panel creation skipped: panel already exists")
+            return
+        }
 
-        let controller = NSHostingController(
-            rootView: PopoverRootView(
-                appState: appState,
-                displayClock: popupDisplayClock
-            )
-        )
         let panel = StatusPopupPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 620),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: StatusPopupSizing.width,
+                height: StatusPopupSizing.viewportHeight
+            ),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -568,14 +510,42 @@ final class StatusBarService: NSObject {
         panel.hasShadow = true
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
+        let viewportSize = NSSize(
+            width: StatusPopupSizing.width,
+            height: StatusPopupSizing.viewportHeight
+        )
+        panel.contentMinSize = viewportSize
+        panel.contentMaxSize = viewportSize
+        panel.setContentSize(viewportSize)
+        panel.setFrame(
+            NSRect(origin: .zero, size: viewportSize),
+            display: false
+        )
+
+        let controller = NSHostingController(
+            rootView: PopoverRootView(
+                appState: appState,
+                displayClock: popupDisplayClock,
+                onVisibleSurfaceHeightChange: { [weak panel] height in
+                    panel?.visibleSurfaceHeight = min(
+                        StatusPopupSizing.viewportHeight,
+                        max(StatusPopupSizing.minimumHeight, height)
+                    )
+                }
+            )
+        )
+        controller.sizingOptions = []
         panel.contentViewController = controller
+        // AppKit can leave the hosting view at zero bounds until the window is
+        // first ordered. Give it the fixed viewport explicitly.
+        controller.view.frame = NSRect(origin: .zero, size: viewportSize)
+        controller.view.autoresizingMask = [.width, .height]
         panel.onCancel = { [weak self] in
             self?.dismissPopup()
         }
 
-        hostingController = controller
         popupPanel = panel
-        resizePanelToFit(panel, animated: false, force: true)
+        logger.info("Created popup panel; frame=\(String(describing: panel.frame), privacy: .public), contentView=\(panel.contentView != nil, privacy: .public)")
     }
 
     private func reconcileStatusDisplayTimer() {
@@ -619,99 +589,6 @@ final class StatusBarService: NSObject {
         statusDisplayTimer = timer
     }
 
-    private func resizePanelToFit(
-        _ panel: NSPanel,
-        animated: Bool,
-        force: Bool,
-        completion: (@MainActor @Sendable () -> Void)? = nil
-    ) {
-        guard let hostingController, let appState else { return }
-        let layoutKey = Self.layoutKey(for: appState)
-        guard force || layoutKey != lastLayoutKey else {
-            completion?()
-            return
-        }
-        let interval = signposter.beginInterval("Measure Popup")
-        defer { signposter.endInterval("Measure Popup", interval) }
-        let measured = hostingController.sizeThatFits(
-            in: NSSize(width: 420, height: 800)
-        )
-        let height = StatusPopupSizing.resolvedHeight(for: measured.height)
-        lastLayoutKey = layoutKey
-        guard abs(panel.frame.height - height) > 0.5 else {
-            completion?()
-            return
-        }
-
-        var frame = panel.frame
-        frame.origin.y += frame.height - height
-        frame.size = NSSize(width: 420, height: height)
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.24
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                panel.animator().setFrame(frame, display: true)
-            } completionHandler: {
-                MainActor.assumeIsolated {
-                    completion?()
-                }
-            }
-        } else {
-            panel.setFrame(frame, display: true)
-            completion?()
-        }
-    }
-
-    static func layoutKey(for appState: CompanionAppState) -> StatusPopupLayoutKey {
-        let snapshot = appState.timerService.snapshot
-        let presentation = TimerPresentation.from(snapshot)
-        let modalKind: PopoverModalKind?
-        if appState.isEndSessionSheetPresented {
-            modalKind = .endSession
-        } else if appState.isIssueCreatorPresented {
-            modalKind = .issueCreate
-        } else {
-            switch appState.issueActionEditor {
-            case .status:
-                modalKind = .statusNote
-            case .dueDate:
-                modalKind = .dueDate
-            case nil:
-                modalKind = nil
-            }
-        }
-
-        return StatusPopupLayoutKey(
-            connectionState: appState.daemonConnection.connectionState,
-            selectedTab: appState.selectedPopoverTab,
-            hasActiveSession: appState.hasActiveFocusSession,
-            hasSelectedIssue: appState.selectedFocusIssue != nil,
-            hasContext: appState.contextService.snapshot.issueTitle != nil
-                || appState.contextService.snapshot.repoName != nil
-                || appState.contextService.snapshot.streamName != nil,
-            hasUpcomingSegment: presentation.upcomingSegment != nil,
-            dailyIssueCount: appState.dailyFocusService.snapshot.issues.count,
-            habitsItemCount: appState.habitsService.snapshot.items.count,
-            habitsIsLoading: appState.habitsService.snapshot.isLoading,
-            habitsHasError: appState.habitsService.snapshot.lastRefreshError != nil,
-            habitActionInFlightID: appState.habitsService.actionInFlightHabitID,
-            statsDate: appState.popoverStatsService.snapshot.date,
-            statsIsLoading: appState.popoverStatsService.snapshot.isLoading,
-            statsHasError: appState.popoverStatsService.snapshot.lastErrorDescription != nil,
-            statsHasScore: appState.popoverStatsService.snapshot.focusScore != nil
-                || appState.popoverStatsService.snapshot.todayMetrics != nil,
-            wellbeingHasCheckIn: appState.wellbeingService.snapshot.checkIn != nil,
-            wellbeingIsLoading: appState.wellbeingService.snapshot.isLoading,
-            wellbeingIsSaving: appState.wellbeingService.snapshot.isSaving,
-            wellbeingHasError: appState.wellbeingService.snapshot.lastErrorDescription != nil,
-            hasIssueCreationSuccess: appState.issueCreationSuccess != nil,
-            modalKind: modalKind,
-            showsUpdate: appState.appUpdateService.hasAvailableUpdate
-                && !appState.isUpdatePresentationBlocked
-        )
-    }
-
     private func statusIconScreenRect(for button: NSStatusBarButton) -> NSRect {
         guard let window = button.window else { return .zero }
         let imageRect = button.cell?.imageRect(forBounds: button.bounds)
@@ -739,16 +616,21 @@ final class StatusBarService: NSObject {
     private func startDismissalMonitoring() {
         stopDismissalMonitoring()
 
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.dismissPopup()
-            }
-        }
-
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, let panel = self.popupPanel else { return event }
             let statusWindow = self.statusItem.button?.window
-            if event.window !== panel, event.window !== statusWindow {
+                if event.window === panel {
+                let contentBounds = panel.contentView?.bounds ?? .zero
+                let visibleSurfaceTop = contentBounds.maxY - panel.visibleSurfaceHeight
+                    if event.locationInWindow.y < visibleSurfaceTop {
+                        self.logger.debug("Local mouse monitor dismissed click below visible surface")
+                        self.dismissPopup()
+                    return nil
+                }
+                return event
+            }
+                if event.window !== panel, event.window !== statusWindow {
+                self.logger.debug("Local mouse monitor dismissed click outside popup")
                 self.dismissPopup()
             }
             return event
@@ -783,6 +665,7 @@ final class StatusBarService: NSObject {
 
 private final class StatusPopupPanel: NSPanel {
     var onCancel: (() -> Void)?
+    var visibleSurfaceHeight = StatusPopupSizing.viewportHeight
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
