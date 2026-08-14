@@ -136,6 +136,22 @@ enum CompanionPopupPosition: String, Codable, Equatable, CaseIterable, Identifia
     }
 }
 
+enum TimerHUDSize: String, Codable, Equatable, CaseIterable, Identifiable {
+    case compact
+    case regular
+    case spacious
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .compact: return "Compact"
+        case .regular: return "Regular"
+        case .spacious: return "Spacious"
+        }
+    }
+}
+
 struct CompanionRGBAColor: Codable, Equatable {
     var red: Double
     var green: Double
@@ -238,6 +254,8 @@ struct CompanionPreferences: Codable, Equatable {
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
     var showTimerHUD = false
+    var timerHUDPosition: CompanionPopupPosition = .bottomCenter
+    var timerHUDSize: TimerHUDSize = .spacious
     var smartPauseEnabled = false
     var smartPauseOnLock = true
     var smartPauseOnDisplaySleep = true
@@ -289,6 +307,8 @@ extension CompanionPreferences {
         case menuBarIdleTextMode
         case menuBarTimeFormat
         case showTimerHUD
+        case timerHUDPosition
+        case timerHUDSize
         case smartPauseEnabled
         case smartPauseOnLock
         case smartPauseOnDisplaySleep
@@ -330,6 +350,8 @@ extension CompanionPreferences {
             try values.decodeIfPresent(MenuBarTimeFormat.self, forKey: .menuBarTimeFormat)
             ?? .clock
         showTimerHUD = try values.decodeIfPresent(Bool.self, forKey: .showTimerHUD) ?? false
+        timerHUDPosition = try values.decodeIfPresent(CompanionPopupPosition.self, forKey: .timerHUDPosition) ?? .bottomCenter
+        timerHUDSize = try values.decodeIfPresent(TimerHUDSize.self, forKey: .timerHUDSize) ?? .spacious
         smartPauseEnabled =
             try values.decodeIfPresent(Bool.self, forKey: .smartPauseEnabled)
             ?? false
@@ -399,6 +421,8 @@ extension CompanionPreferences {
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)
         try values.encode(showTimerHUD, forKey: .showTimerHUD)
+        try values.encode(timerHUDPosition, forKey: .timerHUDPosition)
+        try values.encode(timerHUDSize, forKey: .timerHUDSize)
         try values.encode(smartPauseEnabled, forKey: .smartPauseEnabled)
         try values.encode(smartPauseOnLock, forKey: .smartPauseOnLock)
         try values.encode(smartPauseOnDisplaySleep, forKey: .smartPauseOnDisplaySleep)

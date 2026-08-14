@@ -1311,14 +1311,54 @@ private struct MenuBarSettingsView: View {
                     )
                 }
 
+            }
+
+            SettingsCard("Floating Timer") {
                 SettingsToggleRow(
-                    title: "Floating Timer",
+                    title: "Show Floating Timer",
                     subtitle: "Show a movable timer while a session is active.",
                     isOn: Binding(
                         get: { appState.preferences.preferences.showTimerHUD },
                         set: { appState.preferences.preferences.showTimerHUD = $0 }
                     )
                 )
+
+                TimerHUDPositionRow(
+                    selection: Binding(
+                        get: { appState.preferences.preferences.timerHUDPosition },
+                        set: { appState.preferences.preferences.timerHUDPosition = $0 }
+                    )
+                )
+
+                SettingsPickerRow(
+                    title: "Timer Size",
+                    subtitle: "Choose how much detail the floating timer shows.",
+                    selection: Binding(
+                        get: { appState.preferences.preferences.timerHUDSize },
+                        set: { appState.preferences.preferences.timerHUDSize = $0 }
+                    )
+                ) {
+                    ForEach(TimerHUDSize.allCases) { size in
+                        Text(size.title).tag(size)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Preview")
+                        .font(.subheadline.weight(.medium))
+                    HStack {
+                        Spacer()
+                        TimerHUDRootView(
+                            appState: appState,
+                            size: appState.preferences.preferences.timerHUDSize,
+                            isPreview: true
+                        )
+                        Spacer()
+                    }
+                    .frame(minHeight: 112)
+                    .background(PopupVisualTheme.primaryText.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.vertical, 8)
             }
         }
         .onAppear {
@@ -2524,13 +2564,16 @@ private struct SettingsPickerRow<SelectionValue: Hashable, Content: View>: View 
 
 private struct InactivityPopupPositionRow: View {
     let selection: Binding<CompanionPopupPosition>
+    var title = "Popup Position"
+    var subtitle = "Choose where the reminder appears on screen."
+    var accessibilityTitle = "Inactivity popup position"
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayoutMetrics.rowSpacing) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Popup Position")
+                Text(title)
                     .font(.subheadline.weight(.medium))
-                Text("Choose where the reminder appears on screen.")
+                Text(subtitle)
                     .foregroundStyle(PopupVisualTheme.secondaryText)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2565,7 +2608,7 @@ private struct InactivityPopupPositionRow: View {
                 )
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Inactivity popup position")
+        .accessibilityLabel(accessibilityTitle)
     }
 
     private func positionRow(_ positions: [CompanionPopupPosition]) -> some View {
@@ -2592,6 +2635,19 @@ private struct InactivityPopupPositionRow: View {
                 .accessibilityAddTraits(selection.wrappedValue == position ? .isSelected : [])
             }
         }
+    }
+}
+
+private struct TimerHUDPositionRow: View {
+    let selection: Binding<CompanionPopupPosition>
+
+    var body: some View {
+        InactivityPopupPositionRow(
+            selection: selection,
+            title: "Default Position",
+            subtitle: "Choose where the timer first appears on screen.",
+            accessibilityTitle: "Floating timer default position"
+        )
     }
 }
 

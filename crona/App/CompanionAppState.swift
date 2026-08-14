@@ -575,7 +575,11 @@ final class CompanionAppState: ObservableObject {
 
     func endTimerFromHUD() {
         beginEndSession(source: .timerHUD)
-        windowService.setTimerHUDCommitPresented(true)
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, self.endSessionPresentationSource == .timerHUD else { return }
+            self.windowService.setTimerHUDCommitPresented(true)
+        }
     }
 
     func extendTimer() {

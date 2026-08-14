@@ -199,11 +199,11 @@ final class CronaDaemonClient {
     }
 
     func checkInGet(date: String) async throws -> CronaDailyCheckIn? {
-        let result: CronaDailyCheckIn = try await request(
+        let result: CronaDailyCheckIn? = try await requestOptional(
             method: "checkin.get",
             params: AnyEncodable(CronaDailyCheckInQuery(date: date))
         )
-        return result.date.isEmpty ? nil : result
+        return result?.date.isEmpty == false ? result : nil
     }
 
     func checkInUpsert(_ input: CronaDailyCheckInUpsertRequest) async throws -> CronaDailyCheckIn {
@@ -369,6 +369,45 @@ final class CronaDaemonClient {
         }
 
         return result
+    }
+
+    private func requestOptional<Response: Decodable>(
+        method: String,
+        params: AnyEncodable? = nil
+    ) async throws -> Response? {
+        let envelope = CronaKernelRequestEnvelope(id: UUID().uuidString, method: method, params: params)
+        let requestData = try JSONEncoder.crona.encode(envelope)
+        let responseData = try await transport.send(requestData)
+        let decoded = try JSONDecoder.crona.decode(
+            CronaOptionalKernelResponseEnvelope<Response>.self,
+            from: responseData
+        )
+
+        if let error = decoded.error {
+            throw error
+        }
+        guard decoded.containsResult else {
+            throw CronaConnectionFailure.malformedResponse
+        }
+        return decoded.result
+    }
+}
+
+private struct CronaOptionalKernelResponseEnvelope<Result: Decodable>: Decodable {
+    let result: Result?
+    let error: CronaRPCError?
+    let containsResult: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case result
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        containsResult = container.contains(.result)
+        result = try container.decodeIfPresent(Result.self, forKey: .result)
+        error = try container.decodeIfPresent(CronaRPCError.self, forKey: .error)
     }
 }
 

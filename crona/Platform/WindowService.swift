@@ -48,7 +48,6 @@ private enum PopupAnimationMetrics {
 @MainActor
 final class WindowService {
     private enum TimerHUDMetrics {
-        static let compactSize = NSSize(width: 308, height: 88)
         static let commitSize = NSSize(width: 396, height: 338)
     }
     static let transientPopupCollectionBehavior: NSWindow.CollectionBehavior = [
@@ -69,6 +68,8 @@ final class WindowService {
     private var timerHUDCompactFrame: NSRect?
     private var isMenuBarPopoverPresented = false
     private var timerHUDWasVisibleBeforeMenuBarPopover = false
+    private var timerHUDAppliedPosition: CompanionPopupPosition?
+    private var timerHUDAppliedSize: TimerHUDSize?
 #if DEBUG
     private var developerBreakScreenPanel: DeveloperBreakScreenPanel?
 #endif
@@ -127,6 +128,16 @@ final class WindowService {
         }
         let panel = timerHUDPanel ?? makeTimerHUDPanel(appState: appState)
         timerHUDPanel = panel
+        let preferences = appState.preferences.preferences
+        let desiredSize = preferences.timerHUDSize
+        if timerHUDAppliedSize != desiredSize {
+            resizeTimerHUD(panel, to: desiredSize)
+            timerHUDAppliedSize = desiredSize
+        }
+        if timerHUDAppliedPosition != preferences.timerHUDPosition {
+            positionTimerHUD(panel, preference: preferences.timerHUDPosition)
+            timerHUDAppliedPosition = preferences.timerHUDPosition
+        }
         if !panel.isVisible {
             restoreOrPositionTimerHUD(panel)
             panel.orderFrontRegardless()
@@ -188,7 +199,11 @@ final class WindowService {
             }
             panel.makeKeyAndOrderFront(nil)
         } else {
-            let compactFrame = timerHUDCompactFrame ?? NSRect(origin: panel.frame.origin, size: TimerHUDMetrics.compactSize)
+            let size = appState?.preferences.preferences.timerHUDSize ?? .spacious
+            let compactFrame = timerHUDCompactFrame ?? NSRect(
+                origin: panel.frame.origin,
+                size: NSSize(width: size.panelSize.width, height: size.panelSize.height)
+            )
             timerHUDCompactFrame = nil
             panel.makeFirstResponder(nil)
             panel.resignKey()
@@ -202,7 +217,10 @@ final class WindowService {
 
     private func makeTimerHUDPanel(appState: CompanionAppState) -> TimerHUDPanel {
         let panel = TimerHUDPanel(
-            contentRect: NSRect(origin: .zero, size: TimerHUDMetrics.compactSize),
+            contentRect: NSRect(
+                origin: .zero,
+                size: NSSize(width: TimerHUDSize.spacious.panelSize.width, height: TimerHUDSize.spacious.panelSize.height)
+            ),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -218,16 +236,21 @@ final class WindowService {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.setFrameAutosaveName("CronaTimerHUD")
-        panel.contentViewController = NSHostingController(rootView: TimerHUDRootView(appState: appState))
+        panel.contentViewController = makeTimerHUDHostingController(
+            for: panel,
+            size: appState.preferences.preferences.timerHUDSize
+        )
         return panel
     }
 
     private func restoreOrPositionTimerHUD(_ panel: NSPanel) {
+        let preferredSize = appState?.preferences.preferences.timerHUDSize ?? .spacious
+        let preferredNSSize = NSSize(width: preferredSize.panelSize.width, height: preferredSize.panelSize.height)
         if panel.setFrameUsingName("CronaTimerHUD") {
-            if panel.frame.size != TimerHUDMetrics.compactSize {
+            if panel.frame.size != preferredNSSize {
                 var compactFrame = panel.frame
-                compactFrame.origin.y = compactFrame.maxY - TimerHUDMetrics.compactSize.height
-                compactFrame.size = TimerHUDMetrics.compactSize
+                compactFrame.origin.y = compactFrame.maxY - preferredNSSize.height
+                compactFrame.size = preferredNSSize
                 panel.setFrame(compactFrame, display: false)
             }
             clampTimerHUD(panel)
@@ -235,7 +258,51 @@ final class WindowService {
         }
         let screen = screenContainingMouse(in: NSScreen.screens) ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
-        panel.setFrameOrigin(NSPoint(x: frame.maxX - panel.frame.width - 20, y: frame.maxY - panel.frame.height - 20))
+        let origin = InactivityPopupPositioner.origin(
+            in: frame,
+            panelSize: panel.frame.size,
+            preference: appState?.preferences.preferences.timerHUDPosition ?? .bottomCenter,
+            topMargin: 20,
+            bottomMargin: 20,
+            horizontalMargin: 20
+        )
+        panel.setFrameOrigin(origin)
+    }
+
+    private func resizeTimerHUD(_ panel: TimerHUDPanel, to size: TimerHUDSize) {
+        let targetSize = NSSize(width: size.panelSize.width, height: size.panelSize.height)
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - targetSize.height
+        frame.size = targetSize
+        panel.contentViewController = makeTimerHUDHostingController(for: panel, size: size)
+        panel.setFrame(clampedWindowFrame(frame), display: true)
+    }
+
+    private func makeTimerHUDHostingController(
+        for panel: TimerHUDPanel,
+        size: TimerHUDSize
+    ) -> NSHostingController<TimerHUDRootView> {
+        let controller = NSHostingController(
+            rootView: TimerHUDRootView(
+                appState: appState!,
+                size: size
+            )
+        )
+        controller.sizingOptions = []
+        return controller
+    }
+
+    private func positionTimerHUD(_ panel: NSPanel, preference: CompanionPopupPosition) {
+        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) ?? NSScreen.main else { return }
+        let origin = InactivityPopupPositioner.origin(
+            in: screen.visibleFrame,
+            panelSize: panel.frame.size,
+            preference: preference,
+            topMargin: 20,
+            bottomMargin: 20,
+            horizontalMargin: 20
+        )
+        panel.setFrameOrigin(origin)
     }
 
     private func clampTimerHUD(_ panel: NSPanel) {

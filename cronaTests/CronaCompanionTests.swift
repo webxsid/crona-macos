@@ -17,6 +17,8 @@ final class CronaCompanionTests: XCTestCase {
     func testPreferencesDefaultFloatingTimerHUDOffAndPersistsOptIn() throws {
         let legacy = try JSONDecoder().decode(CompanionPreferences.self, from: Data("{}".utf8))
         XCTAssertFalse(legacy.showTimerHUD)
+        XCTAssertEqual(legacy.timerHUDPosition, .bottomCenter)
+        XCTAssertEqual(legacy.timerHUDSize, .spacious)
 
         var enabled = legacy
         enabled.showTimerHUD = true
@@ -25,6 +27,28 @@ final class CronaCompanionTests: XCTestCase {
             from: JSONEncoder().encode(enabled)
         )
         XCTAssertTrue(decoded.showTimerHUD)
+    }
+
+    func testFloatingTimerPreferencesPersistPositionAndSize() throws {
+        var preferences = CompanionPreferences()
+        preferences.timerHUDPosition = .topRight
+        preferences.timerHUDSize = .compact
+
+        let decoded = try JSONDecoder().decode(
+            CompanionPreferences.self,
+            from: JSONEncoder().encode(preferences)
+        )
+
+        XCTAssertEqual(decoded.timerHUDPosition, .topRight)
+        XCTAssertEqual(decoded.timerHUDSize, .compact)
+    }
+
+    func testFloatingTimerSizeProfilesHaveDescendingPanelSizes() {
+        XCTAssertGreaterThan(TimerHUDSize.spacious.panelSize.width, TimerHUDSize.regular.panelSize.width)
+        XCTAssertGreaterThan(TimerHUDSize.regular.panelSize.width, TimerHUDSize.compact.panelSize.width)
+        XCTAssertGreaterThan(TimerHUDSize.spacious.panelSize.height, TimerHUDSize.regular.panelSize.height)
+        XCTAssertGreaterThan(TimerHUDSize.regular.panelSize.height, TimerHUDSize.compact.panelSize.height)
+        XCTAssertEqual(TimerHUDSize.compact.panelSize, CGSize(width: 220, height: 64))
     }
 
     func testTimerHUDVisibilityRequiresEnabledActiveTimerWithoutMenuPopover() {
@@ -393,6 +417,39 @@ final class CronaCompanionTests: XCTestCase {
         let request: Data = try XCTUnwrap(transport.requestData)
         let requestProbe = try JSONDecoder().decode(RequestProbe.self, from: request)
         XCTAssertEqual(requestProbe.method, "kernel.info.get")
+    }
+
+    func testDaemonClientTreatsMissingWellbeingCheckInAsEmptyResult() async throws {
+        let response = Data(#"{"id":"response-1","result":null}"#.utf8)
+        let client = CronaDaemonClient(transport: CapturingDaemonTransport(responseData: response))
+
+        let checkIn = try await client.checkInGet(date: "2026-08-14")
+
+        XCTAssertNil(checkIn)
+    }
+
+    func testDaemonClientDecodesExistingWellbeingCheckIn() async throws {
+        let response = Data(#"{"id":"response-1","result":{"date":"2026-08-14","mood":4,"energy":3,"sleepHours":7.5,"sleepScore":82,"screenTimeMinutes":95,"notes":"Steady day","createdAt":"now","updatedAt":"now"}}"#.utf8)
+        let client = CronaDaemonClient(transport: CapturingDaemonTransport(responseData: response))
+
+        let checkIn = try await client.checkInGet(date: "2026-08-14")
+
+        XCTAssertEqual(checkIn?.mood, 4)
+        XCTAssertEqual(checkIn?.energy, 3)
+    }
+
+    func testDaemonClientRejectsWellbeingResponseWithoutResult() async {
+        let response = Data(#"{"id":"response-1"}"#.utf8)
+        let client = CronaDaemonClient(transport: CapturingDaemonTransport(responseData: response))
+
+        do {
+            _ = try await client.checkInGet(date: "2026-08-14")
+            XCTFail("Expected malformed response")
+        } catch let error as CronaConnectionFailure {
+            XCTAssertEqual(error, .malformedResponse)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testDaemonClientBuildsKernelShutdownRequest() async throws {
