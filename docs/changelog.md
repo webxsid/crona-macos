@@ -6,6 +6,28 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.11] - 2026-08-14
+
+Crona for macOS v1.0.0-beta.11 refines the floating timer and hardens wellbeing’s empty-day handling.
+
+### Added
+
+- Configurable floating timer size presets with Compact, Regular, and Spacious layouts.
+- A six-dot default-position picker for the floating timer, defaulting to Bottom Center.
+- A live floating timer preview in Menu Bar settings.
+
+### Changed
+
+- Compact timer actions now appear inside the timer surface on hover instead of floating outside the panel.
+- Floating timer End now presents and restores its inline commit flow reliably.
+- Menu-bar popup presentation uses a fixed viewport with stable AppKit ownership and outside-click dismissal.
+
+### Fixed
+
+- A day without a wellbeing check-in no longer appears as an invalid-response error.
+- Wellbeing IPC now distinguishes a valid `result: null` from a malformed response.
+- Floating timer controls remain clickable and are not clipped in Compact mode.
+
 ## [1.0.0-beta.10] - 2026-08-13
 
 Crona for macOS v1.0.0-beta.10 adds daily wellbeing check-ins, an optional floating timer, and fast issue creation directly from the menu bar.
