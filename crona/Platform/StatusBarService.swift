@@ -476,7 +476,12 @@ final class StatusBarService: NSObject {
         // Keep presentation visible even if ordering interrupts the animation.
         panel.alphaValue = 1
         logger.info("Popup ordered front; visible=\(panel.isVisible, privacy: .public), frame=\(String(describing: panel.frame), privacy: .public)")
-        startDismissalMonitoring()
+        // Register dismissal monitors after the menu-bar click has finished
+        // dispatching, otherwise that same click can dismiss the new panel.
+        DispatchQueue.main.async { [weak self, weak panel] in
+            guard let self, let panel, panel.isVisible else { return }
+            self.startDismissalMonitoring()
+        }
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
@@ -615,6 +620,12 @@ final class StatusBarService: NSObject {
 
     private func startDismissalMonitoring() {
         stopDismissalMonitoring()
+
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.dismissPopup()
+            }
+        }
 
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, let panel = self.popupPanel else { return event }
