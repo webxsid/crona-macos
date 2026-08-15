@@ -253,6 +253,8 @@ struct CompanionPreferences: Codable, Equatable {
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndText
     var menuBarIdleTextMode: MenuBarIdleTextMode = .idle
     var menuBarTimeFormat: MenuBarTimeFormat = .clock
+    var showMenuBarItem = true
+    var settingsShortcut: SettingsShortcut?
     var showTimerHUD = false
     var timerHUDPosition: CompanionPopupPosition = .bottomCenter
     var timerHUDSize: TimerHUDSize = .spacious
@@ -306,6 +308,8 @@ extension CompanionPreferences {
         case menuBarDisplayMode
         case menuBarIdleTextMode
         case menuBarTimeFormat
+        case showMenuBarItem
+        case settingsShortcut
         case showTimerHUD
         case timerHUDPosition
         case timerHUDSize
@@ -349,6 +353,8 @@ extension CompanionPreferences {
         menuBarTimeFormat =
             try values.decodeIfPresent(MenuBarTimeFormat.self, forKey: .menuBarTimeFormat)
             ?? .clock
+        showMenuBarItem = try values.decodeIfPresent(Bool.self, forKey: .showMenuBarItem) ?? true
+        settingsShortcut = try values.decodeIfPresent(SettingsShortcut.self, forKey: .settingsShortcut)
         showTimerHUD = try values.decodeIfPresent(Bool.self, forKey: .showTimerHUD) ?? false
         timerHUDPosition = try values.decodeIfPresent(CompanionPopupPosition.self, forKey: .timerHUDPosition) ?? .bottomCenter
         timerHUDSize = try values.decodeIfPresent(TimerHUDSize.self, forKey: .timerHUDSize) ?? .spacious
@@ -420,6 +426,8 @@ extension CompanionPreferences {
         try values.encode(menuBarDisplayMode, forKey: .menuBarDisplayMode)
         try values.encode(menuBarIdleTextMode, forKey: .menuBarIdleTextMode)
         try values.encode(menuBarTimeFormat, forKey: .menuBarTimeFormat)
+        try values.encode(showMenuBarItem, forKey: .showMenuBarItem)
+        try values.encodeIfPresent(settingsShortcut, forKey: .settingsShortcut)
         try values.encode(showTimerHUD, forKey: .showTimerHUD)
         try values.encode(timerHUDPosition, forKey: .timerHUDPosition)
         try values.encode(timerHUDSize, forKey: .timerHUDSize)

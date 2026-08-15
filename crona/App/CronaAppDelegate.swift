@@ -3,8 +3,16 @@ import AppKit
 final class CronaAppDelegate: NSObject, NSApplicationDelegate {
     @MainActor var appState: CompanionAppState?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.appState?.presentPrimarySurfaceWhenNoWindowIsActive()
+        }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        appState?.openSettings()
+        if !flag {
+            appState?.presentPrimarySurfaceWhenNoWindowIsActive()
+        }
         return true
     }
 

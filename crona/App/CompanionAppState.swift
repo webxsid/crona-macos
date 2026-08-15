@@ -75,6 +75,7 @@ final class CompanionAppState: ObservableObject {
     let inactivityPopupCountdownService: HardLimitCountdownService
     let windowService: WindowService
     let statusBarService: StatusBarService
+    let settingsShortcutService: SettingsShortcutService
     let smartPauseService: SmartPauseService
     let breakScreenService: BreakScreenService
     let userActivityMonitor: UserActivityMonitor
@@ -178,8 +179,10 @@ final class CompanionAppState: ObservableObject {
         self.diagnosticsService = diagnosticsService
         let windowService = WindowService()
         let statusBarService = StatusBarService()
+        let settingsShortcutService = SettingsShortcutService()
         self.windowService = windowService
         self.statusBarService = statusBarService
+        self.settingsShortcutService = settingsShortcutService
         self.smartPauseService = SmartPauseService(
             preferences: preferences,
             timerController: timerService
@@ -235,6 +238,7 @@ final class CompanionAppState: ObservableObject {
 
         self.windowService.configure(appState: self)
         self.statusBarService.configure(appState: self)
+        self.settingsShortcutService.configure(appState: self)
         appUpdateService.configurePresentation(
             shouldDefer: { [weak self] in
                 self?.isUpdatePresentationBlocked ?? false
@@ -488,6 +492,14 @@ final class CompanionAppState: ObservableObject {
                 return
             }
             self.windowService.showSettings(openScene: settingsSceneAction)
+        }
+    }
+
+    func presentPrimarySurfaceWhenNoWindowIsActive() {
+        if preferences.preferences.showMenuBarItem {
+            statusBarService.showPopupFromApplicationLaunch()
+        } else {
+            openSettings()
         }
     }
 
@@ -1135,6 +1147,15 @@ final class CompanionAppState: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.windowService.refreshApplicationActivationPolicy()
+            }
+            .store(in: &cancellables)
+
+        preferences.$preferences
+            .map(\.settingsShortcut)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shortcut in
+                self?.settingsShortcutService.update(shortcut: shortcut)
             }
             .store(in: &cancellables)
 

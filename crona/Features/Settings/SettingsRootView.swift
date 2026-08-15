@@ -4,7 +4,6 @@ import UserNotifications
 
 struct SettingsRootView: View {
     @ObservedObject var appState: CompanionAppState
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var sidebarSelection: SettingsDestination
 
     init(appState: CompanionAppState) {
@@ -13,13 +12,12 @@ struct SettingsRootView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        HStack(spacing: 0) {
             settingsSidebar
-                .toolbar(removing: .sidebarToggle)
-        } detail: {
-            settingsDetail
+            settingsWorkArea
         }
         .frame(minWidth: 860, minHeight: 620)
+        .ignoresSafeArea(.container, edges: .top)
         .background(
             SettingsWindowReader(
                 windowService: appState.windowService,
@@ -27,29 +25,8 @@ struct SettingsRootView: View {
             )
         )
         .companionAppearance(appState)
-        .modifier(SettingsWindowToolbarBackgroundModifier())
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Text(sidebarSelection.title)
-                    .font(.headline.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-            }
-        }
-        .modifier(SettingsWindowToolbarChromeModifier())
-        .onAppear {
-            columnVisibility = .all
-        }
-        .onChange(of: columnVisibility) { _, visibility in
-            if visibility != .all {
-                columnVisibility = .all
-            }
-        }
         .onChange(of: sidebarSelection) { _, destination in
-            Task { @MainActor in
-                await Task.yield()
-                appState.setSelectedSettingsDestination(destination)
-            }
+            appState.setSelectedSettingsDestination(destination)
         }
         .onChange(of: appState.selectedSettingsDestination) { _, destination in
             guard destination != sidebarSelection else { return }
@@ -58,17 +35,25 @@ struct SettingsRootView: View {
     }
 
     private var settingsSidebar: some View {
-        List(selection: $sidebarSelection) {
-            sidebarSection("Preferences", items: [.general, .menuBar])
-            sidebarSection(
-                "Focus", items: [.daySchedule, .smartPause, .breakScreen, .notifications])
-            sidebarSection("System", items: [.advanced])
-            sidebarSection("Crona", items: [.about])
-            #if DEBUG
-                sidebarSection("Developer", items: [.developer])
-            #endif
+        ZStack {
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, emphasized: true)
+
+            VStack(spacing: 0) {
+                List(selection: $sidebarSelection) {
+                    sidebarSection("Preferences", items: [.general, .menuBar])
+                    sidebarSection(
+                        "Focus", items: [.daySchedule, .smartPause, .breakScreen, .notifications])
+                    sidebarSection("System", items: [.advanced])
+                    sidebarSection("Crona", items: [.about])
+                    #if DEBUG
+                        sidebarSection("Developer", items: [.developer])
+                    #endif
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .padding(.top, 32)
+            }
         }
-        .listStyle(.sidebar)
         .frame(width: SettingsChromeMetrics.sidebarWidth)
     }
 
@@ -83,78 +68,13 @@ struct SettingsRootView: View {
         }
     }
 
-    private var settingsDetail: some View {
+    private var settingsWorkArea: some View {
         VStack(spacing: 0) {
+            settingsToolbar
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    switch sidebarSelection {
-                    case .general:
-                        SettingsPane(
-                            title: "General",
-                            subtitle: "Choose how Crona starts and looks on this Mac."
-                        ) {
-                            GeneralSettingsView(appState: appState)
-                        }
-                    case .menuBar:
-                        SettingsPane(
-                            title: "Menu Bar", subtitle: "Choose what Crona shows while you work."
-                        ) {
-                            MenuBarSettingsView(appState: appState)
-                        }
-                    case .daySchedule:
-                        SettingsPane(
-                            title: "Day Schedule",
-                            subtitle: "Set when each Crona day starts and ends."
-                        ) {
-                            DayBoundarySettingsCard(appState: appState)
-                        }
-                    case .smartPause:
-                        SettingsPane(
-                            title: "Smart Pause",
-                            subtitle: "Pause Stopwatch sessions when you step away."
-                        ) {
-                            SmartPauseSettingsView(appState: appState)
-                        }
-                    case .breakScreen:
-                        SettingsPane(
-                            title: "Breaks",
-                            subtitle: "Choose how Pomodoro breaks appear on your displays."
-                        ) {
-                            BreakScreenSettingsView(appState: appState)
-                        }
-                    case .notifications:
-                        SettingsPane(
-                            title: "Notifications",
-                            subtitle: "Choose which alerts appear and how they get your attention."
-                        ) {
-                            NotificationSettingsView(appState: appState)
-                        }
-                    case .advanced:
-                        SettingsPane(
-                            title: "Advanced",
-                            subtitle: "Check Crona’s local service connection and diagnostics."
-                        ) {
-                            RuntimeSettingsView(appState: appState)
-                            DiagnosticsSettingsView(appState: appState)
-                        }
-                    case .about:
-                        SettingsPane(
-                            title: "About",
-                            subtitle: "View version details, updates, and release information."
-                        ) {
-                            AboutSettingsView(appState: appState)
-                            UpdatesSettingsView(appState: appState)
-                        }
-                    #if DEBUG
-                        case .developer:
-                            SettingsPane(
-                                title: "Developer",
-                                subtitle: "Open safe, local previews of Crona’s transient surfaces."
-                            ) {
-                                DeveloperSettingsView(appState: appState)
-                            }
-                    #endif
-                    }
+                    settingsPageContent
                 }
                 .padding(.horizontal, SettingsLayoutMetrics.detailHorizontalPadding)
                 .padding(.top, SettingsLayoutMetrics.detailTopPadding)
@@ -165,14 +85,104 @@ struct SettingsRootView: View {
             .modifier(SettingsScrollEdgeEffectModifier())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(PopupVisualTheme.windowBackground)
+        .background(
+            VisualEffectView(
+                material: .contentBackground, blendingMode: .withinWindow, emphasized: false)
+        )
+    }
+
+    @ViewBuilder
+    private var settingsPageContent: some View {
+        switch sidebarSelection {
+        case .general:
+            SettingsPane(
+                title: "General",
+                subtitle: "Choose how Crona starts and looks on this Mac."
+            ) {
+                GeneralSettingsView(appState: appState)
+            }
+        case .menuBar:
+            SettingsPane(
+                title: "Menu Bar", subtitle: "Choose what Crona shows while you work."
+            ) {
+                MenuBarSettingsView(appState: appState)
+            }
+        case .daySchedule:
+            SettingsPane(
+                title: "Day Schedule",
+                subtitle: "Set when each Crona day starts and ends."
+            ) {
+                DayBoundarySettingsCard(appState: appState)
+            }
+        case .smartPause:
+            SettingsPane(
+                title: "Smart Pause",
+                subtitle: "Pause Stopwatch sessions when you step away."
+            ) {
+                SmartPauseSettingsView(appState: appState)
+            }
+        case .breakScreen:
+            SettingsPane(
+                title: "Breaks",
+                subtitle: "Choose how Pomodoro breaks appear on your displays."
+            ) {
+                BreakScreenSettingsView(appState: appState)
+            }
+        case .notifications:
+            SettingsPane(
+                title: "Notifications",
+                subtitle: "Choose which alerts appear and how they get your attention."
+            ) {
+                NotificationSettingsView(appState: appState)
+            }
+        case .advanced:
+            SettingsPane(
+                title: "Advanced",
+                subtitle: "Check Crona’s local service connection and diagnostics."
+            ) {
+                RuntimeSettingsView(appState: appState)
+                DiagnosticsSettingsView(appState: appState)
+            }
+        case .about:
+            SettingsPane(
+                title: "About",
+                subtitle: "View version details, updates, and release information."
+            ) {
+                AboutSettingsView(appState: appState)
+                UpdatesSettingsView(appState: appState)
+            }
+        #if DEBUG
+            case .developer:
+                SettingsPane(
+                    title: "Developer",
+                    subtitle: "Open safe, local previews of Crona’s transient surfaces."
+                ) {
+                    DeveloperSettingsView(appState: appState)
+                }
+        #endif
+        }
+    }
+
+    private var settingsToolbar: some View {
+        HStack(spacing: 12) {
+            Text(sidebarSelection.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(PopupVisualTheme.primaryText)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: SettingsChromeMetrics.toolbarHeight)
+        .background(
+            VisualEffectView(material: .headerView, blendingMode: .behindWindow, emphasized: false)
+        )
     }
 
 }
 
 private enum SettingsChromeMetrics {
-    static let sidebarWidth: CGFloat = 210
-    static let toolbarSurfaceHeight: CGFloat = 52
+    static let sidebarWidth: CGFloat = 236
+    static let toolbarHeight: CGFloat = 52
 }
 
 private enum SettingsLayoutMetrics {
@@ -314,6 +324,15 @@ private struct GeneralSettingsView: View {
                     isOn: Binding(
                         get: { appState.preferences.preferences.pinPopover },
                         set: { appState.preferences.preferences.pinPopover = $0 }
+                    )
+                )
+            }
+
+            SettingsCard("Access") {
+                SettingsShortcutRow(
+                    shortcut: Binding(
+                        get: { appState.preferences.preferences.settingsShortcut },
+                        set: { appState.preferences.preferences.settingsShortcut = $0 }
                     )
                 )
             }
@@ -1127,6 +1146,17 @@ private struct MenuBarSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsLayoutMetrics.sectionSpacing) {
+            SettingsCard("Status Item") {
+                SettingsToggleRow(
+                    title: "Show Menu Bar Item",
+                    subtitle: "Keep Crona available from the menu bar.",
+                    isOn: Binding(
+                        get: { appState.preferences.preferences.showMenuBarItem },
+                        set: { appState.preferences.preferences.showMenuBarItem = $0 }
+                    )
+                )
+            }
+
             SettingsCard("Preview") {
                 VStack(alignment: .leading, spacing: 12) {
 
@@ -2664,7 +2694,7 @@ private struct SettingsCard<Content: View>: View {
                     cornerRadius: 12,
                     style: .continuous
                 )
-                    .strokeBorder(PopupVisualTheme.border.opacity(0.72), lineWidth: 0.75)
+                .strokeBorder(PopupVisualTheme.border.opacity(0.72), lineWidth: 0.75)
             }
         }
     }

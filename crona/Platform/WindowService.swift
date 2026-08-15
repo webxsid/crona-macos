@@ -564,6 +564,7 @@ final class WindowService {
 
     func registerSettingsWindow(_ window: NSWindow, appearance: CompanionAppearance = .system) {
         if settingsWindow === window {
+            configureSettingsWindowChrome(window)
             updateSettingsWindowAppearance(appearance, on: window)
             return
         }
@@ -572,17 +573,7 @@ final class WindowService {
         }
 
         settingsWindow = window
-        window.title = "Crona"
-        window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unifiedCompact
-        window.titlebarSeparatorStyle = .none
-        if #available(macOS 27.0, *) {
-            window.titlebarAppearsTransparent = false
-            window.backgroundColor = .windowBackgroundColor
-        } else {
-            window.titlebarAppearsTransparent = true
-        }
+        configureSettingsWindowChrome(window)
         updateSettingsWindowAppearance(appearance, on: window)
         window.contentMinSize = NSSize(width: 860, height: 620)
         if window.contentLayoutRect.width < 860 || window.contentLayoutRect.height < 620 {
@@ -753,7 +744,37 @@ final class WindowService {
         case .dark:
             targetWindow.appearance = NSAppearance(named: .darkAqua)
         }
-        targetWindow.backgroundColor = .windowBackgroundColor
+        targetWindow.isOpaque = false
+        targetWindow.backgroundColor = .clear
+    }
+
+    private func configureSettingsWindowChrome(_ window: NSWindow) {
+        window.styleMask.insert(.fullSizeContentView)
+        window.title = ""
+        window.titleVisibility = .hidden
+        window.toolbar = nil
+        window.titlebarSeparatorStyle = .none
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+
+        for buttonType in [
+            NSWindow.ButtonType.closeButton,
+            .miniaturizeButton,
+            .zoomButton,
+        ] {
+            guard let button = window.standardWindowButton(buttonType) else { continue }
+            button.isHidden = false
+            button.alphaValue = 1
+        }
+
+        DispatchQueue.main.async { [weak window] in
+            DispatchQueue.main.async {
+                guard let window else { return }
+                window.title = ""
+                window.titleVisibility = .hidden
+            }
+        }
     }
 
     func showInactivityPopup() {

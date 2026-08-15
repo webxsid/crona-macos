@@ -20,7 +20,6 @@ struct CronaCompanionApp: App {
                 .frame(minWidth: 860, minHeight: 620)
         }
         .defaultSize(width: 900, height: 680)
-        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

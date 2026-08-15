@@ -163,8 +163,23 @@ final class StatusBarService: NSObject {
         showPopup()
     }
 
+    func showPopupFromApplicationLaunch() {
+        guard appState?.preferences.preferences.showMenuBarItem == true,
+              statusItem.isVisible,
+              popupPanel?.isVisible != true
+        else { return }
+        showPopup()
+    }
+
     private func applyStatusItemUpdate(now: Date = Date()) {
-        guard let button = statusItem.button, let appState else { return }
+        guard let appState else { return }
+        let shouldShowStatusItem = appState.preferences.preferences.showMenuBarItem
+        statusItem.isVisible = shouldShowStatusItem
+        guard shouldShowStatusItem else {
+            dismissPopup(animated: false)
+            return
+        }
+        guard let button = statusItem.button else { return }
         let model = appState.popoverModel
         let nextTitle = MenuBarTextFormatter.statusItemTitle(
             preferences: appState.preferences.preferences,
