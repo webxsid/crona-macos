@@ -866,7 +866,7 @@ struct StatsTabView: View {
         let snapshot = appState.popoverStatsService.snapshot
 
         VStack(spacing: 12) {
-            HStack(spacing: 10) {
+            HStack(spacing: 4) {
                 statsDateArrow(systemName: "chevron.left") {
                     appState.popoverStatsService.showPreviousDay()
                 }
@@ -886,7 +886,14 @@ struct StatsTabView: View {
                         .foregroundStyle(PopupVisualTheme.primaryText)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(glassCapsuleBackground())
+                        .background {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(PopupVisualTheme.surfaceFill.opacity(0.7))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.7)
+                                }
+                        }
                 }
                 .buttonStyle(.plain)
                 .contentShape(Capsule())
@@ -899,7 +906,6 @@ struct StatsTabView: View {
                     appState.popoverStatsService.showNextDay()
                 }
             }
-
             if isShowingCalendar {
                 statsCalendarContent(snapshot: snapshot)
             } else {
@@ -917,6 +923,8 @@ struct StatsTabView: View {
                     } else if let score = snapshot.focusScore, let metrics = snapshot.todayMetrics {
                         scoreHero(score: score, message: snapshot.scoreMessage)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
+
+                        statsDivider
 
                         LazyVGrid(
                             columns: [
@@ -951,10 +959,14 @@ struct StatsTabView: View {
                             )
                         }
 
+                        statsDivider
+
                         FocusRestBalanceView(
                             workedSeconds: metrics.workedSeconds,
                             restSeconds: metrics.restSeconds
                         )
+
+                        statsDivider
 
                         StatsOutcomeCard(
                             icon: "checkmark.circle.fill",
@@ -966,6 +978,8 @@ struct StatsTabView: View {
                                 ("Abandoned", metrics.abandonedIssues),
                             ]
                         )
+
+                        statsDivider
 
                         StatsOutcomeCard(
                             icon: "checklist.checked",
@@ -1033,6 +1047,7 @@ struct StatsTabView: View {
     private func statsCalendarBody(snapshot: PopoverStatsSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             calendarSelectionCard(snapshot: snapshot)
+            statsDivider
             calendarMonthGrid(snapshot: snapshot)
 
             if let error = snapshot.lastErrorDescription, !error.isEmpty {
@@ -1042,6 +1057,12 @@ struct StatsTabView: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    private var statsDivider: some View {
+        Divider()
+            .padding(.horizontal, 4)
+            .overlay(PopupVisualTheme.divider.opacity(0.7))
     }
 
     private func calendarSelectionCard(snapshot: PopoverStatsSnapshot) -> some View {
@@ -1082,7 +1103,7 @@ struct StatsTabView: View {
             }
         }
         .padding(16)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
     }
 
     private func calendarMonthGrid(snapshot: PopoverStatsSnapshot) -> some View {
@@ -1125,7 +1146,7 @@ struct StatsTabView: View {
             }
         }
         .padding(14)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
         .task(id: visibleDates) {
             let scoreDates = visibleDates.filter {
                 !appState.coreSettingsService.isHistoricalAwayDate($0)
@@ -1244,7 +1265,7 @@ struct StatsTabView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 50)
             .padding(.horizontal, 20)
-            .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
+            .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
         }
 
         private var displayDate: String {
@@ -1333,7 +1354,7 @@ struct StatsTabView: View {
             Spacer(minLength: 0)
         }
         .padding(18)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 26))
+            .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 26))
     }
 
     private func compactDuration(_ seconds: Int) -> String {
@@ -1377,7 +1398,10 @@ struct StatsTabView: View {
                             : PopupVisualTheme.primaryText.opacity(0.28)
                     )
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(PopupVisualTheme.primaryText.opacity(isEnabled ? 0.08 : 0.04)))
+                .background {
+                    Circle()
+                        .fill(PopupVisualTheme.primaryText.opacity(isEnabled ? 0.06 : 0.02))
+                }
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -1444,7 +1468,7 @@ private struct StatsMetricTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .background(cardBackground(stroke: tint.opacity(0.14), cornerRadius: 20))
+        .background(subtleCardBackground(stroke: tint.opacity(0.14), cornerRadius: 16))
     }
 }
 
@@ -1480,7 +1504,7 @@ private struct FocusRestBalanceView: View {
             .frame(height: 6)
         }
         .padding(16)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 20))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 16))
     }
 }
 
@@ -1519,7 +1543,7 @@ private struct StatsOutcomeCard: View {
             }
         }
         .padding(16)
-        .background(cardBackground(stroke: tint.opacity(0.16), cornerRadius: 22))
+        .background(subtleCardBackground(stroke: tint.opacity(0.16), cornerRadius: 16))
     }
 }
 
@@ -1638,7 +1662,7 @@ struct PlaceholderPanel: View {
         }
         .frame(maxWidth: .infinity, minHeight: 132)
         .padding(20)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 18))
     }
 }
 
@@ -1671,7 +1695,7 @@ struct EndSessionSheetView: View {
                         focusRequest: appState.endSessionFocusRequest
                     )
                     .frame(height: 104)
-                    .background(cardBackground(stroke: PopupVisualTheme.border))
+                    .popupInputSurface(cornerRadius: 12)
 
                     if let error = appState.endSessionErrorMessage, !error.isEmpty {
                         Text(error)
@@ -1710,7 +1734,6 @@ struct EndSessionSheetView: View {
         }
         .frame(width: 360)
         .fixedSize(horizontal: false, vertical: true)
-        .shadow(color: .black.opacity(0.34), radius: 32, y: 22)
     }
 }
 
@@ -1739,7 +1762,7 @@ struct MetricStripCard: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 18))
     }
 }
 
@@ -1852,13 +1875,13 @@ struct FocusIssueRow: View {
                         .frame(minWidth: 90)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 11)
-                        .background(glassCapsuleBackground(emphasis: 0.18))
+                        .background(flatActionCapsuleBackground(fill: Color.accentColor.opacity(0.12)))
                 }
                 .buttonStyle(GlassPressButtonStyle())
             }
         }
         .padding(16)
-        .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 24))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 18))
         .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .contextMenu {
             statusMenu
@@ -1987,7 +2010,6 @@ struct IssueActionEditorView: View {
         .frame(maxWidth: 350)
         .background(PopoverDialogBackground(cornerRadius: 28))
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.5), radius: 28, y: 16)
         .onAppear {
             if case .status = appState.issueActionEditor {
                 DispatchQueue.main.async {
@@ -2190,7 +2212,7 @@ struct HabitRow: View {
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 12)
-        .background(cardBackground(stroke: statusColor.opacity(0.2), cornerRadius: 19))
+        .background(subtleCardBackground(stroke: statusColor.opacity(0.2), cornerRadius: 16))
     }
 
     private func habitActionButton(
@@ -2525,9 +2547,9 @@ struct ExpandablePresetRow: View {
                 }
             }
         }
-        .background(cardBackground(
+        .background(subtleCardBackground(
             stroke: PopupVisualTheme.primaryText.opacity(isExpanded ? 0.14 : 0.05),
-            cornerRadius: 22
+            cornerRadius: 18
         ))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .animation(.easeInOut(duration: 0.18), value: isExpanded)
@@ -2577,9 +2599,9 @@ struct ExpandableNumberRow: View {
                 .padding(12)
             }
         }
-        .background(cardBackground(
+        .background(subtleCardBackground(
             stroke: PopupVisualTheme.primaryText.opacity(isExpanded ? 0.14 : 0.05),
-            cornerRadius: 22
+            cornerRadius: 18
         ))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .animation(.easeInOut(duration: 0.18), value: isExpanded)
@@ -2772,7 +2794,7 @@ func actionPill(
         .padding(.vertical, 11)
         .contentShape(Capsule())
         .background(
-            glassCapsuleBackground(emphasis: 0.16)
+            flatActionCapsuleBackground(fill: fill)
         )
     }
     .buttonStyle(GlassPressButtonStyle())
@@ -2793,19 +2815,42 @@ private struct OptionalKeyboardShortcut: ViewModifier {
 }
 
 func cardBackground(stroke: Color, cornerRadius: CGFloat = 20) -> some View {
+    Color.clear
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(stroke.opacity(0.38))
+                .frame(height: 0.5)
+        }
+}
+
+func subtleCardBackground(stroke: Color, cornerRadius: CGFloat = 16) -> some View {
     let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
     return shape
-        .fill(PopupVisualTheme.cardBackground)
-        .overlay(
-            shape
-                .strokeBorder(stroke, lineWidth: 1)
-        )
-        .overlay(
-            shape
-                .strokeBorder(PopupVisualTheme.highlightedBorder.opacity(0.55), lineWidth: 0.5)
-        )
-        .shadow(color: PopupVisualTheme.shadow, radius: 10, y: 6)
+        .fill(PopupVisualTheme.surfaceFill.opacity(0.72))
+        .overlay {
+            shape.strokeBorder(
+                PopupVisualTheme.surfaceStroke.opacity(0.8),
+                lineWidth: 0.7
+            )
+        }
+        .overlay {
+            shape.strokeBorder(stroke.opacity(0.22), lineWidth: 0.45)
+        }
+}
+
+extension View {
+    func popupInputSurface(isFocused: Bool = false, cornerRadius: CGFloat = 11) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return self
+            .background(shape.fill(PopupVisualTheme.surfaceFill))
+            .overlay {
+                shape.strokeBorder(
+                    isFocused ? Color.accentColor.opacity(0.85) : PopupVisualTheme.surfaceStroke,
+                    lineWidth: isFocused ? 1.25 : 0.8
+                )
+            }
+    }
 }
 
 @MainActor
@@ -2881,6 +2926,15 @@ private struct GlassPressButtonStyle: ButtonStyle {
 
 private func glassCapsuleBackground(emphasis: Double = 0.12) -> some View {
     GlassCapsuleBackground(emphasis: emphasis)
+}
+
+private func flatActionCapsuleBackground(fill: Color) -> some View {
+    Capsule()
+        .fill(fill)
+        .overlay {
+            Capsule()
+                .strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.8)
+        }
 }
 
 private struct GlassCapsuleBackground: View {

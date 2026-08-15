@@ -6,24 +6,6 @@ private enum PopupCloseChromeInsets {
     static let top: CGFloat = 14
 }
 
-private enum HardLimitPopupPanelMetrics {
-    static let width: CGFloat = 408
-    static let decisionHeight: CGFloat = 434
-    static let endSessionHeight: CGFloat = 382
-    static let extendHeight: CGFloat = 408
-    static let successHeight: CGFloat = 268
-
-    static func height(for phase: HardLimitPopupPhase?) -> CGFloat {
-        switch phase {
-        case .decision: decisionHeight
-        case .endSession: endSessionHeight
-        case .extend: extendHeight
-        case .success: successHeight
-        case nil: decisionHeight
-        }
-    }
-}
-
 private enum PopupAnimationStyle {
     case centeredFadeBlur
     case edgeSlide(CompanionPopupPosition)
@@ -70,9 +52,9 @@ final class WindowService {
     private var timerHUDWasVisibleBeforeMenuBarPopover = false
     private var timerHUDAppliedPosition: CompanionPopupPosition?
     private var timerHUDAppliedSize: TimerHUDSize?
-#if DEBUG
-    private var developerBreakScreenPanel: DeveloperBreakScreenPanel?
-#endif
+    #if DEBUG
+        private var developerBreakScreenPanel: DeveloperBreakScreenPanel?
+    #endif
     private var hardLimitWarningPanel: HardLimitWarningPanel?
     private var hardLimitWarningGlobalMonitor: Any?
     private var hardLimitWarningLocalMonitor: Any?
@@ -117,12 +99,16 @@ final class WindowService {
     func reconcileTimerHUD() {
         guard let appState else { return }
         let snapshot = appState.timerService.snapshot
-        let active = snapshot.sessionID != nil && snapshot.state != "idle" && snapshot.state != "disconnected"
-        guard Self.timerHUDShouldBeVisible(
-            preferencesEnabled: appState.preferences.preferences.showTimerHUD,
-            activeTimer: active,
-            menuBarPopoverPresented: isMenuBarPopoverPresented
-        ) else {
+        let active =
+            snapshot.sessionID != nil && snapshot.state != "idle"
+            && snapshot.state != "disconnected"
+        guard
+            Self.timerHUDShouldBeVisible(
+                preferencesEnabled: appState.preferences.preferences.showTimerHUD,
+                activeTimer: active,
+                menuBarPopoverPresented: isMenuBarPopoverPresented
+            )
+        else {
             timerHUDPanel?.orderOut(nil)
             return
         }
@@ -167,12 +153,16 @@ final class WindowService {
 
         guard let appState else { return }
         let snapshot = appState.timerService.snapshot
-        let active = snapshot.sessionID != nil && snapshot.state != "idle" && snapshot.state != "disconnected"
-        guard Self.timerHUDShouldBeVisible(
-            preferencesEnabled: appState.preferences.preferences.showTimerHUD,
-            activeTimer: active,
-            menuBarPopoverPresented: false
-        ) else {
+        let active =
+            snapshot.sessionID != nil && snapshot.state != "idle"
+            && snapshot.state != "disconnected"
+        guard
+            Self.timerHUDShouldBeVisible(
+                preferencesEnabled: appState.preferences.preferences.showTimerHUD,
+                activeTimer: active,
+                menuBarPopoverPresented: false
+            )
+        else {
             timerHUDPanel?.orderOut(nil)
             return
         }
@@ -200,10 +190,12 @@ final class WindowService {
             panel.makeKeyAndOrderFront(nil)
         } else {
             let size = appState?.preferences.preferences.timerHUDSize ?? .spacious
-            let compactFrame = timerHUDCompactFrame ?? NSRect(
-                origin: panel.frame.origin,
-                size: NSSize(width: size.panelSize.width, height: size.panelSize.height)
-            )
+            let compactFrame =
+                timerHUDCompactFrame
+                ?? NSRect(
+                    origin: panel.frame.origin,
+                    size: NSSize(width: size.panelSize.width, height: size.panelSize.height)
+                )
             timerHUDCompactFrame = nil
             panel.makeFirstResponder(nil)
             panel.resignKey()
@@ -219,7 +211,9 @@ final class WindowService {
         let panel = TimerHUDPanel(
             contentRect: NSRect(
                 origin: .zero,
-                size: NSSize(width: TimerHUDSize.spacious.panelSize.width, height: TimerHUDSize.spacious.panelSize.height)
+                size: NSSize(
+                    width: TimerHUDSize.spacious.panelSize.width,
+                    height: TimerHUDSize.spacious.panelSize.height)
             ),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
@@ -245,7 +239,8 @@ final class WindowService {
 
     private func restoreOrPositionTimerHUD(_ panel: NSPanel) {
         let preferredSize = appState?.preferences.preferences.timerHUDSize ?? .spacious
-        let preferredNSSize = NSSize(width: preferredSize.panelSize.width, height: preferredSize.panelSize.height)
+        let preferredNSSize = NSSize(
+            width: preferredSize.panelSize.width, height: preferredSize.panelSize.height)
         if panel.setFrameUsingName("CronaTimerHUD") {
             if panel.frame.size != preferredNSSize {
                 var compactFrame = panel.frame
@@ -293,7 +288,10 @@ final class WindowService {
     }
 
     private func positionTimerHUD(_ panel: NSPanel, preference: CompanionPopupPosition) {
-        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) ?? NSScreen.main else { return }
+        guard
+            let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) })
+                ?? NSScreen.main
+        else { return }
         let origin = InactivityPopupPositioner.origin(
             in: screen.visibleFrame,
             panelSize: panel.frame.size,
@@ -306,7 +304,9 @@ final class WindowService {
     }
 
     private func clampTimerHUD(_ panel: NSPanel) {
-        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) ?? NSScreen.main
+        let screen =
+            NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) })
+            ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
         let x = min(max(frame.minX + 8, panel.frame.minX), frame.maxX - panel.frame.width - 8)
         let y = min(max(frame.minY + 8, panel.frame.minY), frame.maxY - panel.frame.height - 8)
@@ -314,7 +314,8 @@ final class WindowService {
     }
 
     private func clampedWindowFrame(_ proposed: NSRect) -> NSRect {
-        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(proposed) }) ?? NSScreen.main
+        let screen =
+            NSScreen.screens.first(where: { $0.visibleFrame.intersects(proposed) }) ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return proposed }
         var frame = proposed
         frame.origin.x = min(max(visible.minX + 8, frame.minX), visible.maxX - frame.width - 8)
@@ -354,11 +355,11 @@ final class WindowService {
             hardLimitWarningPanel,
         ].compactMap { $0 }
         panels.append(contentsOf: breakScreenPanels.values.map { $0 as NSPanel })
-#if DEBUG
-        if let developerBreakScreenPanel {
-            panels.append(developerBreakScreenPanel)
-        }
-#endif
+        #if DEBUG
+            if let developerBreakScreenPanel {
+                panels.append(developerBreakScreenPanel)
+            }
+        #endif
 
         for panel in panels where panel.isVisible {
             panel.collectionBehavior = Self.transientPopupCollectionBehavior
@@ -370,9 +371,8 @@ final class WindowService {
         guard let appState else { return }
         let screens = NSScreen.screens
         let activeIDs = Set(screens.compactMap(Self.displayID))
-        if
-            breakScreenPrimaryDisplayID == nil
-                || !activeIDs.contains(breakScreenPrimaryDisplayID!)
+        if breakScreenPrimaryDisplayID == nil
+            || !activeIDs.contains(breakScreenPrimaryDisplayID!)
         {
             let activeScreen = screenContainingMouse(in: screens) ?? NSScreen.main ?? screens.first
             breakScreenPrimaryDisplayID = activeScreen.flatMap(Self.displayID)
@@ -397,7 +397,9 @@ final class WindowService {
             let panel: BreakScreenPanel
             if let existing = breakScreenPanels[id] {
                 panel = existing
-                if let controller = panel.contentViewController as? NSHostingController<BreakScreenRootView> {
+                if let controller = panel.contentViewController
+                    as? NSHostingController<BreakScreenRootView>
+                {
                     controller.rootView = rootView
                 } else {
                     panel.contentViewController = NSHostingController(rootView: rootView)
@@ -430,51 +432,58 @@ final class WindowService {
         breakScreenPanels.removeAll()
         breakScreenPrimaryDisplayID = nil
         for panel in panels {
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                panel.animator().alphaValue = 0
-            }, completionHandler: {
-                MainActor.assumeIsolated {
-                    panel.orderOut(nil)
-                    panel.contentViewController = nil
-                    panel.close()
-                }
-            })
+            NSAnimationContext.runAnimationGroup(
+                { context in
+                    context.duration = 0.18
+                    context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                    panel.animator().alphaValue = 0
+                },
+                completionHandler: {
+                    MainActor.assumeIsolated {
+                        panel.orderOut(nil)
+                        panel.contentViewController = nil
+                        panel.close()
+                    }
+                })
         }
     }
 
-#if DEBUG
-    func showDeveloperBreakScreen() {
-        guard let appState else { return }
-        let screen = popupTargetScreen()
-        let panel = developerBreakScreenPanel ?? makeDeveloperBreakScreenPanel(
-            rootView: DeveloperBreakScreenRootView(appState: appState, screen: screen)
-        )
-        developerBreakScreenPanel = panel
-        if let controller = panel.contentViewController as? NSHostingController<DeveloperBreakScreenRootView> {
-            controller.rootView = DeveloperBreakScreenRootView(appState: appState, screen: screen)
+    #if DEBUG
+        func showDeveloperBreakScreen() {
+            guard let appState else { return }
+            let screen = popupTargetScreen()
+            let panel =
+                developerBreakScreenPanel
+                ?? makeDeveloperBreakScreenPanel(
+                    rootView: DeveloperBreakScreenRootView(appState: appState, screen: screen)
+                )
+            developerBreakScreenPanel = panel
+            if let controller = panel.contentViewController
+                as? NSHostingController<DeveloperBreakScreenRootView>
+            {
+                controller.rootView = DeveloperBreakScreenRootView(
+                    appState: appState, screen: screen)
+            }
+            panel.setFrame(screen.frame, display: true)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().alphaValue = 1
+            }
+            NSApp.activate()
+            panel.makeKeyAndOrderFront(nil)
         }
-        panel.setFrame(screen.frame, display: true)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
-        NSApp.activate()
-        panel.makeKeyAndOrderFront(nil)
-    }
 
-    func dismissDeveloperPreviews() {
-        closeHardLimitPopup()
-        closeInactivityPopup()
-        closeHardLimitWarningIndicator()
-        closeSmartPauseResumeNotice()
-        developerBreakScreenPanel?.orderOut(nil)
-    }
-#endif
+        func dismissDeveloperPreviews() {
+            closeHardLimitPopup()
+            closeInactivityPopup()
+            closeHardLimitWarningIndicator()
+            closeSmartPauseResumeNotice()
+            developerBreakScreenPanel?.orderOut(nil)
+        }
+    #endif
 
     private func makeBreakScreenPanel(
         rootView: BreakScreenRootView
@@ -498,29 +507,29 @@ final class WindowService {
         return panel
     }
 
-#if DEBUG
-    private func makeDeveloperBreakScreenPanel(
-        rootView: DeveloperBreakScreenRootView
-    ) -> DeveloperBreakScreenPanel {
-        let panel = DeveloperBreakScreenPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        panel.level = .screenSaver
-        panel.collectionBehavior = Self.transientPopupCollectionBehavior
-        panel.hidesOnDeactivate = false
-        panel.isOpaque = true
-        panel.backgroundColor = .black
-        panel.hasShadow = false
-        panel.isMovable = false
-        panel.isMovableByWindowBackground = false
-        panel.isReleasedWhenClosed = false
-        panel.contentViewController = NSHostingController(rootView: rootView)
-        return panel
-    }
-#endif
+    #if DEBUG
+        private func makeDeveloperBreakScreenPanel(
+            rootView: DeveloperBreakScreenRootView
+        ) -> DeveloperBreakScreenPanel {
+            let panel = DeveloperBreakScreenPanel(
+                contentRect: .zero,
+                styleMask: [.borderless, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .screenSaver
+            panel.collectionBehavior = Self.transientPopupCollectionBehavior
+            panel.hidesOnDeactivate = false
+            panel.isOpaque = true
+            panel.backgroundColor = .black
+            panel.hasShadow = false
+            panel.isMovable = false
+            panel.isMovableByWindowBackground = false
+            panel.isReleasedWhenClosed = false
+            panel.contentViewController = NSHostingController(rootView: rootView)
+            return panel
+        }
+    #endif
 
     private func screenContainingMouse(in screens: [NSScreen]) -> NSScreen? {
         let location = NSEvent.mouseLocation
@@ -553,8 +562,11 @@ final class WindowService {
         refreshApplicationActivationPolicy()
     }
 
-    func registerSettingsWindow(_ window: NSWindow) {
-        guard settingsWindow !== window else { return }
+    func registerSettingsWindow(_ window: NSWindow, appearance: CompanionAppearance = .system) {
+        if settingsWindow === window {
+            updateSettingsWindowAppearance(appearance, on: window)
+            return
+        }
         if let settingsWindowCloseObserver {
             NotificationCenter.default.removeObserver(settingsWindowCloseObserver)
         }
@@ -571,6 +583,7 @@ final class WindowService {
         } else {
             window.titlebarAppearsTransparent = true
         }
+        updateSettingsWindowAppearance(appearance, on: window)
         window.contentMinSize = NSSize(width: 860, height: 620)
         if window.contentLayoutRect.width < 860 || window.contentLayoutRect.height < 620 {
             window.setContentSize(NSSize(width: 900, height: 680))
@@ -597,13 +610,15 @@ final class WindowService {
     }
 
     func refreshApplicationActivationPolicy() {
-        let shouldRemainRegular = settingsWindow?.isVisible == true || externalWindowPresentationCount > 0
+        let shouldRemainRegular =
+            settingsWindow?.isVisible == true || externalWindowPresentationCount > 0
         if shouldRemainRegular {
             presentAsRegularApplication()
             return
         }
 
-        let shouldHideDockIcon = appState?.preferences.preferences.hideDockIconWhenNoWindowsOpen ?? true
+        let shouldHideDockIcon =
+            appState?.preferences.preferences.hideDockIconWhenNoWindowsOpen ?? true
         if shouldHideDockIcon {
             applyActivationPolicyIfNeeded(.accessory)
         } else {
@@ -653,7 +668,8 @@ final class WindowService {
         do {
             try process.run()
         } catch {
-            appState?.daemonConnection.lastErrorDescription = "Failed to open TUI: \(error.localizedDescription)"
+            appState?.daemonConnection.lastErrorDescription =
+                "Failed to open TUI: \(error.localizedDescription)"
         }
     }
 
@@ -662,7 +678,8 @@ final class WindowService {
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = "Stop Crona?"
-        alert.informativeText = hasActiveSession
+        alert.informativeText =
+            hasActiveSession
             ? "The daemon and companion will quit. Your active timer will not be committed automatically."
             : "The daemon and companion will quit. You can start Crona again whenever you need it."
         alert.addButton(withTitle: "Stop Crona")
@@ -719,6 +736,24 @@ final class WindowService {
             token: .hardLimit,
             completion: completion
         )
+    }
+
+    func updateSettingsWindowAppearance(
+        _ appearance: CompanionAppearance,
+        on window: NSWindow? = nil
+    ) {
+        let targetWindow = window ?? settingsWindow
+        guard let targetWindow else { return }
+
+        switch appearance {
+        case .system:
+            targetWindow.appearance = nil
+        case .light:
+            targetWindow.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            targetWindow.appearance = NSAppearance(named: .darkAqua)
+        }
+        targetWindow.backgroundColor = .windowBackgroundColor
     }
 
     func showInactivityPopup() {
@@ -814,11 +849,11 @@ final class WindowService {
         hardLimitWarningPanel?.close()
         hardLimitWarningPanel = nil
         closeBreakScreens()
-#if DEBUG
-        developerBreakScreenPanel?.orderOut(nil)
-        developerBreakScreenPanel?.close()
-        developerBreakScreenPanel = nil
-#endif
+        #if DEBUG
+            developerBreakScreenPanel?.orderOut(nil)
+            developerBreakScreenPanel?.close()
+            developerBreakScreenPanel = nil
+        #endif
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)
             self.screenParametersObserver = nil
@@ -835,7 +870,9 @@ final class WindowService {
         let panel: HardLimitWarningPanel
         if let existingPanel = hardLimitWarningPanel {
             panel = existingPanel
-            if let hostingController = panel.contentViewController as? NSHostingController<HardLimitWarningIndicatorRootView> {
+            if let hostingController = panel.contentViewController
+                as? NSHostingController<HardLimitWarningIndicatorRootView>
+            {
                 hostingController.rootView = HardLimitWarningIndicatorRootView(appState: appState)
             } else {
                 panel.contentViewController = makeHardLimitWarningHostingController(
@@ -855,7 +892,8 @@ final class WindowService {
 
     func closeHardLimitWarningIndicator(completion: (@MainActor @Sendable () -> Void)? = nil) {
         if let panel = hardLimitWarningPanel {
-            animatePopupExit(panel, style: .mouseFollowerFadeBlur, token: .hardLimitWarning) { [weak self] in
+            animatePopupExit(panel, style: .mouseFollowerFadeBlur, token: .hardLimitWarning) {
+                [weak self] in
                 self?.removeHardLimitWarningMonitors()
                 completion?()
             }
@@ -870,8 +908,8 @@ final class WindowService {
             contentRect: NSRect(
                 x: 0,
                 y: 0,
-                width: HardLimitPopupPanelMetrics.width,
-                height: HardLimitPopupPanelMetrics.decisionHeight
+                width: HardLimitPopupSizing.panelWidth,
+                height: HardLimitPopupSizing.panelHeight(for: .decision)
             ),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
@@ -892,7 +930,8 @@ final class WindowService {
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isReleasedWhenClosed = false
-        panel.contentViewController = NSHostingController(rootView: HardLimitPopupRootView(appState: appState))
+        panel.contentViewController = NSHostingController(
+            rootView: HardLimitPopupRootView(appState: appState))
         return panel
     }
 
@@ -923,7 +962,8 @@ final class WindowService {
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isReleasedWhenClosed = false
-        panel.contentViewController = NSHostingController(rootView: InactivityPopupRootView(appState: appState))
+        panel.contentViewController = NSHostingController(
+            rootView: InactivityPopupRootView(appState: appState))
         return panel
     }
 
@@ -933,9 +973,9 @@ final class WindowService {
                 x: 0,
                 y: 0,
                 width: 272 + PopupCloseChromeInsets.leading,
-                height: 82 + PopupCloseChromeInsets.top
+                height: 70 + PopupCloseChromeInsets.top
             ),
-            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -946,8 +986,15 @@ final class WindowService {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = false
         panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+        panel.worksWhenModal = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isReleasedWhenClosed = false
         panel.contentViewController = NSHostingController(
             rootView: SmartPauseResumeNoticeRootView(appState: appState)
@@ -966,7 +1013,7 @@ final class WindowService {
         let height: CGFloat
         switch appState.inactivityPopupPhase {
         case .decision:
-            height = 128 + PopupCloseChromeInsets.top
+            height = 95 + PopupCloseChromeInsets.top
         case .endSession:
             height = 430 + PopupCloseChromeInsets.top
         case nil:
@@ -991,7 +1038,7 @@ final class WindowService {
 
     private func resizeHardLimitPanel(_ panel: NSPanel, animated: Bool) {
         guard let appState else { return }
-        let height = HardLimitPopupPanelMetrics.height(for: appState.hardLimitPopupPhase)
+        let height = HardLimitPopupSizing.panelHeight(for: appState.hardLimitPopupPhase)
         guard abs(panel.frame.height - height) > 0.5 else { return }
 
         var frame = panel.frame
@@ -1081,7 +1128,8 @@ final class WindowService {
         }
 
         let mouseLocation = NSEvent.mouseLocation
-        return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.screens.first!
+        return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+            ?? NSScreen.screens.first!
     }
 
     private func cornerPopupTargetScreen() -> NSScreen {
@@ -1153,32 +1201,46 @@ final class WindowService {
         in frame: NSRect
     ) -> NSPoint {
         NSPoint(
-            x: min(max(frame.minX + PopupPlacementInsets.side, origin.x), frame.maxX - size.width - PopupPlacementInsets.side),
-            y: min(max(frame.minY + PopupPlacementInsets.bottom, origin.y), frame.maxY - size.height - PopupPlacementInsets.top)
+            x: min(
+                max(frame.minX + PopupPlacementInsets.side, origin.x),
+                frame.maxX - size.width - PopupPlacementInsets.side),
+            y: min(
+                max(frame.minY + PopupPlacementInsets.bottom, origin.y),
+                frame.maxY - size.height - PopupPlacementInsets.top)
         )
     }
 
     private func positionWarning(panel: NSWindow) {
         let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? popupTargetScreen()
+        let screen =
+            NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+            ?? popupTargetScreen()
         let visibleFrame = screen.visibleFrame
         let panelSize = panel.frame.size
         let margin: CGFloat = 12
         let cursorClearance: CGFloat = 24
         let roomOnRight = visibleFrame.maxX - mouseLocation.x
-        let preferredX = roomOnRight >= panelSize.width + cursorClearance + margin
+        let preferredX =
+            roomOnRight >= panelSize.width + cursorClearance + margin
             ? mouseLocation.x + cursorClearance
             : mouseLocation.x - panelSize.width - cursorClearance
         let roomBelow = mouseLocation.y - visibleFrame.minY
-        let preferredY = roomBelow >= panelSize.height + cursorClearance + margin
+        let preferredY =
+            roomBelow >= panelSize.height + cursorClearance + margin
             ? mouseLocation.y - panelSize.height - cursorClearance
             : mouseLocation.y + cursorClearance
 
         let origin = NSPoint(
-            x: min(max(visibleFrame.minX + margin, preferredX), visibleFrame.maxX - panelSize.width - margin),
-            y: min(max(visibleFrame.minY + margin, preferredY), visibleFrame.maxY - panelSize.height - margin)
+            x: min(
+                max(visibleFrame.minX + margin, preferredX),
+                visibleFrame.maxX - panelSize.width - margin),
+            y: min(
+                max(visibleFrame.minY + margin, preferredY),
+                visibleFrame.maxY - panelSize.height - margin)
         )
-        guard hypot(panel.frame.origin.x - origin.x, panel.frame.origin.y - origin.y) > 0.75 else { return }
+        guard hypot(panel.frame.origin.x - origin.x, panel.frame.origin.y - origin.y) > 0.75 else {
+            return
+        }
         panel.setFrameOrigin(origin)
     }
 
@@ -1309,18 +1371,28 @@ final class WindowService {
     }
 
     private func installHardLimitWarningMonitorsIfNeeded() {
-        guard hardLimitWarningGlobalMonitor == nil, hardLimitWarningLocalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        guard hardLimitWarningGlobalMonitor == nil, hardLimitWarningLocalMonitor == nil else {
+            return
+        }
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+        ]
 
-        hardLimitWarningGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+        hardLimitWarningGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) {
+            [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let panel = self.hardLimitWarningPanel, panel.isVisible else { return }
+                guard let self, let panel = self.hardLimitWarningPanel, panel.isVisible else {
+                    return
+                }
                 self.positionWarning(panel: panel)
             }
         }
 
-        hardLimitWarningLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self, let panel = self.hardLimitWarningPanel, panel.isVisible else { return event }
+        hardLimitWarningLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) {
+            [weak self] event in
+            guard let self, let panel = self.hardLimitWarningPanel, panel.isVisible else {
+                return event
+            }
             self.positionWarning(panel: panel)
             return event
         }
@@ -1442,10 +1514,10 @@ private final class BreakScreenPanel: NSPanel {
 }
 
 #if DEBUG
-private final class DeveloperBreakScreenPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    private final class DeveloperBreakScreenPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { false }
 
-    override func cancelOperation(_ sender: Any?) {}
-}
+        override func cancelOperation(_ sender: Any?) {}
+    }
 #endif

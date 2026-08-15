@@ -37,12 +37,12 @@ struct IssueCreatorView: View {
                 .onChange(of: appState.issueCreateTitle) { _, value in
                     if value.count > 120 { appState.issueCreateTitle = String(value.prefix(120)) }
                 }
-                .creatorField()
+                .creatorField(isFocused: focusedField == .title)
 
             TextField("Estimate (e.g. 45m, 1h30m)", text: $appState.issueCreateEstimate)
                 .textFieldStyle(.plain)
                 .focused($focusedField, equals: .estimate)
-                .creatorField()
+                .creatorField(isFocused: focusedField == .estimate)
 
             destinationField
 
@@ -54,7 +54,7 @@ struct IssueCreatorView: View {
                     .onChange(of: appState.issueCreateDescription) { _, value in
                         if value.count > 2_000 { appState.issueCreateDescription = String(value.prefix(2_000)) }
                     }
-                    .creatorField()
+                    .creatorField(isFocused: focusedField == .description)
                     .padding(.top, 8)
             }
 
@@ -165,7 +165,7 @@ struct IssueCreatorView: View {
                 TextField("Search streams", text: $streamQuery)
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .streamSearch)
-                    .creatorField()
+                    .creatorField(isFocused: focusedField == .streamSearch)
 
                 if appState.issueCreationService.isLoadingDestinations {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -205,7 +205,11 @@ struct IssueCreatorView: View {
             .frame(maxWidth: .infinity, minHeight: 145, maxHeight: 145)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 14).fill(PopupVisualTheme.surfaceFill))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(PopupVisualTheme.divider.opacity(0.5))
+                .frame(height: 0.5)
+        }
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.7))
     }
 
@@ -293,9 +297,8 @@ struct IssueCreationSuccessView: View {
 }
 
 private extension View {
-    func creatorField() -> some View {
+    func creatorField(isFocused: Bool = false) -> some View {
         padding(10)
-            .background(RoundedRectangle(cornerRadius: 12).fill(PopupVisualTheme.surfaceFill))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.7))
+            .popupInputSurface(isFocused: isFocused)
     }
 }

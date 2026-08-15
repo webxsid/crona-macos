@@ -22,8 +22,8 @@ where T.AllCases: RandomAccessCollection {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(
                             isSelected
-                                ? PopupVisualTheme.selectedControlText
-                                : PopupVisualTheme.secondaryText
+                            ? PopupVisualTheme.primaryText
+                            : PopupVisualTheme.secondaryText
                         )
                         .frame(maxWidth: fitsContent ? nil : .infinity)
                         .padding(.horizontal, fitsContent ? 12 : 0)
@@ -36,27 +36,26 @@ where T.AllCases: RandomAccessCollection {
                 }
             }
         }
-        .padding(4)
-        .background(
+        .padding(3)
+        .background {
             Capsule()
                 .fill(PopupVisualTheme.controlBackground)
                 .overlay {
                     Capsule()
-                        .strokeBorder(PopupVisualTheme.border, lineWidth: 0.8)
+                        .strokeBorder(PopupVisualTheme.border.opacity(0.85), lineWidth: 0.8)
                 }
-        )
+        }
     }
 
     @ViewBuilder
     private func segmentBackground(isSelected: Bool) -> some View {
         if isSelected {
             Capsule()
-                .fill(PopupVisualTheme.selectedControlBackground)
+                .fill(PopupVisualTheme.elevatedBackground)
                 .overlay {
                     Capsule()
                         .strokeBorder(PopupVisualTheme.highlightedBorder, lineWidth: 0.8)
                 }
-                .shadow(color: PopupVisualTheme.shadow, radius: 8, y: 5)
         } else {
             Capsule()
                 .fill(Color.clear)

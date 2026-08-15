@@ -8,14 +8,14 @@ private enum HoverDismissPopupMetrics {
     static let compactDiameter: CGFloat = 22
 }
 
-private enum HardLimitPopupMetrics {
+enum HardLimitPopupSizing {
     static let contentWidth: CGFloat = 392
     static let panelWidth: CGFloat = 408
     static func panelHeight(for phase: HardLimitPopupPhase?) -> CGFloat {
         switch phase {
         case .decision: 434
         case .endSession: 382
-        case .extend: 408
+        case .extend: 480
         case .success: 268
         case nil: 434
         }
@@ -40,16 +40,18 @@ struct HardLimitPopupRootView: View {
                     }
                     .padding(8)
                 }
-                .frame(width: HardLimitPopupMetrics.contentWidth)
+                .frame(width: HardLimitPopupSizing.contentWidth)
                 .opacity(appState.isHardLimitPopupAnimatingIn ? 1 : 0)
                 .blur(radius: reduceMotion || appState.isHardLimitPopupAnimatingIn ? 0 : 28)
                 .scaleEffect(reduceMotion || appState.isHardLimitPopupAnimatingIn ? 1 : 0.97)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: appState.isHardLimitPopupAnimatingIn)
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.24),
+                    value: appState.isHardLimitPopupAnimatingIn)
             }
         }
         .frame(
-            width: HardLimitPopupMetrics.panelWidth,
-            height: HardLimitPopupMetrics.panelHeight(for: appState.hardLimitPopupPhase),
+            width: HardLimitPopupSizing.panelWidth,
+            height: HardLimitPopupSizing.panelHeight(for: appState.hardLimitPopupPhase),
             alignment: .center
         )
         .companionAppearance(appState)
@@ -103,8 +105,8 @@ struct SmartPauseResumeNoticeRootView: View {
 
     var body: some View {
         if appState.smartPauseResumeNotice != nil {
-                HoverDismissPopupChrome(
-                    cornerRadius: 24,
+            HoverDismissPopupChrome(
+                cornerRadius: 24,
                 showsDismissControl: true,
                 dismissLabel: "Dismiss",
                 onClose: appState.dismissSmartPauseResumeNoticeNow
@@ -154,6 +156,9 @@ private struct HoverDismissPopupChrome<Content: View>: View {
             }
             .contentShape(shape)
             .clipShape(shape)
+            .overlay {
+                shape.strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.7)
+            }
             .padding(.leading, HoverDismissPopupMetrics.leadingInset)
             .padding(.top, HoverDismissPopupMetrics.topInset)
             .onHover { isShellHovered = $0 }
@@ -163,6 +168,11 @@ private struct HoverDismissPopupChrome<Content: View>: View {
                     .padding(.leading, HoverDismissPopupMetrics.buttonOffsetX)
                     .padding(.top, HoverDismissPopupMetrics.buttonOffsetY)
                     .zIndex(2)
+            }
+        }
+        .onExitCommand {
+            if showsDismissControl {
+                onClose()
             }
         }
     }
@@ -229,11 +239,6 @@ private struct InactivityDecisionView: View {
     var body: some View {
         VStack(spacing: 6) {
             summaryRow
-
-            Text("No action keeps the session running.")
-                .font(.caption2)
-                .foregroundStyle(PopupVisualTheme.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 8) {
                 Button {
@@ -357,10 +362,12 @@ private struct HardLimitDecisionView: View {
 
     var body: some View {
         let presentation = TimerPresentation.from(appState.timerService.snapshot)
-        let title = presentation.mode == .timer
+        let title =
+            presentation.mode == .timer
             ? "Timer Session Complete"
             : "Pomodoro Session Complete"
-        let subtitle = presentation.mode == .timer
+        let subtitle =
+            presentation.mode == .timer
             ? "Choose how to finish this timer session."
             : "Choose how to finish this Pomodoro session."
 
@@ -368,9 +375,9 @@ private struct HardLimitDecisionView: View {
             header(symbol: "hourglass.circle.fill", title: title, subtitle: subtitle)
 
             Text(MenuBarTextFormatter.formatClock(seconds: presentation.displaySeconds))
-            .font(.system(size: 48, weight: .bold, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(PopupVisualTheme.primaryText)
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(PopupVisualTheme.primaryText)
 
             contextCard
 
@@ -384,7 +391,9 @@ private struct HardLimitDecisionView: View {
                         shortcut: "E"
                     )
                 }
-                .buttonStyle(PopupFullWidthButtonStyle(style: .primary, progress: countdown.state.progress))
+                .buttonStyle(
+                    PopupFullWidthButtonStyle(style: .primary, progress: countdown.state.progress)
+                )
                 .keyboardShortcut("e", modifiers: [])
                 .focused($focusedAction, equals: .end)
                 .onHover {
@@ -436,7 +445,7 @@ private struct HardLimitDecisionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(cardBackground(stroke: PopupVisualTheme.border))
+        .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 14))
     }
 
     private func meta(icon: String, text: String) -> some View {
@@ -487,7 +496,7 @@ private struct PopupEndSessionForm: View {
                     focusRequest: appState.endSessionFocusRequest
                 )
                 .frame(height: 104)
-        .background(cardBackground(stroke: PopupVisualTheme.border))
+                .popupInputSurface(cornerRadius: 12)
 
                 if let error = appState.endSessionErrorMessage, !error.isEmpty {
                     Text(error)
@@ -530,7 +539,8 @@ private struct HardLimitExtendView: View {
     var body: some View {
         let mode = TimerPresentation.from(appState.timerService.snapshot).mode
         let title = mode == .timer ? "Extend Timer Session" : "Extend Pomodoro Session"
-        let subtitle = mode == .timer
+        let subtitle =
+            mode == .timer
             ? "Add time to the current countdown. No breaks or cycles."
             : "Choose how many Pomodoro sessions to add using the current cadence."
 
@@ -557,7 +567,10 @@ private struct HardLimitExtendView: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(PopupVisualTheme.primaryText.opacity(appState.hardLimitPopupExtendChoice == choice ? 0.1 : 0.05))
+                                .fill(
+                                    PopupVisualTheme.primaryText.opacity(
+                                        appState.hardLimitPopupExtendChoice == choice ? 0.1 : 0.05)
+                                )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                                         .strokeBorder(PopupVisualTheme.border, lineWidth: 1)
@@ -623,14 +636,16 @@ private struct HardLimitExtendSuccessView: View {
         let success = appState.hardLimitPopupSuccessModel
 
         VStack(spacing: 18) {
-            header(symbol: "checkmark.circle.fill", title: "Session Extended", subtitle: "The daemon accepted the extension and refreshed the timer.")
+            header(
+                symbol: "checkmark.circle.fill", title: "Session Extended",
+                subtitle: "The daemon accepted the extension and refreshed the timer.")
 
             VStack(spacing: 12) {
                 successRow(title: "Time Remaining", value: success?.remainingTimeText ?? "—")
                 successRow(title: "New End Time", value: success?.endTimeText ?? "—")
             }
             .padding(16)
-            .background(cardBackground(stroke: PopupVisualTheme.border))
+            .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 14))
 
             Text("This popup will close automatically.")
                 .font(.footnote)
@@ -708,10 +723,12 @@ private struct InactivityPopupButtonStyle: ButtonStyle {
     var progress: Double? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
 
         configuration.label
-            .foregroundStyle(PopupVisualTheme.primaryText.opacity(configuration.isPressed ? 0.82 : 0.92))
+            .foregroundStyle(
+                PopupVisualTheme.primaryText.opacity(configuration.isPressed ? 0.82 : 0.92)
+            )
             .frame(maxWidth: .infinity, minHeight: 32)
             .background {
                 ZStack(alignment: .leading) {
@@ -725,7 +742,9 @@ private struct InactivityPopupButtonStyle: ButtonStyle {
                     }
 
                     shape
-                        .fill(PopupVisualTheme.controlBackground.opacity(configuration.isPressed ? 0.92 : 0.82))
+                        .fill(
+                            PopupVisualTheme.controlBackground.opacity(
+                                configuration.isPressed ? 0.92 : 0.82))
                 }
             }
             .overlay(
@@ -770,27 +789,30 @@ private func popupCompactButtonLabel(
     detail: String? = nil,
     shortcut: String
 ) -> some View {
-    HStack(spacing: 8) {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .lineLimit(1)
-
-        if let detail {
-            Text(detail)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.48))
+    ZStack {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
                 .lineLimit(1)
+
+            if let detail {
+                Text(detail)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.48))
+                    .lineLimit(1)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .center)
 
-        Spacer(minLength: 6)
-
-        Text(shortcut)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.38))
+        HStack {
+            Spacer()
+            Text(shortcut)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.38))
+        }
     }
     .padding(.horizontal, 10)
-    .padding(.vertical, 1)
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity, minHeight: 32)
 }
 
 private func shortcutHint(_ shortcut: String) -> some View {

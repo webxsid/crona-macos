@@ -61,7 +61,7 @@ struct WellbeingTabView: View {
                     .font(.subheadline.weight(.semibold))
                 StableMultilineTextField(text: $notes, placeholder: "Anything else worth remembering? (optional)")
                     .frame(height: 64)
-                    .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 12))
+                    .popupInputSurface(cornerRadius: 12)
             }
 
             feedbackView

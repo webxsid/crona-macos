@@ -128,7 +128,7 @@ struct TimerHUDRootView: View {
                     focusRequest: appState.endSessionFocusRequest
                 )
                 .frame(height: 116)
-                .background(cardBackground(stroke: PopupVisualTheme.border, cornerRadius: 12))
+                .popupInputSurface(cornerRadius: 12)
             }
 
             if let error = appState.endSessionErrorMessage, !error.isEmpty {

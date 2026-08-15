@@ -30,6 +30,8 @@ struct HardLimitWarningIndicatorRootView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(PopupVisualTheme.primaryText)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
                         Spacer(minLength: 4)
 
