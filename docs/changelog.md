@@ -6,6 +6,24 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.12] - 2026-08-15
+
+Crona for macOS v1.0.0-beta.12 rebuilds Settings around a purpose-built native window shell and makes Crona easier to reach from the menu bar or a global shortcut.
+
+### Added
+
+- A toggle for showing or hiding Crona's menu-bar item.
+- An optional global shortcut recorder for opening Settings, with live key feedback while recording.
+
+### Changed
+
+- Settings now use a dedicated translucent sidebar, native traffic lights, and a compact work-area toolbar.
+- Opening Crona from the app bundle presents the menu-bar popup when enabled, or Settings when the menu-bar item is hidden.
+
+### Fixed
+
+- The Settings shortcut recorder is surfaced in General settings and clearly confirms the captured key combination.
+
 ## [1.0.0-beta.11] - 2026-08-14
 
 Crona for macOS v1.0.0-beta.11 refines the floating timer and hardens wellbeing’s empty-day handling.
