@@ -1523,7 +1523,7 @@ private final class TimerHUDPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private final class TimerHUDHostingView<Content: View>: NSHostingView<Content> {
+private final class TimerHUDHostingView: NSHostingView<TimerHUDRootView> {
     override var mouseDownCanMoveWindow: Bool { true }
 }
 
