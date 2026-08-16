@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension TimerHUDSize {
@@ -39,6 +40,8 @@ struct TimerHUDRootView: View {
     var size: TimerHUDSize = .spacious
     var isPreview = false
     @State private var isHovered = false
+    @State private var dragGrabOffset: CGPoint?
+    @State private var isDragging = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -82,16 +85,54 @@ struct TimerHUDRootView: View {
             }
             .padding(.horizontal, size.horizontalPadding)
             .frame(width: size.contentSize.width, height: size.contentSize.height)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.14)))
+            .background(PopoverGlassBackground(cornerRadius: 20, showsShadow: false))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(.white.opacity(0.14))
+            )
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .onHover { hovered in
+                guard !isDragging else { return }
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
                     isHovered = hovered
                 }
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { _ in
+                        guard !isPreview,
+                              let panel = timerHUDPanel
+                        else { return }
+                        if dragGrabOffset == nil {
+                            let mouseLocation = NSEvent.mouseLocation
+                            dragGrabOffset = CGPoint(
+                                x: mouseLocation.x - panel.frame.origin.x,
+                                y: mouseLocation.y - panel.frame.origin.y
+                            )
+                        }
+                        isDragging = true
+                        guard let dragGrabOffset else { return }
+                        let mouseLocation = NSEvent.mouseLocation
+                        panel.setFrameOrigin(
+                            NSPoint(
+                                x: mouseLocation.x - dragGrabOffset.x,
+                                y: mouseLocation.y - dragGrabOffset.y
+                            )
+                        )
+                    }
+                    .onEnded { _ in
+                        dragGrabOffset = nil
+                        isDragging = false
+                    }
+            )
             .allowsHitTesting(!isPreview)
         }
+    }
+
+    private var timerHUDPanel: NSPanel? {
+        NSApp.windows.first {
+            $0.identifier?.rawValue == "com.crona.timer-hud" && $0.isVisible
+        } as? NSPanel
     }
 
     @ViewBuilder
@@ -109,13 +150,21 @@ struct TimerHUDRootView: View {
 
     private var commitView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("Finish session", systemImage: "checkmark.circle.fill")
-                    .font(.title3.weight(.semibold))
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 30, height: 30)
+                    .background(.green.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Finish session")
+                        .font(.title3.weight(.semibold))
                 Text(appState.contextService.snapshot.issueTitle ?? "Add a short note about what you completed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -161,8 +210,11 @@ struct TimerHUDRootView: View {
         }
         .padding(20)
         .frame(width: 380, height: 322, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.14)))
+        .background(PopoverGlassBackground(cornerRadius: 22, showsShadow: false))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.white.opacity(0.14))
+        }
     }
 
     private func hudButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {

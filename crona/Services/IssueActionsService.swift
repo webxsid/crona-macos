@@ -91,6 +91,49 @@ final class IssueActionsService: ObservableObject {
         lastErrorMessage = nil
     }
 
+    func logManualSession(_ request: CronaManualSessionLogRequest) async -> Bool {
+        await perform(issueID: request.issueID) {
+            _ = try await self.daemonConnection.withClient {
+                try await $0.sessionLogManual(request)
+            }
+        }
+    }
+
+    func updateIssue(
+        issue: DailyFocusIssue,
+        title: String,
+        description: String?,
+        estimateMinutes: Int?,
+        todoForDate: String?
+    ) async -> Bool {
+        await perform(issueID: issue.id) {
+            _ = try await self.daemonConnection.withClient {
+                _ = try await $0.updateIssue(
+                    CronaUpdateIssueRequest(
+                        id: issue.id,
+                        title: title,
+                        description: description,
+                        estimateMinutes: estimateMinutes
+                    )
+                )
+                if let todoForDate, !todoForDate.isEmpty {
+                    _ = try await $0.setIssueTodo(issueID: issue.id, date: todoForDate)
+                } else {
+                    _ = try await $0.clearIssueTodo(issueID: issue.id)
+                }
+                return true
+            }
+        }
+    }
+
+    func deleteIssue(_ issue: DailyFocusIssue) async -> Bool {
+        await perform(issueID: issue.id) {
+            _ = try await self.daemonConnection.withClient {
+                try await $0.deleteIssue(issueID: issue.id)
+            }
+        }
+    }
+
     private func perform(
         issueID: Int64,
         operation: @escaping () async throws -> Void

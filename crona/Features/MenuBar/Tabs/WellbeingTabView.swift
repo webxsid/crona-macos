@@ -26,12 +26,27 @@ struct WellbeingTabView: View {
     @State private var suppressServiceError = false
 
     private let minuteOptions = [0, 15, 30, 45]
+    private let leadingRailWidth: CGFloat = 22
+    private let leadingRailSpacing: CGFloat = 11
+    private let textColumnWidth: CGFloat = 106
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             header
-            ratingRow("Mood", symbol: "face.smiling", value: $mood, tint: .pink)
-            ratingRow("Energy", symbol: "bolt.fill", value: $energy, tint: .yellow)
+            ratingRow(
+                title: "Mood",
+                subtitle: "How are you feeling?",
+                symbol: "face.smiling",
+                value: $mood,
+                tint: .pink
+            )
+            ratingRow(
+                title: "Energy",
+                subtitle: "How energized do you feel?",
+                symbol: "bolt.fill",
+                value: $energy,
+                tint: .yellow
+            )
 
             VStack(spacing: 0) {
                 durationInput(
@@ -129,27 +144,43 @@ struct WellbeingTabView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Wellbeing")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(PopupVisualTheme.primaryText)
-                Text(appState.wellbeingService.snapshot.checkIn == nil ? "How are you feeling today?" : "Today’s check-in")
-                    .font(.caption)
-                    .foregroundStyle(PopupVisualTheme.secondaryText)
-            }
+            Image(systemName: "heart.text.square.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.pink)
+                .frame(width: leadingRailWidth)
+            Text(formattedPopoverDate(appState.daemonConnection.currentDate, appState: appState))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(PopupVisualTheme.primaryText)
             Spacer()
             if appState.wellbeingService.snapshot.isLoading {
                 ProgressView().controlSize(.small)
             }
         }
+        .padding(.horizontal, 12)
     }
 
-    private func ratingRow(_ title: String, symbol: String, value: Binding<Int>, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(PopupVisualTheme.primaryText)
-                .frame(width: 84, alignment: .leading)
+    private func ratingRow(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        value: Binding<Int>,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: leadingRailSpacing) {
+            Image(systemName: symbol)
+                .frame(width: leadingRailWidth)
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(PopupVisualTheme.secondaryText)
+                    .lineLimit(1)
+            }
+            .frame(width: textColumnWidth, alignment: .leading)
+            Spacer(minLength: 0)
             ForEach(1...5, id: \.self) { rating in
                 Button { value.wrappedValue = rating } label: {
                     Text("\(rating)")
@@ -161,6 +192,7 @@ struct WellbeingTabView: View {
                 .accessibilityLabel("\(title) \(rating) of 5")
             }
         }
+        .padding(.horizontal, 12)
     }
 
     private func durationInput(
@@ -175,7 +207,7 @@ struct WellbeingTabView: View {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
-                .frame(width: 22)
+                .frame(width: leadingRailWidth)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(subtitle).font(.caption2).foregroundStyle(PopupVisualTheme.secondaryText)
@@ -196,7 +228,7 @@ struct WellbeingTabView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 58)
+        .frame(minHeight: 52)
     }
 
     private var scoreInput: some View {
@@ -204,7 +236,7 @@ struct WellbeingTabView: View {
             Image(systemName: "waveform.path.ecg")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.68))
-                .frame(width: 22)
+                .frame(width: leadingRailWidth)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sleep score").font(.subheadline.weight(.semibold))
                 Text("Recovery quality, from 0 to 100").font(.caption2).foregroundStyle(PopupVisualTheme.secondaryText)

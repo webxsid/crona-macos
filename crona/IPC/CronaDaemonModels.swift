@@ -55,17 +55,23 @@ struct CronaCoreSettings: Codable, Equatable {
     let awayDates: [String]
     let restWeekdays: [Int]
     let restSpecificDates: [String]
+    let dateDisplayPreset: String
+    let dateDisplayFormat: String
 
     init(
         awayModeEnabled: Bool = false,
         awayDates: [String] = [],
         restWeekdays: [Int] = [],
-        restSpecificDates: [String] = []
+        restSpecificDates: [String] = [],
+        dateDisplayPreset: String = "iso",
+        dateDisplayFormat: String = ""
     ) {
         self.awayModeEnabled = awayModeEnabled
         self.awayDates = awayDates
         self.restWeekdays = restWeekdays
         self.restSpecificDates = restSpecificDates
+        self.dateDisplayPreset = dateDisplayPreset
+        self.dateDisplayFormat = dateDisplayFormat
     }
 
     init(from decoder: Decoder) throws {
@@ -74,6 +80,8 @@ struct CronaCoreSettings: Codable, Equatable {
         awayDates = try values.decodeIfPresent([String].self, forKey: .awayDates) ?? []
         restWeekdays = try values.decodeIfPresent([Int].self, forKey: .restWeekdays) ?? []
         restSpecificDates = try values.decodeIfPresent([String].self, forKey: .restSpecificDates) ?? []
+        dateDisplayPreset = try values.decodeIfPresent(String.self, forKey: .dateDisplayPreset) ?? "iso"
+        dateDisplayFormat = try values.decodeIfPresent(String.self, forKey: .dateDisplayFormat) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -81,6 +89,8 @@ struct CronaCoreSettings: Codable, Equatable {
         case awayDates
         case restWeekdays
         case restSpecificDates
+        case dateDisplayPreset
+        case dateDisplayFormat
     }
 
     func isConfiguredRestDate(_ date: String) -> Bool {
@@ -452,6 +462,17 @@ struct CronaCreateIssueRequest: Codable, Equatable {
     }
 }
 
+struct CronaUpdateIssueRequest: Codable, Equatable {
+    let id: Int64
+    let title: String
+    let description: String?
+    let estimateMinutes: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, description, estimateMinutes
+    }
+}
+
 struct CronaTimerState: Codable, Equatable {
     let state: String
     let sessionID: String?
@@ -801,6 +822,15 @@ struct CronaFocusScoreSummary: Codable, Equatable {
     let targetWorkedSeconds: Int
 }
 
+struct CronaFocusScoreRangeDay: Codable, Equatable, Identifiable {
+    let date: String
+    let score: Int
+    let level: String
+    let hasData: Bool
+
+    var id: String { date }
+}
+
 struct CronaTimerStartRequest: Codable, Equatable {
     let repoID: Int64?
     let streamID: Int64?
@@ -850,6 +880,37 @@ struct CronaEndSessionRequest: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case commitMessage = "commitMessage"
+    }
+}
+
+struct CronaManualSessionLogRequest: Codable, Equatable {
+    let issueID: Int64
+    let date: String
+    let workDurationSeconds: Int
+    let breakDurationSeconds: Int
+    let startTime: String?
+    let endTime: String?
+    let commitMessage: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case issueID = "issueId"
+        case date, workDurationSeconds, breakDurationSeconds, startTime, endTime, commitMessage, notes
+    }
+}
+
+struct CronaSession: Codable, Equatable {
+    let id: String
+    let issueID: Int64
+    let source: String
+    let startTime: String
+    let endTime: String?
+    let durationSeconds: Int?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, source, startTime, endTime, durationSeconds, notes
+        case issueID = "issueId"
     }
 }
 

@@ -362,14 +362,8 @@ private struct HardLimitDecisionView: View {
 
     var body: some View {
         let presentation = TimerPresentation.from(appState.timerService.snapshot)
-        let title =
-            presentation.mode == .timer
-            ? "Timer Session Complete"
-            : "Pomodoro Session Complete"
-        let subtitle =
-            presentation.mode == .timer
-            ? "Choose how to finish this timer session."
-            : "Choose how to finish this Pomodoro session."
+        let title = "Focus time is up"
+        let subtitle = "Your planned focus limit has been reached. What would you like to do next?"
 
         VStack(spacing: 12) {
             header(symbol: "hourglass.circle.fill", title: title, subtitle: subtitle)
@@ -386,8 +380,8 @@ private struct HardLimitDecisionView: View {
                     appState.chooseHardLimitEnd()
                 } label: {
                     popupButtonLabel(
-                        title: "End Session",
-                        detail: "in \(countdown.state.displayedSeconds)s",
+                        title: "Finish Session",
+                        detail: "Save what you completed and close the session · in \(countdown.state.displayedSeconds)s",
                         shortcut: "E"
                     )
                 }
@@ -403,7 +397,11 @@ private struct HardLimitDecisionView: View {
                 Button {
                     appState.chooseHardLimitExtend()
                 } label: {
-                    popupButtonLabel(title: "Extend…", shortcut: "X")
+                    popupButtonLabel(
+                        title: "Keep Working",
+                        detail: "Add time and continue this session",
+                        shortcut: "X"
+                    )
                 }
                 .buttonStyle(PopupFullWidthButtonStyle(style: .secondary))
                 .keyboardShortcut("x", modifiers: [])
@@ -439,7 +437,7 @@ private struct HardLimitDecisionView: View {
                 }
             }
 
-            Text("Choose whether to extend this session or commit it now.")
+            Text("Choose how to continue: add time to keep working, or finish and save the session.")
                 .font(.footnote)
                 .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.66))
         }
@@ -469,7 +467,7 @@ private struct HardLimitEndSessionView: View {
     var body: some View {
         PopupEndSessionForm(
             appState: appState,
-            subtitle: "Add the commit message that will be stored with this session.",
+            subtitle: "What did you complete? Add a short note before closing the session.",
             onBack: { appState.returnToHardLimitDecision() }
         )
     }
@@ -485,13 +483,13 @@ private struct PopupEndSessionForm: View {
             header(symbol: "checkmark.circle", title: "End Session", subtitle: subtitle)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Commit Message")
+                Text("What did you complete?")
                     .font(.headline)
                     .foregroundStyle(PopupVisualTheme.primaryText)
 
                 StableMultilineTextField(
                     text: $appState.endSessionCommitMessage,
-                    placeholder: "Describe what you completed",
+                    placeholder: "e.g. Updated the install docs and verified the Linux steps",
                     isEnabled: !appState.isSubmittingEndSession,
                     focusRequest: appState.endSessionFocusRequest
                 )
@@ -538,11 +536,11 @@ private struct HardLimitExtendView: View {
 
     var body: some View {
         let mode = TimerPresentation.from(appState.timerService.snapshot).mode
-        let title = mode == .timer ? "Extend Timer Session" : "Extend Pomodoro Session"
+        let title = "How much longer do you need?"
         let subtitle =
             mode == .timer
-            ? "Add time to the current countdown. No breaks or cycles."
-            : "Choose how many Pomodoro sessions to add using the current cadence."
+            ? "Choose a focused extension and keep working on the current task."
+            : "Choose how many additional focus sessions you need."
 
         VStack(alignment: .leading, spacing: 12) {
             header(symbol: "plus.circle", title: title, subtitle: subtitle)

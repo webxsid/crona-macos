@@ -6,6 +6,7 @@ import SwiftUI
 
 enum SettingsDestination: String, CaseIterable, Hashable, Identifiable {
     case general
+    case away
     case menuBar
     case daySchedule
     case smartPause
@@ -30,6 +31,8 @@ enum EndSessionPresentationSource: Equatable {
 enum IssueActionEditor: Equatable {
     case status(issue: DailyFocusIssue, status: CronaIssueStatus)
     case dueDate(issue: DailyFocusIssue)
+    case manualSession(issue: DailyFocusIssue)
+    case delete(issue: DailyFocusIssue)
 }
 
 struct SmartPauseResumeNotice: Equatable {
@@ -94,6 +97,21 @@ final class CompanionAppState: ObservableObject {
     @Published var issueActionEditor: IssueActionEditor?
     @Published var issueActionNote = ""
     @Published var issueActionDate = Date()
+    @Published var manualSessionSummary = ""
+    @Published var manualSessionDate = ""
+    @Published var manualSessionWorkHours = 1
+    @Published var manualSessionWorkMinutes = 0
+    @Published var manualSessionBreakHours = 0
+    @Published var manualSessionBreakMinutes = 0
+    @Published var manualSessionTimesEnabled = false
+    @Published var manualSessionStartHour = 9
+    @Published var manualSessionStartMinute = 0
+    @Published var manualSessionStartPeriod = "AM"
+    @Published var manualSessionEndHour = 10
+    @Published var manualSessionEndMinute = 45
+    @Published var manualSessionEndPeriod = "AM"
+    @Published var manualSessionNotes = ""
+    @Published var manualSessionError: String?
     @Published var isIssueCreatorPresented = false
     @Published var isIssueCreatorContentVisible = false
     @Published var issueCreateTitle = ""
@@ -102,9 +120,11 @@ final class CompanionAppState: ObservableObject {
     @Published var issueCreateForToday = true
     @Published var issueCreateDestinationID: Int64?
     @Published var issueCreateShowsMoreOptions = false
+    @Published private(set) var issueBeingEdited: DailyFocusIssue?
     private var issueCreatorPresentationGeneration: UInt = 0
     @Published var issueCreationSuccess: IssueCreationSuccess?
     @Published var selectedPopoverTab: PopoverTab = .now
+    @Published var isStatsCalendarPresented = false
     @Published private(set) var selectedSettingsDestination: SettingsDestination = .general
     @Published var isEndSessionSheetPresented = false
     @Published var endSessionCommitMessage = ""
@@ -271,6 +291,11 @@ final class CompanionAppState: ObservableObject {
                 await self.dayBoundarySettingsService.refresh()
                 await self.coreSettingsService.refresh()
                 await self.wellbeingService.refresh()
+                await self.timerService.refresh()
+                await self.contextService.refresh()
+                await self.dailyFocusService.refresh(date: self.daemonConnection.currentDate)
+                await self.habitsService.refresh(date: self.daemonConnection.currentDate)
+                await self.popoverStatsService.refresh()
             }
         }
         bindChildChanges()
@@ -482,6 +507,14 @@ final class CompanionAppState: ObservableObject {
 
     }
 
+    func resetPopoverPresentation() {
+        selectedPopoverTab = .now
+        if isStatsCalendarPresented {
+            isStatsCalendarPresented = false
+            popoverStatsService.endCalendar()
+        }
+    }
+
     func setSelectedSettingsDestination(_ destination: SettingsDestination) {
         selectedSettingsDestination = destination
     }
@@ -496,6 +529,7 @@ final class CompanionAppState: ObservableObject {
     }
 
     func presentPrimarySurfaceWhenNoWindowIsActive() {
+        guard hardLimitPopupPhase == nil, !windowService.hardLimitPopupVisible else { return }
         if preferences.preferences.showMenuBarItem {
             statusBarService.showPopupFromApplicationLaunch()
         } else {
@@ -537,6 +571,10 @@ final class CompanionAppState: ObservableObject {
 
     func openSupport() {
         openExternalURL("https://github.com/webxsid/crona/discussions")
+    }
+
+    func openFeedbackAndRoadmap() {
+        openExternalURL("https://crona.userjot.com/?cursor=1&order=top&limit=10")
     }
 
     private func openExternalURL(_ value: String) {
@@ -815,6 +853,7 @@ final class CompanionAppState: ObservableObject {
               issueActionEditor == nil
         else { return }
         issueCreationService.clearError()
+        issueBeingEdited = nil
         issueCreateTitle = ""
         issueCreateDescription = ""
         issueCreateEstimate = ""
@@ -843,9 +882,38 @@ final class CompanionAppState: ObservableObject {
         }
     }
 
+    func presentIssueEditor(for issue: DailyFocusIssue) {
+        guard daemonConnection.connectionState == .connected,
+              !isEndSessionSheetPresented,
+              issueActionEditor == nil,
+              !isIssueCreatorPresented
+        else { return }
+        issueCreationService.clearError()
+        issueBeingEdited = issue
+        issueCreateTitle = issue.title
+        issueCreateDescription = ""
+        issueCreateEstimate = issue.estimateMinutes.map(String.init) ?? ""
+        issueCreateForToday = issue.todoForDate == dailyFocusService.snapshot.date
+        issueCreateDestinationID = issue.streamID
+        issueCreateShowsMoreOptions = false
+        isIssueCreatorContentVisible = false
+        isIssueCreatorPresented = true
+        issueCreatorPresentationGeneration &+= 1
+        let generation = issueCreatorPresentationGeneration
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, self.isIssueCreatorPresented,
+                  generation == self.issueCreatorPresentationGeneration else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                self.isIssueCreatorContentVisible = true
+            }
+        }
+    }
+
     func cancelIssueCreator() {
         guard !issueCreationService.isCreating else { return }
         issueCreationService.clearError()
+        issueBeingEdited = nil
         dismissIssueCreatorPresentation()
     }
 
@@ -861,6 +929,24 @@ final class CompanionAppState: ObservableObject {
         let logicalDate = daemonConnection.currentDate.isEmpty
             ? (dailyFocusService.snapshot.date.isEmpty ? DailyFocusService.todayString() : dailyFocusService.snapshot.date)
             : daemonConnection.currentDate
+        if let issueBeingEdited {
+            let issue = issueBeingEdited
+            Task {
+                let succeeded = await issueActionsService.updateIssue(
+                    issue: issue,
+                    title: title,
+                    description: description.isEmpty ? nil : description,
+                    estimateMinutes: estimate,
+                    todoForDate: issueCreateForToday ? logicalDate : nil
+                )
+                if succeeded {
+                    self.issueBeingEdited = nil
+                    await dismissIssueCreatorPresentationAndWait()
+                }
+            }
+            return
+        }
+
         let request = CronaCreateIssueRequest(
             streamID: streamID,
             title: title,
@@ -983,10 +1069,38 @@ final class CompanionAppState: ObservableObject {
         issueActionEditor = .dueDate(issue: issue)
     }
 
+    func presentManualSession(for issue: DailyFocusIssue) {
+        issueActionsService.clearError()
+        manualSessionSummary = ""
+        manualSessionDate = dailyFocusService.snapshot.date.isEmpty
+            ? (daemonConnection.currentDate.isEmpty ? DailyFocusService.todayString() : daemonConnection.currentDate)
+            : dailyFocusService.snapshot.date
+        manualSessionWorkHours = 1
+        manualSessionWorkMinutes = 0
+        manualSessionBreakHours = 0
+        manualSessionBreakMinutes = 0
+        manualSessionTimesEnabled = false
+        manualSessionStartHour = 9
+        manualSessionStartMinute = 0
+        manualSessionStartPeriod = "AM"
+        manualSessionEndHour = 10
+        manualSessionEndMinute = 45
+        manualSessionEndPeriod = "AM"
+        manualSessionNotes = ""
+        manualSessionError = nil
+        issueActionEditor = .manualSession(issue: issue)
+    }
+
     func cancelIssueActionEditor() {
         guard issueActionsService.actionInFlightIssueID == nil else { return }
         issueActionEditor = nil
         issueActionNote = ""
+        manualSessionError = nil
+    }
+
+    func presentDeleteIssue(for issue: DailyFocusIssue) {
+        issueActionsService.clearError()
+        issueActionEditor = .delete(issue: issue)
     }
 
     func submitIssueActionEditor() {
@@ -1016,7 +1130,65 @@ final class CompanionAppState: ObservableObject {
                     issueActionEditor = nil
                 }
             }
+        case let .manualSession(issue):
+            manualSessionError = nil
+            let workMinutes = manualSessionWorkHours * 60 + manualSessionWorkMinutes
+            let breakMinutes = manualSessionBreakHours * 60 + manualSessionBreakMinutes
+            guard workMinutes > 0 else {
+                manualSessionError = "Work duration must be a positive duration."
+                return
+            }
+            guard isValidManualDate(manualSessionDate) else {
+                manualSessionError = "Choose a valid session date."
+                return
+            }
+            let startTime = manualSessionTimesEnabled
+                ? formattedManualClock(hour: manualSessionStartHour, minute: manualSessionStartMinute, period: manualSessionStartPeriod)
+                : nil
+            let endTime = manualSessionTimesEnabled
+                ? formattedManualClock(hour: manualSessionEndHour, minute: manualSessionEndMinute, period: manualSessionEndPeriod)
+                : nil
+            Task {
+                let request = CronaManualSessionLogRequest(
+                    issueID: issue.id,
+                    date: manualSessionDate.trimmingCharacters(in: .whitespacesAndNewlines),
+                    workDurationSeconds: workMinutes * 60,
+                    breakDurationSeconds: breakMinutes * 60,
+                    startTime: startTime,
+                    endTime: endTime,
+                    commitMessage: optionalTrimmed(manualSessionSummary),
+                    notes: optionalTrimmed(manualSessionNotes)
+                )
+                let succeeded = await issueActionsService.logManualSession(request)
+                if succeeded {
+                    issueActionEditor = nil
+                    manualSessionError = nil
+                }
+            }
+        case let .delete(issue):
+            Task {
+                let succeeded = await issueActionsService.deleteIssue(issue)
+                if succeeded {
+                    if selectedFocusIssue?.id == issue.id { selectedFocusIssue = nil }
+                    issueActionEditor = nil
+                }
+            }
         }
+    }
+
+    private func formattedManualClock(hour: Int, minute: Int, period: String) -> String {
+        var hour24 = hour % 12
+        if period == "PM" { hour24 += 12 }
+        return String(format: "%02d:%02d", hour24, minute)
+    }
+
+    private func isValidManualDate(_ value: String) -> Bool {
+        CronaCalendarDate.date(from: value.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+    }
+
+    private func optionalTrimmed(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     func beginEndSession(source: EndSessionPresentationSource) {
@@ -1249,6 +1421,7 @@ final class CompanionAppState: ObservableObject {
             guard let self else { return }
             await dailyFocusService.refresh(date: date)
             await habitsService.refresh(date: date)
+            await wellbeingService.refresh()
             await coreSettingsService.refresh()
             await popoverStatsService.handleDayStart(date: date, previousDate: previousDate)
             statusBarService.updateStatusItem()
@@ -1537,6 +1710,7 @@ final class CompanionAppState: ObservableObject {
             self.hardLimitPopupErrorMessage = nil
             self.hardLimitPopupSuccessModel = nil
             self.isSubmittingHardLimitAction = false
+            self.windowService.reconcileTimerHUD()
         }
     }
 
@@ -1716,11 +1890,11 @@ enum HardLimitExtendChoice: String, CaseIterable, Identifiable, Equatable {
 
     var title: String {
         switch self {
-        case .minutes1: return "+1 min"
-        case .minutes5: return "+5 min"
-        case .minutes15: return "+15 min"
-        case .session1: return "+1 session"
-        case .session2: return "+2 sessions"
+        case .minutes1: return "1 min — Quick wrap-up"
+        case .minutes5: return "5 min — Finish the current task"
+        case .minutes15: return "15 min — Continue the focus block"
+        case .session1: return "1 session — Continue the current cadence"
+        case .session2: return "2 sessions — Make a deeper pass"
         }
     }
 

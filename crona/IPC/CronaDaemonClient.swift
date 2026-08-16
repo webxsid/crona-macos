@@ -152,12 +152,27 @@ final class CronaDaemonClient {
         try await request(method: "timer.end", params: AnyEncodable(CronaEndSessionRequest(commitMessage: commitMessage)))
     }
 
+    func sessionLogManual(_ input: CronaManualSessionLogRequest) async throws -> CronaSession {
+        try await request(method: "session.log_manual", params: AnyEncodable(input))
+    }
+
     func issueTodaySummary() async throws -> CronaDailyIssueSummary {
         try await request(method: "issue.today_summary")
     }
 
     func createIssue(_ input: CronaCreateIssueRequest) async throws -> CronaIssue {
         try await request(method: "issue.create", params: AnyEncodable(input))
+    }
+
+    func updateIssue(_ input: CronaUpdateIssueRequest) async throws -> CronaIssue {
+        try await request(method: "issue.update", params: AnyEncodable(input))
+    }
+
+    func deleteIssue(issueID: Int64) async throws -> CronaOKResponse {
+        try await request(
+            method: "issue.delete",
+            params: AnyEncodable(CronaNumericIDRequest(id: issueID))
+        )
     }
 
     func issueStatusTransitions(issueID: Int64) async throws -> CronaIssueStatusTransitions {
@@ -266,8 +281,25 @@ final class CronaDaemonClient {
         )
     }
 
+    func coreSettingPatch(key: String, value: JSONValue) async throws -> CronaOKResponse {
+        try await request(
+            method: "settings.patch",
+            params: AnyEncodable([
+                "key": JSONValue.string(key),
+                "value": value,
+            ])
+        )
+    }
+
     func dashboardFocusScore(start: String, end: String) async throws -> CronaFocusScoreSummary {
         try await request(method: "dashboard.focus_score", params: AnyEncodable(CronaDashboardSummaryQuery(start: start, end: end, groupBy: nil, repoID: nil, streamID: nil, issueID: nil)))
+    }
+
+    func dashboardFocusScoreRange(start: String, end: String) async throws -> [CronaFocusScoreRangeDay] {
+        try await request(
+            method: "dashboard.focus_score_range",
+            params: AnyEncodable(CronaDateRangeQuery(start: start, end: end))
+        )
     }
 
     func alertsStatusGet() async throws -> CronaAlertStatus {

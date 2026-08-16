@@ -42,6 +42,7 @@ final class WindowService {
     private var lastAppliedActivationPolicy: NSApplication.ActivationPolicy?
     private weak var appState: CompanionAppState?
     private weak var settingsWindow: NSWindow?
+    private weak var lastClosedSettingsWindow: NSWindow?
     private var settingsWindowCloseObserver: NSObjectProtocol?
     private var hardLimitPanel: HardLimitPanel?
     private var inactivityPanel: InactivityPanel?
@@ -102,11 +103,13 @@ final class WindowService {
         let active =
             snapshot.sessionID != nil && snapshot.state != "idle"
             && snapshot.state != "disconnected"
+            && !snapshot.hardLimitExpired
         guard
             Self.timerHUDShouldBeVisible(
                 preferencesEnabled: appState.preferences.preferences.showTimerHUD,
                 activeTimer: active,
-                menuBarPopoverPresented: isMenuBarPopoverPresented
+                menuBarPopoverPresented: isMenuBarPopoverPresented,
+                hardLimitPopupPresented: appState.hardLimitPopupPhase != nil || hardLimitPopupVisible
             )
         else {
             timerHUDPanel?.orderOut(nil)
@@ -133,9 +136,10 @@ final class WindowService {
     static func timerHUDShouldBeVisible(
         preferencesEnabled: Bool,
         activeTimer: Bool,
-        menuBarPopoverPresented: Bool
+        menuBarPopoverPresented: Bool,
+        hardLimitPopupPresented: Bool = false
     ) -> Bool {
-        preferencesEnabled && activeTimer && !menuBarPopoverPresented
+        preferencesEnabled && activeTimer && !menuBarPopoverPresented && !hardLimitPopupPresented
     }
 
     func setMenuBarPopoverPresented(_ presented: Bool) {
@@ -156,11 +160,13 @@ final class WindowService {
         let active =
             snapshot.sessionID != nil && snapshot.state != "idle"
             && snapshot.state != "disconnected"
+            && !snapshot.hardLimitExpired
         guard
             Self.timerHUDShouldBeVisible(
                 preferencesEnabled: appState.preferences.preferences.showTimerHUD,
                 activeTimer: active,
-                menuBarPopoverPresented: false
+                menuBarPopoverPresented: false,
+                hardLimitPopupPresented: appState.hardLimitPopupPhase != nil || hardLimitPopupVisible
             )
         else {
             timerHUDPanel?.orderOut(nil)
@@ -225,7 +231,8 @@ final class WindowService {
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
+        panel.identifier = NSUserInterfaceItemIdentifier("com.crona.timer-hud")
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
@@ -276,15 +283,13 @@ final class WindowService {
     private func makeTimerHUDHostingController(
         for panel: TimerHUDPanel,
         size: TimerHUDSize
-    ) -> NSHostingController<TimerHUDRootView> {
-        let controller = NSHostingController(
+    ) -> TimerHUDHostingController {
+        TimerHUDHostingController(
             rootView: TimerHUDRootView(
                 appState: appState!,
                 size: size
             )
         )
-        controller.sizingOptions = []
-        return controller
     }
 
     private func positionTimerHUD(_ panel: NSPanel, preference: CompanionPopupPosition) {
@@ -563,6 +568,9 @@ final class WindowService {
     }
 
     func registerSettingsWindow(_ window: NSWindow, appearance: CompanionAppearance = .system) {
+        guard !(lastClosedSettingsWindow === window && !window.isVisible) else { return }
+        lastClosedSettingsWindow = nil
+
         if settingsWindow === window {
             configureSettingsWindowChrome(window)
             updateSettingsWindowAppearance(appearance, on: window)
@@ -591,6 +599,7 @@ final class WindowService {
             Task { @MainActor [weak self, weak window] in
                 guard let self, self.settingsWindow === window else { return }
                 self.settingsWindow = nil
+                self.lastClosedSettingsWindow = window
                 if let settingsWindowCloseObserver = self.settingsWindowCloseObserver {
                     NotificationCenter.default.removeObserver(settingsWindowCloseObserver)
                     self.settingsWindowCloseObserver = nil
@@ -695,6 +704,9 @@ final class WindowService {
     func showHardLimitPopup() {
         guard let appState else { return }
 
+        // The expired timer must not remain visible behind the action popup.
+        timerHUDPanel?.orderOut(nil)
+
         let targetScreen = popupTargetScreen()
         let panel = hardLimitPanel ?? makeHardLimitPanel(appState: appState)
         hardLimitPanel = panel
@@ -702,7 +714,6 @@ final class WindowService {
         position(panel: panel, on: targetScreen)
 
         panel.makeFirstResponder(nil)
-        activateAppForPopup()
         panel.makeKeyAndOrderFront(nil)
         animatePopupEntrance(panel, style: .centeredFadeBlur, token: .hardLimit)
     }
@@ -1510,6 +1521,28 @@ private final class HardLimitPanel: NSPanel {
 private final class TimerHUDPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private final class TimerHUDHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
+private final class TimerHUDHostingController: NSViewController {
+    private let rootView: TimerHUDRootView
+
+    init(rootView: TimerHUDRootView) {
+        self.rootView = rootView
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        view = TimerHUDHostingView(rootView: rootView)
+    }
 }
 
 private final class InactivityPanel: NSPanel {

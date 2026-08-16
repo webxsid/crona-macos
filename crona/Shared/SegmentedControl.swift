@@ -5,6 +5,7 @@ where T.AllCases: RandomAccessCollection {
 
     @Binding var selection: T
     let title: (T) -> String
+    var icon: ((T) -> String?)? = nil
     var fitsContent = false
 
     var body: some View {
@@ -16,19 +17,23 @@ where T.AllCases: RandomAccessCollection {
                         selection = item
                     }
                 } label: {
-                    let label = title(item)
-
-                    Text(label)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            isSelected
-                            ? PopupVisualTheme.primaryText
-                            : PopupVisualTheme.secondaryText
-                        )
-                        .frame(maxWidth: fitsContent ? nil : .infinity)
-                        .padding(.horizontal, fitsContent ? 12 : 0)
-                        .padding(.vertical, 8)
-                        .contentShape(Capsule())
+                    HStack(spacing: 5) {
+                        if let iconName = icon?(item) {
+                            Image(systemName: iconName)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        Text(title(item))
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(
+                        isSelected
+                        ? PopupVisualTheme.primaryText
+                        : PopupVisualTheme.secondaryText
+                    )
+                    .frame(maxWidth: fitsContent ? nil : .infinity)
+                    .padding(.horizontal, fitsContent ? 12 : 0)
+                    .padding(.vertical, 8)
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .background {

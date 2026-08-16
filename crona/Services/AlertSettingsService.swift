@@ -268,6 +268,20 @@ final class CoreSettingsService: ObservableObject {
         }
     }
 
+    func patch(key: String, value: JSONValue) async {
+        guard !isSaving else { return }
+        isSaving = true
+        lastErrorDescription = nil
+        defer { isSaving = false }
+        do {
+            _ = try await daemonConnection.withClient { try await $0.coreSettingPatch(key: key, value: value) }
+            await refresh()
+        } catch {
+            lastErrorDescription = error.localizedDescription
+            logger.error("Failed to patch core setting (key, privacy: .public): \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
     var todayIsAway: Bool {
         let date = daemonConnection.currentDate.isEmpty
             ? DailyFocusService.todayString()

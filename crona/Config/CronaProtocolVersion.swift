@@ -14,7 +14,7 @@ struct CronaProtocolVersion: RawRepresentable, Codable, Equatable, Hashable {
         self.rawValue = rawValue
     }
 
-    static let current = CronaProtocolVersion(rawValue: "1.3")
+    static let current = CronaProtocolVersion(rawValue: "1.4")
 
     var isCompatibleWithCurrent: Bool {
         rawValue == Self.current.rawValue

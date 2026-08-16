@@ -117,6 +117,7 @@ final class StatusBarService: NSObject {
         guard let panel = popupPanel, panel.isVisible else {
             logger.debug("Dismiss requested while panel is not visible")
             appState?.windowService.setMenuBarPopoverPresented(false)
+            appState?.resetPopoverPresentation()
             completion?()
             return
         }
@@ -132,6 +133,7 @@ final class StatusBarService: NSObject {
             panel.orderOut(nil)
             panel.alphaValue = 1
             appState?.windowService.setMenuBarPopoverPresented(false)
+            appState?.resetPopoverPresentation()
             completion?()
             return
         }
@@ -154,6 +156,7 @@ final class StatusBarService: NSObject {
             panel.alphaValue = 1
             panel.setFrame(restingFrame, display: false)
             self.appState?.windowService.setMenuBarPopoverPresented(false)
+            self.appState?.resetPopoverPresentation()
             completion?()
         }
     }
@@ -268,12 +271,16 @@ final class StatusBarService: NSObject {
             return .idle
         }
 
-        return MenuBarIconState.resolve(
+        let resolvedState = MenuBarIconState.resolve(
             connectionState: connectionState,
             timerSnapshot: snapshot,
             now: now,
             includeCompletion: true
         )
+        if resolvedState == .idle, appState?.appUpdateService.hasAvailableUpdate == true {
+            return .updateAvailable
+        }
+        return resolvedState
     }
 
     private func beginCompletionTransitionIfNeeded(sessionID: String, now: Date) {
@@ -374,6 +381,7 @@ final class StatusBarService: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(menuItem("Documentation", action: #selector(openDocumentation)))
+        menu.addItem(menuItem("Feedback & Roadmap", action: #selector(openFeedbackAndRoadmap)))
         menu.addItem(menuItem("GitHub", action: #selector(openGitHub)))
         menu.addItem(menuItem("Support", action: #selector(openSupport)))
         menu.addItem(.separator())
@@ -430,6 +438,10 @@ final class StatusBarService: NSObject {
 
     @objc private func openDocumentation() {
         appState?.openDocumentation()
+    }
+
+    @objc private func openFeedbackAndRoadmap() {
+        appState?.openFeedbackAndRoadmap()
     }
 
     @objc private func openGitHub() {
@@ -638,6 +650,7 @@ final class StatusBarService: NSObject {
 
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in
+                guard self?.isModalPresentationActive != true else { return }
                 self?.dismissPopup()
             }
         }
@@ -645,6 +658,9 @@ final class StatusBarService: NSObject {
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, let panel = self.popupPanel else { return event }
             let statusWindow = self.statusItem.button?.window
+            if self.isModalPresentationActive {
+                return event
+            }
                 if event.window === panel {
                 let contentBounds = panel.contentView?.bounds ?? .zero
                 let visibleSurfaceTop = contentBounds.maxY - panel.visibleSurfaceHeight
@@ -668,9 +684,17 @@ final class StatusBarService: NSObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
+                guard self?.isModalPresentationActive != true else { return }
                 self?.dismissPopup()
             }
         }
+    }
+
+    private var isModalPresentationActive: Bool {
+        guard let appState else { return false }
+        return appState.issueActionEditor != nil
+            || appState.isIssueCreatorPresented
+            || appState.isEndSessionSheetPresented
     }
 
     private func stopDismissalMonitoring() {

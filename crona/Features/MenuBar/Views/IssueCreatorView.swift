@@ -24,7 +24,7 @@ struct IssueCreatorView: View {
                 .disabled(appState.issueCreationService.isCreating)
                 .accessibilityLabel("Back")
 
-                Text("Create Issue")
+                Text(appState.issueBeingEdited == nil ? "Create Issue" : "Edit Issue")
                     .font(.headline)
                     .foregroundStyle(PopupVisualTheme.primaryText)
 
@@ -45,6 +45,7 @@ struct IssueCreatorView: View {
                 .creatorField(isFocused: focusedField == .estimate)
 
             destinationField
+                .disabled(appState.issueBeingEdited != nil)
 
             DisclosureGroup("More Options", isExpanded: moreOptionsBinding) {
                 TextField("Description (optional)", text: $appState.issueCreateDescription, axis: .vertical)
@@ -75,9 +76,18 @@ struct IssueCreatorView: View {
                 .help("Plan for today")
 
                 Spacer()
-                Button(appState.issueCreationService.isCreating ? "Creating…" : "Create Issue", action: appState.submitIssueCreator)
+                Button(
+                    appState.issueBeingEdited == nil
+                        ? (appState.issueCreationService.isCreating ? "Creating…" : "Create Issue")
+                        : (appState.issueActionsService.actionInFlightIssueID != nil ? "Saving…" : "Save Changes"),
+                    action: appState.submitIssueCreator
+                )
                     .keyboardShortcut(.defaultAction)
-                    .disabled(validationMessage != nil || appState.issueCreationService.isCreating)
+                    .disabled(
+                        validationMessage != nil
+                            || appState.issueCreationService.isCreating
+                            || appState.issueActionsService.actionInFlightIssueID != nil
+                    )
             }
         }
         .padding(20)

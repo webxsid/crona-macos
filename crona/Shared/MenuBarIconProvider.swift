@@ -10,6 +10,7 @@ enum MenuBarIconState: Equatable {
     case offline
     case error
     case completed
+    case updateAvailable
 
     static func resolve(
         connectionState: CompanionConnectionState,
@@ -49,7 +50,7 @@ enum MenuBarIconState: Equatable {
         switch self {
         case .focus, .paused, .breakTime:
             return true
-        case .idle, .connecting, .offline, .error, .completed:
+        case .idle, .connecting, .offline, .error, .completed, .updateAvailable:
             return false
         }
     }
@@ -72,6 +73,8 @@ enum MenuBarIconState: Equatable {
             return "Crona - Error"
         case .completed:
             return "Crona - Session completed"
+        case .updateAvailable:
+            return "Crona - Update available"
         }
     }
 
@@ -166,6 +169,9 @@ struct CronaMenuBarIconRenderer {
         case .completed:
             stroke(context, path: path, width: 3.1, alpha: 1)
             drawCompletionGlyph(context)
+        case .updateAvailable:
+            stroke(context, path: path, width: Self.strokeWidth, alpha: 1)
+            drawUpdateBadge(context)
         }
 
         image.isTemplate = true
@@ -249,6 +255,13 @@ struct CronaMenuBarIconRenderer {
         context.restoreGState()
     }
 
+    private func drawUpdateBadge(_ context: CGContext) {
+        context.saveGState()
+        context.setFillColor(NSColor.black.cgColor)
+        context.fillEllipse(in: CGRect(x: 12.25, y: 12.25, width: 3.5, height: 3.5))
+        context.restoreGState()
+    }
+
     private static func cPath() -> CGPath {
         let path = CGMutablePath()
         path.addArc(
@@ -280,6 +293,8 @@ struct CronaMenuBarIconRenderer {
             return "error"
         case .completed:
             return "completed"
+        case .updateAvailable:
+            return "update-available"
         }
     }
 

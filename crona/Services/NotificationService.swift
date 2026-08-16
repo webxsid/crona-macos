@@ -31,6 +31,10 @@ enum CompanionAlertRouting {
         "timer.break_complete"
     ]
 
+    static let companionOwnedTimerKinds: Set<String> = timerCompletionKinds.union([
+        "timer.break_deferral_warning"
+    ])
+
     static let reminderKinds: Set<String> = [
         "checkin.reminder",
         "daily_plan.reminder"
@@ -42,6 +46,10 @@ enum CompanionAlertRouting {
 
     static func isTimerCompletion(kind: String) -> Bool {
         timerCompletionKinds.contains(kind)
+    }
+
+    static func isCompanionOwned(kind: String) -> Bool {
+        companionOwnedTimerKinds.contains(kind)
     }
 
     static func isReminder(kind: String) -> Bool {
@@ -292,12 +300,7 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
     private var canClaimDelivery: Bool {
         guard daemonConnection?.connectionState == .connected else { return false }
         guard daemonConnection?.alertStatus?.companionDeliverySupported == true else { return false }
-        switch authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
-            return true
-        default:
-            return false
-        }
+        return true
     }
 
     private func scheduleRetry() {
@@ -316,6 +319,20 @@ final class NotificationService: NSObject, ObservableObject, UNUserNotificationC
         let breakDeferralAction = action(for: delivery)
         let silence = shouldSilenceAlert?(delivery.alert.kind) == true
         let notificationCenterCanPlaySound = soundSetting == .enabled
+
+        // These alerts are handled by the companion whenever it is connected.
+        // Acknowledge them without opening the app, playing a second sound, or
+        // asking the daemon to use osascript/terminal-notifier as a fallback.
+        if CompanionAlertRouting.isCompanionOwned(kind: delivery.alert.kind) {
+            await acknowledge(
+                delivery: delivery,
+                client: client,
+                notificationAccepted: true,
+                soundAccepted: true,
+                action: breakDeferralAction
+            )
+            return
+        }
 
         if CompanionAlertRouting.isTimerCompletion(kind: delivery.alert.kind) {
             if delivery.deliverNotification {

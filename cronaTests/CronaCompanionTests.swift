@@ -14,6 +14,46 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(behavior.contains(.stationary))
     }
 
+    func testManualSessionRequestEncodesDaemonWireKeys() throws {
+        let request = CronaManualSessionLogRequest(
+            issueID: 42,
+            date: "2026-08-16",
+            workDurationSeconds: 5_400,
+            breakDurationSeconds: 900,
+            startTime: "09:00",
+            endTime: "10:45",
+            commitMessage: "Manual catch-up",
+            notes: "Forgot to start timer"
+        )
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+
+        XCTAssertEqual(object["issueId"] as? Int, 42)
+        XCTAssertEqual(object["workDurationSeconds"] as? Int, 5_400)
+        XCTAssertEqual(object["breakDurationSeconds"] as? Int, 900)
+        XCTAssertEqual(object["commitMessage"] as? String, "Manual catch-up")
+        XCTAssertEqual(object["notes"] as? String, "Forgot to start timer")
+    }
+
+    func testFlexibleDurationParserMatchesManualLogInputs() {
+        XCTAssertEqual(try? FlexibleDurationParser.optionalMinutes("90").get(), 90)
+        XCTAssertEqual(try? FlexibleDurationParser.optionalMinutes("90m").get(), 90)
+        XCTAssertEqual(try? FlexibleDurationParser.optionalMinutes("1h30m").get(), 90)
+        XCTAssertEqual(try? FlexibleDurationParser.optionalMinutes("1.5h").get(), 90)
+        XCTAssertEqual(try? FlexibleDurationParser.optionalMinutes("-1m").get(), nil)
+    }
+
+    func testIssueStatusPresentationMatchesTUIStatusSemantics() {
+        XCTAssertEqual(CronaIssueStatusPresentation.status(for: "todo"), .backlog)
+        XCTAssertEqual(CronaIssueStatusPresentation.status(for: "active"), .inProgress)
+        XCTAssertEqual(CronaIssueStatusPresentation.icon(for: "blocked"), "exclamationmark.octagon")
+        XCTAssertEqual(CronaIssueStatusPresentation.icon(for: "done"), "checkmark.circle.fill")
+        XCTAssertEqual(CronaIssueStatusPresentation.colorKey(for: "planned"), .blue)
+        XCTAssertEqual(CronaIssueStatusPresentation.colorKey(for: "in_progress"), .yellow)
+        XCTAssertEqual(CronaIssueStatusPresentation.colorKey(for: "in_review"), .magenta)
+        XCTAssertEqual(CronaIssueStatusPresentation.colorKey(for: "abandoned"), .red)
+        XCTAssertEqual(CronaIssueStatusPresentation.colorKey(for: "unknown"), .subtle)
+    }
+
     func testPreferencesDefaultFloatingTimerHUDOffAndPersistsOptIn() throws {
         let legacy = try JSONDecoder().decode(CompanionPreferences.self, from: Data("{}".utf8))
         XCTAssertFalse(legacy.showTimerHUD)
@@ -71,6 +111,18 @@ final class CronaCompanionTests: XCTestCase {
             preferencesEnabled: true,
             activeTimer: false,
             menuBarPopoverPresented: false
+        ))
+        XCTAssertFalse(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: true,
+            activeTimer: true,
+            menuBarPopoverPresented: false,
+            hardLimitPopupPresented: true
+        ))
+        XCTAssertTrue(WindowService.timerHUDShouldBeVisible(
+            preferencesEnabled: true,
+            activeTimer: true,
+            menuBarPopoverPresented: false,
+            hardLimitPopupPresented: false
         ))
     }
 
@@ -566,6 +618,37 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertFalse(settings.isConfiguredRestDate("2026-08-10"))
     }
 
+    func testCoreSettingsDecodeDateDisplaySettingsAndFormatPresets() throws {
+        let settings = try JSONDecoder().decode(
+            CronaCoreSettings.self,
+            from: """
+            {
+              "awayModeEnabled": false,
+              "dateDisplayPreset": "us",
+              "dateDisplayFormat": ""
+            }
+            """.data(using: .utf8)!
+        )
+
+        XCTAssertEqual(settings.dateDisplayPreset, "us")
+        XCTAssertEqual(
+            CronaDateDisplayFormatter.string(fromISODate: "2026-08-16", settings: settings),
+            "08/16/2026"
+        )
+    }
+
+    func testCronaDateDisplayFormatterSupportsCustomMomentPatternsAndLiterals() {
+        let settings = CronaCoreSettings(
+            dateDisplayPreset: "custom",
+            dateDisplayFormat: "Do MMM YYYY [focus]"
+        )
+
+        XCTAssertEqual(
+            CronaDateDisplayFormatter.string(fromISODate: "2026-08-01", settings: settings),
+            "1st Aug 2026 focus"
+        )
+    }
+
     func testCalendarPrefetchMergesScoreWithoutDiscardingMetrics() {
         let metrics = CronaDailyMetricsDay(
             date: "2026-08-09", workedSeconds: 3_600, restSeconds: 600,
@@ -677,6 +760,14 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(CompanionAlertRouting.isTimerCompletion(kind: "timer.work_complete"))
         XCTAssertTrue(CompanionAlertRouting.isTimerCompletion(kind: "timer.break_complete"))
         XCTAssertFalse(CompanionAlertRouting.isTimerCompletion(kind: "timer.hard_limit_reached"))
+    }
+
+    func testCompanionAlertRoutingClaimsTimerAlertsForConnectedCompanion() {
+        XCTAssertTrue(CompanionAlertRouting.isCompanionOwned(kind: "timer.work_complete"))
+        XCTAssertTrue(CompanionAlertRouting.isCompanionOwned(kind: "timer.break_complete"))
+        XCTAssertTrue(CompanionAlertRouting.isCompanionOwned(kind: "timer.break_deferral_warning"))
+        XCTAssertFalse(CompanionAlertRouting.isCompanionOwned(kind: "timer.hard_limit_reached"))
+        XCTAssertFalse(CompanionAlertRouting.isCompanionOwned(kind: "checkin.reminder"))
     }
 
     func testBreakDeferralPolicyRequiresRecentActivity() {
@@ -2253,6 +2344,13 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(failed.supportsClearAction)
     }
 
+    func testHabitDurationFormatterSupportsHoursMinutesAndSeconds() {
+        XCTAssertEqual(HabitDurationFormatter.seconds(from: "1h20m30s"), 4_830)
+        XCTAssertEqual(HabitDurationFormatter.seconds(from: "01:20:30"), 4_830)
+        XCTAssertEqual(HabitDurationFormatter.string(from: 4_830), "1h20m30s")
+        XCTAssertNil(HabitDurationFormatter.seconds(from: "1h75m"))
+    }
+
     func testDailyFocusBuildsPlannedOrderFromPlanEntries() {
         let summary = CronaDailyIssueSummary(
             date: "2026-07-13",
@@ -2388,7 +2486,8 @@ final class CronaCompanionTests: XCTestCase {
             .connecting,
             .offline,
             .error,
-            .completed
+            .completed,
+            .updateAvailable
         ]
 
         for state in states {
@@ -2649,6 +2748,38 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(request.params["todoForDate"]?.stringValue, "2026-08-13")
         XCTAssertNil(request.params["description"])
         XCTAssertNil(request.params["notes"])
+    }
+
+    func testDaemonClientBuildsIssueUpdateRequest() async throws {
+        let transport = CapturingDaemonTransport(responseData: issueResponseData(status: "planned", todoForDate: nil))
+        let client = CronaDaemonClient(transport: transport)
+        _ = try await client.updateIssue(
+            CronaUpdateIssueRequest(
+                id: 42,
+                title: "Updated issue",
+                description: "More detail",
+                estimateMinutes: 90
+            )
+        )
+
+        let request = try JSONDecoder().decode(RequestWithParamsProbe.self, from: XCTUnwrap(transport.requestData))
+        XCTAssertEqual(request.method, "issue.update")
+        XCTAssertEqual(request.params["id"]?.intValue, 42)
+        XCTAssertEqual(request.params["title"]?.stringValue, "Updated issue")
+        XCTAssertEqual(request.params["description"]?.stringValue, "More detail")
+        XCTAssertEqual(request.params["estimateMinutes"]?.intValue, 90)
+    }
+
+    func testDaemonClientBuildsIssueDeleteRequest() async throws {
+        let transport = CapturingDaemonTransport(
+            responseData: Data(#"{"id":"response-1","result":{"ok":true}}"#.utf8)
+        )
+        let client = CronaDaemonClient(transport: transport)
+        _ = try await client.deleteIssue(issueID: 42)
+
+        let request = try JSONDecoder().decode(RequestWithParamsProbe.self, from: XCTUnwrap(transport.requestData))
+        XCTAssertEqual(request.method, "issue.delete")
+        XCTAssertEqual(request.params["id"]?.intValue, 42)
     }
 
     func testDaemonClientBuildsIssueStatusChangeRequestWithNote() async throws {

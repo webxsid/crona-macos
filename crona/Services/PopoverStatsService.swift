@@ -29,6 +29,8 @@ final class PopoverStatsService: ObservableObject {
     @Published private(set) var todayWorkedSeconds: Int?
     @Published private(set) var todayMetrics: CronaDailyMetricsDay?
     @Published private(set) var todayFocusScore: CronaFocusScoreSummary?
+    @Published private(set) var calendarCacheRevision = 0
+    @Published private(set) var calendarAnchorDate: String?
 
     init(daemonConnection: DaemonConnectionService) {
         self.daemonConnection = daemonConnection
@@ -156,36 +158,53 @@ final class PopoverStatsService: ObservableObject {
         selectedDate < todayDate
     }
 
+    func beginCalendar() {
+        calendarAnchorDate = snapshot.date.isEmpty ? selectedDate : snapshot.date
+    }
+
+    func endCalendar() {
+        calendarAnchorDate = nil
+    }
+
     func cachedSnapshot(for date: String) -> PopoverStatsSnapshot? {
         cache[date]
     }
 
     func prefetchCalendarDates(_ dates: [String]) async {
-        let datesToLoad = dates.filter { !isCachedFocusScoreLoaded(for: $0) }
-        guard !datesToLoad.isEmpty else { return }
+        guard let start = dates.first, let end = dates.last else { return }
 
-        for batchStart in stride(from: 0, to: datesToLoad.count, by: 4) {
-            let batchEnd = min(batchStart + 4, datesToLoad.count)
-            let tasks = datesToLoad[batchStart..<batchEnd].map { date in
-                Task { @MainActor [daemonConnection] in
-                    let score = try? await daemonConnection.withClient {
-                        try await $0.dashboardFocusScore(start: date, end: date)
-                    }
-                    return (date, score)
-                }
+        do {
+            let range = try await daemonConnection.withClient {
+                try await $0.dashboardFocusScoreRange(start: start, end: end)
             }
-            for task in tasks {
-                let (date, score) = await task.value
-                guard let score else {
-                    logger.debug("Calendar prefetch failed for \(date, privacy: .private)")
-                    continue
+            for day in range where dates.contains(day.date) {
+                var snapshot = cache[day.date] ?? PopoverStatsSnapshot(date: day.date)
+                if day.hasData {
+                    snapshot.focusScore = CronaFocusScoreSummary(
+                        startDate: day.date,
+                        endDate: day.date,
+                        score: day.score,
+                        level: day.level,
+                        workedSeconds: 0,
+                        restSeconds: 0,
+                        sessionCount: 0,
+                        focusDays: 0,
+                        days: 1,
+                        targetWorkedSeconds: 0
+                    )
+                    snapshot.scoreMessage = Self.message(for: day.level)
+                } else {
+                    snapshot.focusScore = nil
+                    snapshot.scoreMessage = ""
                 }
-                cache[date] = Self.mergingCalendarScore(
-                    score,
-                    into: cache[date],
-                    date: date
-                )
+                snapshot.isConnected = true
+                snapshot.isLoading = false
+                snapshot.lastErrorDescription = nil
+                cache[day.date] = snapshot
             }
+            calendarCacheRevision += 1
+        } catch {
+            logger.debug("Calendar range prefetch failed: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -323,6 +342,11 @@ final class PopoverStatsService: ObservableObject {
 
     private func isCachedFocusScoreLoaded(for date: String) -> Bool {
         cache[date]?.focusScore != nil
+    }
+
+    private func isCachedCalendarDateLoaded(for date: String) -> Bool {
+        guard let cached = cache[date] else { return false }
+        return !cached.isLoading
     }
 
     static func message(for level: String) -> String {
