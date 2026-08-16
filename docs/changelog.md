@@ -6,6 +6,42 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.13] - 2026-08-16
+
+Crona for macOS v1.0.0-beta.13 expands the menu-bar companion into a faster daily-work surface, adds daemon-backed historical Stats data, and prepares the UI for continued feature growth.
+
+### Added
+
+- Manual session logging from issue cards, including date, duration, break, timing, and notes.
+- Issue editing and explicit issue deletion flows from the issue action menu and secondary-click menu.
+- Away Mode controls in Settings, including rules, adhoc Away mode, and core date-display configuration.
+- Date-range focus-score IPC support for the Stats calendar.
+- Calendar-based historical Stats browsing with cached daily scores, heat-map treatment, Away-day states, and a return-to-today control.
+- Configured date formatting across Issues, Habits, Wellbeing, and Stats surfaces.
+
+### Changed
+
+- The menu-bar popover now keeps Add Issue only on the Issues tab and exposes Stats calendar navigation on Stats.
+- Stats, Issues, Habits, and Wellbeing surfaces received denser layouts, aligned metadata, status-specific indicators, and improved liquid-glass controls.
+- Away/rest states use positive green treatment consistently across the calendar, Stats, and companion surfaces.
+- The floating timer hides while a hard-limit decision popup is active and returns when focus continues.
+- Hard-limit prompts and modal input surfaces were repositioned and refined for clearer action-oriented decisions.
+- Notifications for Pomodoro session switches and five-second end reminders now remain companion-fallback-only when a companion surface is present.
+- Menubar popover dismissal resets the next opening state to Issues and closes any active Stats calendar presentation.
+- Menubar and Settings SwiftUI code is organized into dedicated Tabs, Views, Components, and Models modules.
+
+### Fixed
+
+- Stats calendar days now load the complete requested date range instead of jumping between individual dates.
+- Stats date navigation remains centered when the Return-to-Today control appears.
+- Issue and habit card content no longer overflows the popover or wraps key status controls unexpectedly.
+- Menu and card controls now use stable hit targets, hover feedback, and supported macOS SF Symbols.
+
+### Compatibility
+
+- The companion now targets daemon protocol version `1.4`.
+- The daemon must support the `dashboard.focus_score_range` date-range event and the manual session/issue mutation methods used by this release.
+
 ## [1.0.0-beta.12] - 2026-08-15
 
 Crona for macOS v1.0.0-beta.12 rebuilds Settings around a purpose-built native window shell and makes Crona easier to reach from the menu bar or a global shortcut.
