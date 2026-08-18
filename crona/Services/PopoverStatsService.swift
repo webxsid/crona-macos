@@ -31,6 +31,7 @@ final class PopoverStatsService: ObservableObject {
     @Published private(set) var todayFocusScore: CronaFocusScoreSummary?
     @Published private(set) var calendarCacheRevision = 0
     @Published private(set) var calendarAnchorDate: String?
+    @Published private(set) var calendarMonthDate: String?
 
     init(daemonConnection: DaemonConnectionService) {
         self.daemonConnection = daemonConnection
@@ -88,7 +89,7 @@ final class PopoverStatsService: ObservableObject {
                 date: date,
                 focusScore: focusScore,
                 todayMetrics: metric,
-                scoreMessage: Self.message(for: focusScore.level),
+                scoreMessage: Self.message(for: focusScore.reason),
                 isConnected: true,
                 isLoading: false,
                 lastErrorDescription: nil
@@ -154,16 +155,64 @@ final class PopoverStatsService: ObservableObject {
         Task { await refresh() }
     }
 
+    var functionalDate: String { selectedDate }
+
+    func reconcileToDate(_ date: String) async {
+        guard !date.isEmpty else { return }
+        selectedDate = date
+        presentSelectedDate()
+        await refresh()
+    }
+
     func canShowNextDay() -> Bool {
         selectedDate < todayDate
     }
 
     func beginCalendar() {
         calendarAnchorDate = snapshot.date.isEmpty ? selectedDate : snapshot.date
+        calendarMonthDate = Self.monthStart(for: calendarAnchorDate ?? selectedDate)
     }
 
     func endCalendar() {
         calendarAnchorDate = nil
+        calendarMonthDate = nil
+    }
+
+    func showPreviousCalendarMonth() {
+        guard let month = calendarMonthDate,
+            let previous = Self.adding(months: -1, to: month)
+        else { return }
+        calendarMonthDate = previous
+    }
+
+    func showNextCalendarMonth() {
+        guard canShowNextCalendarMonth(),
+            let month = calendarMonthDate,
+            let next = Self.adding(months: 1, to: month)
+        else { return }
+        calendarMonthDate = next
+    }
+
+    func canShowNextCalendarMonth() -> Bool {
+        guard let month = calendarMonthDate else { return false }
+        return month < (Self.monthStart(for: todayDate) ?? todayDate)
+    }
+
+    static func monthRange(for monthDate: String, through date: String) -> [String] {
+        guard let monthStart = monthStart(for: monthDate),
+            let monthEnd = monthEnd(for: monthStart)
+        else { return [] }
+        let end = min(monthEnd, date)
+        guard monthStart <= end else { return [] }
+
+        var result: [String] = []
+        var current = monthStart
+        while current <= end {
+            result.append(current)
+            guard let next = adding(days: 1, to: current) else { break }
+            current = next
+        }
+        return result
     }
 
     func cachedSnapshot(for date: String) -> PopoverStatsSnapshot? {
@@ -185,6 +234,7 @@ final class PopoverStatsService: ObservableObject {
                         endDate: day.date,
                         score: day.score,
                         level: day.level,
+                        reason: day.reason,
                         workedSeconds: 0,
                         restSeconds: 0,
                         sessionCount: 0,
@@ -192,7 +242,7 @@ final class PopoverStatsService: ObservableObject {
                         days: 1,
                         targetWorkedSeconds: 0
                     )
-                    snapshot.scoreMessage = Self.message(for: day.level)
+                    snapshot.scoreMessage = Self.message(for: day.reason)
                 } else {
                     snapshot.focusScore = nil
                     snapshot.scoreMessage = ""
@@ -258,7 +308,7 @@ final class PopoverStatsService: ObservableObject {
     ) -> PopoverStatsSnapshot {
         var snapshot = existing ?? PopoverStatsSnapshot(date: date)
         snapshot.focusScore = score
-        snapshot.scoreMessage = message(for: score.level)
+        snapshot.scoreMessage = message(for: score.reason)
         snapshot.isConnected = true
         snapshot.isLoading = false
         snapshot.lastErrorDescription = nil
@@ -280,7 +330,7 @@ final class PopoverStatsService: ObservableObject {
     ) -> PopoverStatsSnapshot {
         var snapshot = existing
         snapshot.focusScore = score
-        snapshot.scoreMessage = message(for: score.level)
+        snapshot.scoreMessage = message(for: score.reason)
         return snapshot
     }
 
@@ -349,20 +399,63 @@ final class PopoverStatsService: ObservableObject {
         return !cached.isLoading
     }
 
-    static func message(for level: String) -> String {
-        switch level {
-        case "strong":
-            return "You’re keeping a strong focus rhythm with healthy breaks."
-        case "steady":
-            return "Your pace is steady. Keep stacking consistent sessions."
+    static func title(for reason: String) -> String {
+        switch reason {
+        case "no_activity": return "Ready to begin"
+        case "under_target": return "Build momentum"
+        case "needs_breaks": return "Take a break"
+        case "overextended": return "Overextended"
+        default: return "Steady rhythm"
+        }
+    }
+
+    static func message(for reason: String) -> String {
+        switch reason {
+        case "no_activity":
+            return "Start a focused session to build today’s score."
+        case "under_target":
+            return "You’re below today’s planned focus time."
+        case "needs_breaks":
+            return "Your focus time is outpacing your recovery time."
         case "overextended":
-            return "You’ve pushed hard today. Give recovery more room."
+            return "You’ve pushed beyond your target without enough recovery."
         default:
-            return "A lighter day so far. Start a session to build momentum."
+            return "Your work and recovery are in a healthy balance."
         }
     }
 
     private static func shift(date: String, byDays days: Int) -> String {
         CronaCalendarDate.adding(days: days, to: date) ?? date
+    }
+
+    static func monthStart(for date: String) -> String? {
+        guard let parsed = CronaCalendarDate.date(from: date) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return CronaCalendarDate.string(from: calendar.dateInterval(of: .month, for: parsed)?.start ?? parsed)
+    }
+
+    private static func monthEnd(for date: String) -> String? {
+        guard let parsed = CronaCalendarDate.date(from: date) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let interval = calendar.dateInterval(of: .month, for: parsed),
+            let end = calendar.date(byAdding: .day, value: -1, to: interval.end)
+        else { return nil }
+        return CronaCalendarDate.string(from: end)
+    }
+
+    private static func adding(months: Int, to date: String) -> String? {
+        guard let parsed = CronaCalendarDate.date(from: date) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let shifted = calendar.date(byAdding: .month, value: months, to: parsed) else {
+            return nil
+        }
+        return monthStart(for: CronaCalendarDate.string(from: shifted))
+    }
+
+    private static func adding(days: Int, to date: String) -> String? {
+        CronaCalendarDate.adding(days: days, to: date)
     }
 }

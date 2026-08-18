@@ -8,6 +8,8 @@ enum PopoverModalKind: Equatable {
     case dueDate
     case issueCreate
     case deleteIssue
+    case habitCreate
+    case deleteHabit
 
     var minimumHeight: CGFloat {
         switch self {
@@ -16,6 +18,8 @@ enum PopoverModalKind: Equatable {
         case .dueDate: return 430
         case .issueCreate: return 560
         case .deleteIssue: return 280
+        case .habitCreate: return 500
+        case .deleteHabit: return 240
         }
     }
 }
@@ -66,7 +70,7 @@ struct PopoverRootView: View {
         ZStack(alignment: .top) {
             visibleSurface
 
-            if hasDashboardModal || appState.isIssueCreatorPresented {
+            if hasDashboardModal || appState.isIssueCreatorPresented || appState.isHabitCreatorPresented {
                 modalSurface
                     .frame(
                         width: StatusPopupSizing.width,
@@ -159,6 +163,8 @@ struct PopoverRootView: View {
                 if case .stats = appState.selectedPopoverTab {
                     StatsTabView(appState: appState)
                 }
+            } else if let route = appState.popoverDetailsRoute {
+                PopoverDetailView(appState: appState, route: route)
             } else if appState.hasActiveFocusSession {
                 IssuesTabView(
                     appState: appState,
@@ -206,6 +212,7 @@ struct PopoverRootView: View {
         .allowsHitTesting(!hasDashboardModal)
         .animation(.easeInOut(duration: 0.16), value: appState.isEndSessionSheetPresented)
         .animation(.easeInOut(duration: 0.16), value: appState.issueActionEditor)
+        .animation(.easeInOut(duration: 0.16), value: appState.habitActionEditor)
     }
 
     @ViewBuilder
@@ -220,7 +227,11 @@ struct PopoverRootView: View {
                             appState.cancelEndSession()
                         }
                     } else {
-                        appState.cancelIssueActionEditor()
+                        if appState.habitActionEditor != nil {
+                            appState.cancelHabitActionEditor()
+                        } else {
+                            appState.cancelIssueActionEditor()
+                        }
                     }
                 }
             }
@@ -241,10 +252,16 @@ struct PopoverRootView: View {
                         .scale(scale: 0.96)
                             .combined(with: .opacity)
                     )
+            } else if case .delete(let habit) = appState.habitActionEditor {
+                HabitDeleteConfirmationView(appState: appState, habit: habit)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
             } else if appState.isIssueCreatorPresented {
                 IssueCreatorView(appState: appState)
                     .offset(x: appState.isIssueCreatorContentVisible ? 0 : 420)
                     .allowsHitTesting(appState.isIssueCreatorContentVisible)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if appState.isHabitCreatorPresented {
+                HabitCreatorView(appState: appState)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -254,6 +271,7 @@ struct PopoverRootView: View {
 
     private var hasDashboardModal: Bool {
         appState.isEndSessionSheetPresented || appState.issueActionEditor != nil
+            || appState.habitActionEditor != nil
     }
 
     private var modalMinimumHeight: CGFloat? {
@@ -262,6 +280,12 @@ struct PopoverRootView: View {
         }
         if appState.isIssueCreatorPresented {
             return PopoverModalKind.issueCreate.minimumHeight
+        }
+        if appState.isHabitCreatorPresented {
+            return PopoverModalKind.habitCreate.minimumHeight
+        }
+        if case .delete = appState.habitActionEditor {
+            return PopoverModalKind.deleteHabit.minimumHeight
         }
         switch appState.issueActionEditor {
         case .status:
@@ -279,7 +303,11 @@ struct PopoverRootView: View {
 
     private var header: some View {
         ZStack {
-            if appState.isStatsCalendarPresented {
+            if let route = appState.popoverDetailsRoute {
+                Text(route.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+            } else if appState.isStatsCalendarPresented {
                 Text("Calendar")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(PopupVisualTheme.primaryText)
@@ -295,9 +323,11 @@ struct PopoverRootView: View {
             }
 
             HStack {
-                if !appState.todayIsAway
+                if appState.popoverDetailsRoute == nil,
+                    !appState.todayIsAway
                     && (appState.isStatsCalendarPresented
                         || appState.selectedPopoverTab == .stats
+                        || appState.selectedPopoverTab == .habits
                         || appState.selectedPopoverTab == .now)
                 {
                     Button {
@@ -309,6 +339,8 @@ struct PopoverRootView: View {
                         } else if appState.selectedPopoverTab == .stats {
                             appState.popoverStatsService.beginCalendar()
                             appState.isStatsCalendarPresented.toggle()
+                        } else if appState.selectedPopoverTab == .habits {
+                            appState.presentHabitCreator()
                         } else {
                             appState.presentIssueCreator()
                         }
@@ -329,13 +361,15 @@ struct PopoverRootView: View {
                         appState.isStatsCalendarPresented
                             ? "Back to stats"
                             : (appState.selectedPopoverTab == .stats
-                                ? "Show calendar" : "Create Issue")
+                                ? "Show calendar"
+                                : (appState.selectedPopoverTab == .habits ? "Create Habit" : "Create Issue"))
                     )
                     .accessibilityLabel(
                         appState.isStatsCalendarPresented
                             ? "Back to stats"
                             : (appState.selectedPopoverTab == .stats
-                                ? "Show calendar" : "Create Issue")
+                                ? "Show calendar"
+                                : (appState.selectedPopoverTab == .habits ? "Create Habit" : "Create Issue"))
                     )
                     .disabled(
                         appState.daemonConnection.connectionState != .connected

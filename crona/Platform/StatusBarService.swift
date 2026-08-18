@@ -472,6 +472,9 @@ final class StatusBarService: NSObject {
             logger.error("Show skipped: status item button is nil")
             return
         }
+        Task { @MainActor [weak appState] in
+            await appState?.reconcileFunctionalDateOnPopoverOpen()
+        }
         let viewportSize = NSSize(
             width: StatusPopupSizing.width,
             height: StatusPopupSizing.viewportHeight
@@ -562,10 +565,13 @@ final class StatusBarService: NSObject {
                 appState: appState,
                 displayClock: popupDisplayClock,
                 onVisibleSurfaceHeightChange: { [weak panel] height in
-                    panel?.visibleSurfaceHeight = min(
+                    let clampedHeight = min(
                         StatusPopupSizing.viewportHeight,
                         max(StatusPopupSizing.minimumHeight, height)
                     )
+                    DispatchQueue.main.async { [weak panel] in
+                        panel?.updateVisibleSurfaceHeight(clampedHeight)
+                    }
                 }
             )
         )
@@ -719,9 +725,28 @@ final class StatusBarService: NSObject {
 private final class StatusPopupPanel: NSPanel {
     var onCancel: (() -> Void)?
     var visibleSurfaceHeight = StatusPopupSizing.viewportHeight
+    private var pendingVisibleSurfaceHeight: CGFloat?
+    private var visibleSurfaceHeightUpdateScheduled = false
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    func updateVisibleSurfaceHeight(_ height: CGFloat) {
+        pendingVisibleSurfaceHeight = height
+        guard !visibleSurfaceHeightUpdateScheduled else { return }
+        visibleSurfaceHeightUpdateScheduled = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer {
+                self.visibleSurfaceHeightUpdateScheduled = false
+            }
+            guard let height = self.pendingVisibleSurfaceHeight else { return }
+            self.pendingVisibleSurfaceHeight = nil
+            guard abs(self.visibleSurfaceHeight - height) > 0.5 else { return }
+            self.visibleSurfaceHeight = height
+        }
+    }
 
     override func cancelOperation(_ sender: Any?) {
         onCancel?()

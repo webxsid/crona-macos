@@ -14,9 +14,9 @@ enum SettingsDestination: String, CaseIterable, Hashable, Identifiable {
     case notifications
     case advanced
     case about
-#if DEBUG
-    case developer
-#endif
+    #if DEBUG
+        case developer
+    #endif
 
     var id: String { rawValue }
 }
@@ -35,6 +35,10 @@ enum IssueActionEditor: Equatable {
     case delete(issue: DailyFocusIssue)
 }
 
+enum HabitActionEditor: Equatable {
+    case delete(habit: HabitRowModel)
+}
+
 struct SmartPauseResumeNotice: Equatable {
     let sessionID: String
     let resumedAt: Date
@@ -46,11 +50,11 @@ struct IssueCreationSuccess: Equatable {
 }
 
 #if DEBUG
-enum DeveloperPreviewKind: Equatable {
-    case hardLimit
-    case inactivity
-    case breakScreen
-}
+    enum DeveloperPreviewKind: Equatable {
+        case hardLimit
+        case inactivity
+        case breakScreen
+    }
 #endif
 
 @MainActor
@@ -93,8 +97,10 @@ final class CompanionAppState: ObservableObject {
     private var presentationTimer: Timer?
     private var lastWarningIndicatorKey: String?
     private var settingsSceneAction: (() -> Void)?
+    @Published var popoverDetailsRoute: PopoverDetailRoute?
     @Published var selectedFocusIssue: DailyFocusIssue?
     @Published var issueActionEditor: IssueActionEditor?
+    @Published var habitActionEditor: HabitActionEditor?
     @Published var issueActionNote = ""
     @Published var issueActionDate = Date()
     @Published var manualSessionSummary = ""
@@ -121,6 +127,16 @@ final class CompanionAppState: ObservableObject {
     @Published var issueCreateDestinationID: Int64?
     @Published var issueCreateShowsMoreOptions = false
     @Published private(set) var issueBeingEdited: DailyFocusIssue?
+    @Published private(set) var habitBeingEdited: HabitRowModel?
+    @Published var isHabitCreatorPresented = false
+    @Published var habitCreateName = ""
+    @Published var habitCreateDescription = ""
+    @Published var habitCreateDestinationID: Int64?
+    @Published var habitCreateScheduleType = "daily"
+    @Published var habitCreateWeekdays: Set<Int> = []
+    @Published var habitCreateTarget = ""
+    @Published var habitCreateActive = true
+    @Published var habitCreateError: String?
     private var issueCreatorPresentationGeneration: UInt = 0
     @Published var issueCreationSuccess: IssueCreationSuccess?
     @Published var selectedPopoverTab: PopoverTab = .now
@@ -146,9 +162,9 @@ final class CompanionAppState: ObservableObject {
     @Published private(set) var inactivityPopupSessionID: String?
     @Published var isHardLimitWarningIndicatorAnimatingIn = false
     @Published var smartPauseResumeNotice: SmartPauseResumeNotice?
-#if DEBUG
-    @Published var developerPreviewKind: DeveloperPreviewKind?
-#endif
+    #if DEBUG
+        @Published var developerPreviewKind: DeveloperPreviewKind?
+    #endif
 
     init() {
         let preferences = PreferencesService()
@@ -172,7 +188,8 @@ final class CompanionAppState: ObservableObject {
             kernelDiscovery: kernelDiscovery
         )
         let alertSettingsService = AlertSettingsService(daemonConnection: daemonConnection)
-        let dayBoundarySettingsService = DayBoundarySettingsService(daemonConnection: daemonConnection)
+        let dayBoundarySettingsService = DayBoundarySettingsService(
+            daemonConnection: daemonConnection)
         let coreSettingsService = CoreSettingsService(daemonConnection: daemonConnection)
         let appUpdateService = AppUpdateService(preferences: preferences)
         let userActivityMonitor = UserActivityMonitor()
@@ -336,8 +353,11 @@ final class CompanionAppState: ObservableObject {
         if selectedPopoverTab == .stats {
             return .idle(IdleFocusPopoverModel(issues: [], date: ""))
         }
-        if daemonConnection.connectionState == .error || daemonConnection.connectionState == .incompatible {
-            return .error(message: daemonConnection.lastErrorDescription ?? "Unable to reach Crona.")
+        if daemonConnection.connectionState == .error
+            || daemonConnection.connectionState == .incompatible
+        {
+            return .error(
+                message: daemonConnection.lastErrorDescription ?? "Unable to reach Crona.")
         }
         if daemonConnection.connectionState != .connected {
             return .disconnected
@@ -422,76 +442,88 @@ final class CompanionAppState: ObservableObject {
         daemonConnection.manualReconnect()
     }
 
-#if DEBUG
-    var isDeveloperPreviewActive: Bool { developerPreviewKind != nil }
-
-    func showDeveloperHardLimitPreview() {
-        dismissDeveloperPreviews()
-        developerPreviewKind = .hardLimit
-        hardLimitPopupSessionID = "developer-preview"
-        hardLimitPopupPhase = .decision
-        hardLimitPopupExtendChoice = .minutes5
-        hardLimitPopupErrorMessage = nil
-        hardLimitPopupSuccessModel = nil
-        isHardLimitPopupAnimatingIn = true
-        windowService.showHardLimitPopup()
+    func openIssueDetails(_ issue: DailyFocusIssue) {
+        popoverDetailsRoute = .issueDetails(issueID: issue.id)
     }
 
-    func showDeveloperInactivityPreview() {
-        dismissDeveloperPreviews()
-        developerPreviewKind = .inactivity
-        inactivityPopupSessionID = "developer-preview"
-        inactivityPopupPhase = .decision
-        inactivityPopupDelivery = nil
-        windowService.showInactivityPopup()
+    func openHabitDetails(_ habit: HabitRowModel) {
+        popoverDetailsRoute = .habitDetails(habitID: habit.id)
     }
 
-    func showDeveloperWarningPreview() {
-        dismissDeveloperPreviews()
-        hardLimitWarningIndicatorModel = HardLimitWarningIndicatorModel(
-            id: "developer-warning",
-            kind: .expiry,
-            title: "Session Ending",
-            remainingText: "10"
-        )
-        isHardLimitWarningIndicatorAnimatingIn = false
-        windowService.showHardLimitWarningIndicator()
-        DispatchQueue.main.async {
-            self.isHardLimitWarningIndicatorAnimatingIn = true
+    func dismissDetails() {
+        popoverDetailsRoute = nil
+    }
+
+    #if DEBUG
+        var isDeveloperPreviewActive: Bool { developerPreviewKind != nil }
+
+        func showDeveloperHardLimitPreview() {
+            dismissDeveloperPreviews()
+            developerPreviewKind = .hardLimit
+            hardLimitPopupSessionID = "developer-preview"
+            hardLimitPopupPhase = .decision
+            hardLimitPopupExtendChoice = .minutes5
+            hardLimitPopupErrorMessage = nil
+            hardLimitPopupSuccessModel = nil
+            isHardLimitPopupAnimatingIn = true
+            windowService.showHardLimitPopup()
         }
-    }
 
-    func showDeveloperSmartPauseResumePreview() {
-        dismissDeveloperPreviews()
-        smartPauseResumeNotice = SmartPauseResumeNotice(
-            sessionID: "developer-preview",
-            resumedAt: Date()
-        )
-        windowService.showSmartPauseResumeNotice()
-    }
+        func showDeveloperInactivityPreview() {
+            dismissDeveloperPreviews()
+            developerPreviewKind = .inactivity
+            inactivityPopupSessionID = "developer-preview"
+            inactivityPopupPhase = .decision
+            inactivityPopupDelivery = nil
+            windowService.showInactivityPopup()
+        }
 
-    func showDeveloperBreakScreenPreview() {
-        dismissDeveloperPreviews()
-        developerPreviewKind = .breakScreen
-        windowService.showDeveloperBreakScreen()
-    }
+        func showDeveloperWarningPreview() {
+            dismissDeveloperPreviews()
+            hardLimitWarningIndicatorModel = HardLimitWarningIndicatorModel(
+                id: "developer-warning",
+                kind: .expiry,
+                title: "Session Ending",
+                remainingText: "10"
+            )
+            isHardLimitWarningIndicatorAnimatingIn = false
+            windowService.showHardLimitWarningIndicator()
+            DispatchQueue.main.async {
+                self.isHardLimitWarningIndicatorAnimatingIn = true
+            }
+        }
 
-    func dismissDeveloperPreviews() {
-        hardLimitCountdownService.cancel()
-        inactivityPopupCountdownService.cancel()
-        developerPreviewKind = nil
-        hardLimitPopupPhase = nil
-        hardLimitPopupSessionID = nil
-        hardLimitPopupSuccessModel = nil
-        inactivityPopupPhase = nil
-        inactivityPopupSessionID = nil
-        inactivityPopupDelivery = nil
-        hardLimitWarningIndicatorModel = nil
-        smartPauseResumeNotice = nil
-        clearEndSessionState()
-        windowService.dismissDeveloperPreviews()
-    }
-#endif
+        func showDeveloperSmartPauseResumePreview() {
+            dismissDeveloperPreviews()
+            smartPauseResumeNotice = SmartPauseResumeNotice(
+                sessionID: "developer-preview",
+                resumedAt: Date()
+            )
+            windowService.showSmartPauseResumeNotice()
+        }
+
+        func showDeveloperBreakScreenPreview() {
+            dismissDeveloperPreviews()
+            developerPreviewKind = .breakScreen
+            windowService.showDeveloperBreakScreen()
+        }
+
+        func dismissDeveloperPreviews() {
+            hardLimitCountdownService.cancel()
+            inactivityPopupCountdownService.cancel()
+            developerPreviewKind = nil
+            hardLimitPopupPhase = nil
+            hardLimitPopupSessionID = nil
+            hardLimitPopupSuccessModel = nil
+            inactivityPopupPhase = nil
+            inactivityPopupSessionID = nil
+            inactivityPopupDelivery = nil
+            hardLimitWarningIndicatorModel = nil
+            smartPauseResumeNotice = nil
+            clearEndSessionState()
+            windowService.dismissDeveloperPreviews()
+        }
+    #endif
 
     func setSelectedPopoverTab(_ tab: PopoverTab) {
         guard !hasActiveFocusSession else {
@@ -507,10 +539,42 @@ final class CompanionAppState: ObservableObject {
     }
 
     func resetPopoverPresentation() {
+        popoverDetailsRoute = nil
         selectedPopoverTab = .now
         if isStatsCalendarPresented {
             isStatsCalendarPresented = false
             popoverStatsService.endCalendar()
+        }
+    }
+
+    func reconcileFunctionalDateOnPopoverOpen() async {
+        guard daemonConnection.connectionState == .connected else { return }
+
+        do {
+            let health = try await daemonConnection.refreshHealth()
+            guard let daemonDate = health.currentDate, !daemonDate.isEmpty else {
+                logger.debug("Popup date reconciliation skipped: daemon date is empty")
+                return
+            }
+
+            let storedDates = [
+                dailyFocusService.snapshot.date,
+                habitsService.snapshot.date,
+                wellbeingService.snapshot.date,
+                popoverStatsService.functionalDate,
+            ]
+            guard storedDates.contains(where: { $0 != daemonDate }) else {
+                logger.debug("Popup date reconciliation not needed for \(daemonDate, privacy: .public)")
+                return
+            }
+
+            logger.info("Reconciling popup date to daemon logical date \(daemonDate, privacy: .public)")
+            await dailyFocusService.refresh(date: daemonDate)
+            await habitsService.refresh(date: daemonDate)
+            await wellbeingService.refresh(date: daemonDate)
+            await popoverStatsService.reconcileToDate(daemonDate)
+        } catch {
+            logger.error("Popup date reconciliation failed: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -592,7 +656,8 @@ final class CompanionAppState: ObservableObject {
                 try await daemonConnection.shutdownAndWait()
                 NSApp.terminate(nil)
             } catch {
-                logger.error("Failed to stop Crona: \(error.localizedDescription, privacy: .private)")
+                logger.error(
+                    "Failed to stop Crona: \(error.localizedDescription, privacy: .private)")
                 windowService.showStopCronaError(error.localizedDescription)
             }
         }
@@ -645,23 +710,24 @@ final class CompanionAppState: ObservableObject {
                 _ = try await daemonConnection.withClient { try await $0.timerExtend(request) }
                 await timerService.refresh()
             } catch {
-                logger.error("Failed to extend timer: \(error.localizedDescription, privacy: .private)")
+                logger.error(
+                    "Failed to extend timer: \(error.localizedDescription, privacy: .private)")
             }
         }
     }
 
     func chooseHardLimitEnd() {
-#if DEBUG
-        if developerPreviewKind == .hardLimit {
-            hardLimitPopupPhase = .endSession
-            endSessionPresentationSource = .hardLimitPopup
-            pendingEndSessionID = "developer-preview"
-            endSessionCommitMessage = ""
-            requestEndSessionFocus()
-            windowService.updateHardLimitPopup()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .hardLimit {
+                hardLimitPopupPhase = .endSession
+                endSessionPresentationSource = .hardLimitPopup
+                pendingEndSessionID = "developer-preview"
+                endSessionCommitMessage = ""
+                requestEndSessionFocus()
+                windowService.updateHardLimitPopup()
+                return
+            }
+        #endif
         hardLimitCountdownService.cancel()
         beginEndSession(source: .hardLimitPopup)
         guard pendingEndSessionID != nil else { return }
@@ -672,17 +738,17 @@ final class CompanionAppState: ObservableObject {
     }
 
     func chooseInactivityPopupEnd() {
-#if DEBUG
-        if developerPreviewKind == .inactivity {
-            inactivityPopupPhase = .endSession
-            endSessionPresentationSource = .inactivityPopup
-            pendingEndSessionID = "developer-preview"
-            endSessionCommitMessage = ""
-            requestEndSessionFocus()
-            windowService.updateInactivityPopup()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .inactivity {
+                inactivityPopupPhase = .endSession
+                endSessionPresentationSource = .inactivityPopup
+                pendingEndSessionID = "developer-preview"
+                endSessionCommitMessage = ""
+                requestEndSessionFocus()
+                windowService.updateInactivityPopup()
+                return
+            }
+        #endif
         inactivityPopupCountdownService.cancel()
         beginEndSession(source: .inactivityPopup)
         guard pendingEndSessionID != nil else { return }
@@ -692,12 +758,12 @@ final class CompanionAppState: ObservableObject {
     }
 
     func dismissInactivityPopup() {
-#if DEBUG
-        if developerPreviewKind == .inactivity {
-            dismissDeveloperPreviews()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .inactivity {
+                dismissDeveloperPreviews()
+                return
+            }
+        #endif
         finalizeInactivityPopup()
     }
 
@@ -712,14 +778,14 @@ final class CompanionAppState: ObservableObject {
 
     func returnToInactivityDecision() {
         guard !isSubmittingEndSession else { return }
-#if DEBUG
-        if developerPreviewKind == .inactivity {
-            clearEndSessionState()
-            inactivityPopupPhase = .decision
-            windowService.updateInactivityPopup()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .inactivity {
+                clearEndSessionState()
+                inactivityPopupPhase = .decision
+                windowService.updateInactivityPopup()
+                return
+            }
+        #endif
         clearEndSessionState()
         inactivityPopupPhase = .decision
         startInactivityPopupCountdown()
@@ -727,14 +793,14 @@ final class CompanionAppState: ObservableObject {
     }
 
     func chooseHardLimitExtend() {
-#if DEBUG
-        if developerPreviewKind == .hardLimit {
-            hardLimitPopupPhase = .extend
-            hardLimitPopupExtendChoice = .minutes5
-            windowService.updateHardLimitPopup()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .hardLimit {
+                hardLimitPopupPhase = .extend
+                hardLimitPopupExtendChoice = .minutes5
+                windowService.updateHardLimitPopup()
+                return
+            }
+        #endif
         hardLimitCountdownService.cancel()
         guard let sessionID = timerService.snapshot.sessionID else { return }
         hardLimitPopupSessionID = sessionID
@@ -745,18 +811,21 @@ final class CompanionAppState: ObservableObject {
     }
 
     func confirmHardLimitExtend() {
-#if DEBUG
-        if developerPreviewKind == .hardLimit {
-            hardLimitPopupPhase = .success
-            hardLimitPopupSuccessModel = HardLimitPopupSuccessModel(
-                remainingTimeText: "30:00",
-                endTimeText: TimerEndTimeFormatter.string(from: Date().addingTimeInterval(1_800))
-            )
-            windowService.updateHardLimitPopup()
+        #if DEBUG
+            if developerPreviewKind == .hardLimit {
+                hardLimitPopupPhase = .success
+                hardLimitPopupSuccessModel = HardLimitPopupSuccessModel(
+                    remainingTimeText: "30:00",
+                    endTimeText: TimerEndTimeFormatter.string(
+                        from: Date().addingTimeInterval(1_800))
+                )
+                windowService.updateHardLimitPopup()
+                return
+            }
+        #endif
+        guard let sessionID = hardLimitPopupSessionID ?? timerService.snapshot.sessionID else {
             return
         }
-#endif
-        guard let sessionID = hardLimitPopupSessionID ?? timerService.snapshot.sessionID else { return }
         guard sessionID == timerService.snapshot.sessionID else {
             hardLimitPopupErrorMessage = "The active session changed. Refresh and try again."
             return
@@ -767,7 +836,9 @@ final class CompanionAppState: ObservableObject {
         case .pomodoro:
             request = buildPomodoroExtendRequest(choice: hardLimitPopupExtendChoice)
         case .stopwatch, .timer:
-            request = Self.buildQuickExtendRequest(snapshot: timerService.snapshot, additionalSeconds: hardLimitPopupExtendChoice.secondsValue)
+            request = Self.buildQuickExtendRequest(
+                snapshot: timerService.snapshot,
+                additionalSeconds: hardLimitPopupExtendChoice.secondsValue)
         }
 
         guard let request else {
@@ -787,7 +858,9 @@ final class CompanionAppState: ObservableObject {
                     self.presentExtendSuccess()
                 }
             } catch {
-                logger.error("Failed to extend timer from popup: \(error.localizedDescription, privacy: .private)")
+                logger.error(
+                    "Failed to extend timer from popup: \(error.localizedDescription, privacy: .private)"
+                )
                 await MainActor.run {
                     self.isSubmittingHardLimitAction = false
                     self.hardLimitPopupErrorMessage = error.localizedDescription
@@ -797,11 +870,11 @@ final class CompanionAppState: ObservableObject {
     }
 
     var hardLimitExtensionEndDate: Date? {
-#if DEBUG
-        if developerPreviewKind == .hardLimit {
-            return Date().addingTimeInterval(1_800)
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .hardLimit {
+                return Date().addingTimeInterval(1_800)
+            }
+        #endif
         let request: CronaTimerExtendRequest?
         switch TimerPresentation.from(timerService.snapshot).mode {
         case .pomodoro:
@@ -822,15 +895,15 @@ final class CompanionAppState: ObservableObject {
 
     func returnToHardLimitDecision() {
         guard !isSubmittingEndSession, !isSubmittingHardLimitAction else { return }
-#if DEBUG
-        if developerPreviewKind == .hardLimit {
-            clearEndSessionState()
-            hardLimitPopupErrorMessage = nil
-            hardLimitPopupPhase = .decision
-            windowService.updateHardLimitPopup()
-            return
-        }
-#endif
+        #if DEBUG
+            if developerPreviewKind == .hardLimit {
+                clearEndSessionState()
+                hardLimitPopupErrorMessage = nil
+                hardLimitPopupPhase = .decision
+                windowService.updateHardLimitPopup()
+                return
+            }
+        #endif
         clearEndSessionState()
         hardLimitPopupErrorMessage = nil
         hardLimitPopupPhase = .decision
@@ -848,8 +921,8 @@ final class CompanionAppState: ObservableObject {
 
     func presentIssueCreator() {
         guard daemonConnection.connectionState == .connected,
-              !isEndSessionSheetPresented,
-              issueActionEditor == nil
+            !isEndSessionSheetPresented,
+            issueActionEditor == nil
         else { return }
         issueCreationService.clearError()
         issueBeingEdited = nil
@@ -866,8 +939,8 @@ final class CompanionAppState: ObservableObject {
         Task { @MainActor [weak self] in
             await Task.yield()
             guard let self,
-                  self.isIssueCreatorPresented,
-                  presentationGeneration == self.issueCreatorPresentationGeneration
+                self.isIssueCreatorPresented,
+                presentationGeneration == self.issueCreatorPresentationGeneration
             else { return }
             withAnimation(.easeInOut(duration: 0.22)) {
                 self.isIssueCreatorContentVisible = true
@@ -875,7 +948,9 @@ final class CompanionAppState: ObservableObject {
         }
         Task {
             await issueCreationService.loadDestinations()
-            if !issueCreationService.destinations.contains(where: { $0.streamID == issueCreateDestinationID }) {
+            if !issueCreationService.destinations.contains(where: {
+                $0.streamID == issueCreateDestinationID
+            }) {
                 issueCreateDestinationID = nil
             }
         }
@@ -883,14 +958,14 @@ final class CompanionAppState: ObservableObject {
 
     func presentIssueEditor(for issue: DailyFocusIssue) {
         guard daemonConnection.connectionState == .connected,
-              !isEndSessionSheetPresented,
-              issueActionEditor == nil,
-              !isIssueCreatorPresented
+            !isEndSessionSheetPresented,
+            issueActionEditor == nil,
+            !isIssueCreatorPresented
         else { return }
         issueCreationService.clearError()
         issueBeingEdited = issue
         issueCreateTitle = issue.title
-        issueCreateDescription = ""
+        issueCreateDescription = issue.description ?? ""
         issueCreateEstimate = issue.estimateMinutes.map(String.init) ?? ""
         issueCreateForToday = issue.todoForDate == dailyFocusService.snapshot.date
         issueCreateDestinationID = issue.streamID
@@ -902,7 +977,8 @@ final class CompanionAppState: ObservableObject {
         Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, self.isIssueCreatorPresented,
-                  generation == self.issueCreatorPresentationGeneration else { return }
+                generation == self.issueCreatorPresentationGeneration
+            else { return }
             withAnimation(.easeInOut(duration: 0.22)) {
                 self.isIssueCreatorContentVisible = true
             }
@@ -916,17 +992,156 @@ final class CompanionAppState: ObservableObject {
         dismissIssueCreatorPresentation()
     }
 
+    func presentHabitCreator() {
+        guard daemonConnection.connectionState == .connected,
+            !isEndSessionSheetPresented, issueActionEditor == nil, habitActionEditor == nil
+        else { return }
+        habitBeingEdited = nil
+        habitsService.clearManagementError()
+        habitCreateName = ""
+        habitCreateDescription = ""
+        habitCreateDestinationID = contextService.snapshot.streamID
+        habitCreateScheduleType = "daily"
+        habitCreateWeekdays = []
+        habitCreateTarget = ""
+        habitCreateActive = true
+        habitCreateError = nil
+        isHabitCreatorPresented = true
+    }
+
+    func presentHabitEditor(for habit: HabitRowModel) {
+        guard daemonConnection.connectionState == .connected,
+            !isEndSessionSheetPresented, issueActionEditor == nil, habitActionEditor == nil
+        else { return }
+        habitsService.clearManagementError()
+        habitBeingEdited = habit
+        habitCreateName = habit.name
+        habitCreateDescription = habit.description ?? ""
+        habitCreateDestinationID = issueCreationService.destinations.first {
+            $0.repoName == habit.repoName && $0.streamName == habit.streamName
+        }?.streamID
+        habitCreateScheduleType = habit.scheduleType ?? "daily"
+        habitCreateWeekdays = Set(habit.weekdays)
+        habitCreateTarget = habit.targetMinutes.map(MenuBarTextFormatter.formatMinutes) ?? ""
+        habitCreateActive = habit.active
+        habitCreateError = nil
+        isHabitCreatorPresented = true
+        Task { await issueCreationService.loadDestinations() }
+    }
+
+    func cancelHabitCreator() {
+        guard !habitsService.isManagingHabit else { return }
+        habitsService.clearManagementError()
+        habitBeingEdited = nil
+        isHabitCreatorPresented = false
+    }
+
+    func presentDeleteHabit(for habit: HabitRowModel) {
+        habitsService.clearManagementError()
+        habitActionEditor = .delete(habit: habit)
+    }
+
+    func submitHabitCreator() {
+        let name = habitCreateName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = habitCreateDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 120 else {
+            habitCreateError = "Enter a habit name."
+            return
+        }
+        let targetText = habitCreateTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard case .success(let targetMinutes) = FlexibleDurationParser.optionalMinutes(targetText),
+            targetMinutes == nil || targetMinutes! >= 0
+        else {
+            habitCreateError = "Enter a valid target duration."
+            return
+        }
+        let schedule: String
+        let weekdays: [Int]
+        switch habitCreateScheduleType {
+        case "weekly":
+            guard !habitCreateWeekdays.isEmpty else {
+                habitCreateError = "Select at least one weekday."
+                return
+            }
+            schedule = "weekly"
+            weekdays = habitCreateWeekdays.sorted()
+        case "weekdays":
+            schedule = "weekdays"
+            weekdays = []
+        default:
+            schedule = "daily"
+            weekdays = []
+        }
+        guard let streamID = habitCreateDestinationID else {
+            habitCreateError = "Choose a repository and stream."
+            return
+        }
+        habitCreateError = nil
+        let refreshDate = habitsService.snapshot.date.isEmpty ? DailyFocusService.todayString() : habitsService.snapshot.date
+        if let habit = habitBeingEdited {
+            Task {
+                let succeeded = await habitsService.update(
+                    CronaUpdateHabitRequest(
+                        id: habit.id,
+                        name: name,
+                        description: description.isEmpty ? nil : description,
+                        scheduleType: schedule,
+                        weekdays: weekdays,
+                        targetMinutes: targetMinutes,
+                        active: habitCreateActive
+                    ),
+                    refreshDate: refreshDate
+                )
+                if succeeded { self.habitBeingEdited = nil; self.isHabitCreatorPresented = false }
+            }
+        } else {
+            Task {
+                let succeeded = await habitsService.create(
+                    CronaCreateHabitRequest(
+                        streamID: streamID,
+                        name: name,
+                        description: description.isEmpty ? nil : description,
+                        scheduleType: schedule,
+                        weekdays: weekdays,
+                        targetMinutes: targetMinutes
+                    ),
+                    refreshDate: refreshDate
+                )
+                if succeeded { self.isHabitCreatorPresented = false }
+            }
+        }
+    }
+
+    func submitHabitActionEditor() {
+        guard case .delete(let habit) = habitActionEditor else { return }
+        let refreshDate = habitsService.snapshot.date.isEmpty ? DailyFocusService.todayString() : habitsService.snapshot.date
+        Task {
+            if await habitsService.delete(habit, refreshDate: refreshDate) {
+                habitActionEditor = nil
+            }
+        }
+    }
+
+    func cancelHabitActionEditor() {
+        guard !habitsService.isManagingHabit else { return }
+        habitActionEditor = nil
+        habitsService.clearManagementError()
+    }
+
     func submitIssueCreator() {
         let title = issueCreateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = issueCreateDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         let estimateText = issueCreateEstimate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title.count <= 120,
-              description.count <= 2_000,
-              let streamID = issueCreateDestinationID
+            description.count <= 2_000,
+            let streamID = issueCreateDestinationID
         else { return }
-        guard case let .success(estimate) = FlexibleDurationParser.optionalMinutes(estimateText) else { return }
-        let logicalDate = daemonConnection.currentDate.isEmpty
-            ? (dailyFocusService.snapshot.date.isEmpty ? DailyFocusService.todayString() : dailyFocusService.snapshot.date)
+        guard case .success(let estimate) = FlexibleDurationParser.optionalMinutes(estimateText)
+        else { return }
+        let logicalDate =
+            daemonConnection.currentDate.isEmpty
+            ? (dailyFocusService.snapshot.date.isEmpty
+                ? DailyFocusService.todayString() : dailyFocusService.snapshot.date)
             : daemonConnection.currentDate
         if let issueBeingEdited {
             let issue = issueBeingEdited
@@ -962,9 +1177,15 @@ final class CompanionAppState: ObservableObject {
                 status: created.status,
                 estimateMinutes: created.estimateMinutes,
                 workedSeconds: created.workedSeconds,
-                todoForDate: created.todoForDate
+                todoForDate: created.todoForDate,
+                repoName: created.repoName,
+                streamName: created.streamName,
+                description: created.description,
+                notes: created.notes,
+                pinnedDaily: created.pinnedDaily
             )
-            issueCreationSuccess = IssueCreationSuccess(issue: issue, plannedForToday: issueCreateForToday)
+            issueCreationSuccess = IssueCreationSuccess(
+                issue: issue, plannedForToday: issueCreateForToday)
             await dismissIssueCreatorPresentationAndWait()
             await dailyFocusService.refresh()
             scheduleIssueCreationSuccessDismissal()
@@ -973,8 +1194,8 @@ final class CompanionAppState: ObservableObject {
 
     func startFocusFromCreatedIssue() {
         guard let success = issueCreationSuccess,
-              success.plannedForToday,
-              !hasActiveFocusSession
+            success.plannedForToday,
+            !hasActiveFocusSession
         else { return }
         issueCreationSuccessDismissTask?.cancel()
         issueCreationSuccess = nil
@@ -1006,8 +1227,8 @@ final class CompanionAppState: ObservableObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
             guard let self,
-                  !self.isIssueCreatorContentVisible,
-                  presentationGeneration == self.issueCreatorPresentationGeneration
+                !self.isIssueCreatorContentVisible,
+                presentationGeneration == self.issueCreatorPresentationGeneration
             else { return }
             self.isIssueCreatorPresented = false
             await Task.yield()
@@ -1022,7 +1243,7 @@ final class CompanionAppState: ObservableObject {
         }
         try? await Task.sleep(for: .milliseconds(180))
         guard !isIssueCreatorContentVisible,
-              presentationGeneration == issueCreatorPresentationGeneration
+            presentationGeneration == issueCreatorPresentationGeneration
         else { return }
         isIssueCreatorPresented = false
         await Task.yield()
@@ -1071,8 +1292,10 @@ final class CompanionAppState: ObservableObject {
     func presentManualSession(for issue: DailyFocusIssue) {
         issueActionsService.clearError()
         manualSessionSummary = ""
-        manualSessionDate = dailyFocusService.snapshot.date.isEmpty
-            ? (daemonConnection.currentDate.isEmpty ? DailyFocusService.todayString() : daemonConnection.currentDate)
+        manualSessionDate =
+            dailyFocusService.snapshot.date.isEmpty
+            ? (daemonConnection.currentDate.isEmpty
+                ? DailyFocusService.todayString() : daemonConnection.currentDate)
             : dailyFocusService.snapshot.date
         manualSessionWorkHours = 1
         manualSessionWorkMinutes = 0
@@ -1105,7 +1328,7 @@ final class CompanionAppState: ObservableObject {
     func submitIssueActionEditor() {
         guard let editor = issueActionEditor else { return }
         switch editor {
-        case let .status(issue, status):
+        case .status(let issue, let status):
             let trimmedNote = issueActionNote.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !status.requiresNote || !trimmedNote.isEmpty else {
                 return
@@ -1121,7 +1344,7 @@ final class CompanionAppState: ObservableObject {
                     issueActionNote = ""
                 }
             }
-        case let .dueDate(issue):
+        case .dueDate(let issue):
             let date = CronaCalendarDate.string(from: issueActionDate)
             Task {
                 let succeeded = await issueActionsService.setDueDate(issue: issue, date: date)
@@ -1129,7 +1352,7 @@ final class CompanionAppState: ObservableObject {
                     issueActionEditor = nil
                 }
             }
-        case let .manualSession(issue):
+        case .manualSession(let issue):
             manualSessionError = nil
             let workMinutes = manualSessionWorkHours * 60 + manualSessionWorkMinutes
             let breakMinutes = manualSessionBreakHours * 60 + manualSessionBreakMinutes
@@ -1141,11 +1364,17 @@ final class CompanionAppState: ObservableObject {
                 manualSessionError = "Choose a valid session date."
                 return
             }
-            let startTime = manualSessionTimesEnabled
-                ? formattedManualClock(hour: manualSessionStartHour, minute: manualSessionStartMinute, period: manualSessionStartPeriod)
+            let startTime =
+                manualSessionTimesEnabled
+                ? formattedManualClock(
+                    hour: manualSessionStartHour, minute: manualSessionStartMinute,
+                    period: manualSessionStartPeriod)
                 : nil
-            let endTime = manualSessionTimesEnabled
-                ? formattedManualClock(hour: manualSessionEndHour, minute: manualSessionEndMinute, period: manualSessionEndPeriod)
+            let endTime =
+                manualSessionTimesEnabled
+                ? formattedManualClock(
+                    hour: manualSessionEndHour, minute: manualSessionEndMinute,
+                    period: manualSessionEndPeriod)
                 : nil
             Task {
                 let request = CronaManualSessionLogRequest(
@@ -1164,7 +1393,7 @@ final class CompanionAppState: ObservableObject {
                     manualSessionError = nil
                 }
             }
-        case let .delete(issue):
+        case .delete(let issue):
             Task {
                 let succeeded = await issueActionsService.deleteIssue(issue)
                 if succeeded {
@@ -1195,7 +1424,8 @@ final class CompanionAppState: ObservableObject {
             logger.error("Cannot present end session flow without an active session")
             return
         }
-        logger.debug("Presenting end session flow from \(String(describing: source), privacy: .public)")
+        logger.debug(
+            "Presenting end session flow from \(String(describing: source), privacy: .public)")
         pendingEndSessionID = sessionID
         endSessionPresentationSource = source
         endSessionCommitMessage = ""
@@ -1222,13 +1452,14 @@ final class CompanionAppState: ObservableObject {
             endSessionErrorMessage = "A commit message is required."
             return
         }
-#if DEBUG
-        if isDeveloperPreviewActive {
-            dismissDeveloperPreviews()
-            return
-        }
-#endif
-        guard let sessionID = pendingEndSessionID, sessionID == timerService.snapshot.sessionID else {
+        #if DEBUG
+            if isDeveloperPreviewActive {
+                dismissDeveloperPreviews()
+                return
+            }
+        #endif
+        guard let sessionID = pendingEndSessionID, sessionID == timerService.snapshot.sessionID
+        else {
             endSessionErrorMessage = "The active session changed. Refresh and try again."
             return
         }
@@ -1238,12 +1469,15 @@ final class CompanionAppState: ObservableObject {
 
         Task {
             do {
-                _ = try await daemonConnection.withClient { try await $0.timerEnd(commitMessage: trimmedMessage) }
+                _ = try await daemonConnection.withClient {
+                    try await $0.timerEnd(commitMessage: trimmedMessage)
+                }
                 await MainActor.run {
                     self.startEndSessionFallback(for: sessionID)
                 }
             } catch {
-                logger.error("Failed to end timer: \(error.localizedDescription, privacy: .private)")
+                logger.error(
+                    "Failed to end timer: \(error.localizedDescription, privacy: .private)")
                 await MainActor.run {
                     self.isSubmittingEndSession = false
                     self.endSessionErrorMessage = error.localizedDescription
@@ -1264,7 +1498,9 @@ final class CompanionAppState: ObservableObject {
                 await habitsService.refresh()
                 selectedFocusIssue = nil
             } catch {
-                logger.error("Failed to start focus session: \(error.localizedDescription, privacy: .private)")
+                logger.error(
+                    "Failed to start focus session: \(error.localizedDescription, privacy: .private)"
+                )
             }
         }
     }
@@ -1344,7 +1580,8 @@ final class CompanionAppState: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] snapshot in
                 guard let self else { return }
-                let isActive = snapshot.sessionID != nil
+                let isActive =
+                    snapshot.sessionID != nil
                     && snapshot.state != "idle"
                     && snapshot.state != "disconnected"
                 if isActive, self.selectedPopoverTab != .now {
@@ -1371,7 +1608,7 @@ final class CompanionAppState: ObservableObject {
             wellbeingService.objectWillChange.eraseToAnyPublisher(),
             popoverStatsService.objectWillChange.eraseToAnyPublisher(),
             breakScreenService.objectWillChange.eraseToAnyPublisher(),
-            appUpdateService.objectWillChange.eraseToAnyPublisher()
+            appUpdateService.objectWillChange.eraseToAnyPublisher(),
         ]
         .forEach { publisher in
             publisher
@@ -1407,7 +1644,7 @@ final class CompanionAppState: ObservableObject {
 
     private func handleDayStart(_ event: CronaProtocolEvent) {
         guard let payload = try? event.decodePayload(CronaDayBoundaryEventPayload.self),
-              !payload.logicalDate.isEmpty
+            !payload.logicalDate.isEmpty
         else {
             logger.error("Ignoring malformed day.start event")
             return
@@ -1428,10 +1665,13 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func buildExtendRequest(additionalSeconds: Int?) -> CronaTimerExtendRequest? {
-        Self.buildQuickExtendRequest(snapshot: timerService.snapshot, additionalSeconds: additionalSeconds)
+        Self.buildQuickExtendRequest(
+            snapshot: timerService.snapshot, additionalSeconds: additionalSeconds)
     }
 
-    static func buildQuickExtendRequest(snapshot: TimerSnapshot, additionalSeconds: Int?) -> CronaTimerExtendRequest? {
+    static func buildQuickExtendRequest(snapshot: TimerSnapshot, additionalSeconds: Int?)
+        -> CronaTimerExtendRequest?
+    {
         guard let additionalSeconds, additionalSeconds > 0 else {
             return nil
         }
@@ -1464,7 +1704,8 @@ final class CompanionAppState: ObservableObject {
                 self.finalizeEndSessionUI()
             } else {
                 self.isSubmittingEndSession = false
-                self.endSessionErrorMessage = "The session end was sent, but confirmation did not arrive. Refresh and try again."
+                self.endSessionErrorMessage =
+                    "The session end was sent, but confirmation did not arrive. Refresh and try again."
             }
         }
     }
@@ -1510,14 +1751,17 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func handleHardLimitReached(_ event: CronaProtocolEvent) {
-        logger.debug("Handling hard limit popup for session: \(event.sessionID ?? "nil", privacy: .private(mask: .hash))")
+        logger.debug(
+            "Handling hard limit popup for session: \(event.sessionID ?? "nil", privacy: .private(mask: .hash))"
+        )
         Task { [self] in
             await timerService.refresh()
             await contextService.refresh()
             await MainActor.run {
                 guard preferences.preferences.showHardLimitActionPopups else { return }
                 guard timerService.snapshot.sessionID != nil else { return }
-                guard timerService.snapshot.hardLimitActive, timerService.snapshot.hardLimitExpired else { return }
+                guard timerService.snapshot.hardLimitActive, timerService.snapshot.hardLimitExpired
+                else { return }
 
                 finalizeHardLimitWarningIndicator()
                 hardLimitPopupDismissTask?.cancel()
@@ -1539,7 +1783,9 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func handleTimerExtended(_ event: CronaProtocolEvent) {
-        guard let sessionID = hardLimitPopupSessionID, sessionID == event.sessionID || event.sessionID == nil else { return }
+        guard let sessionID = hardLimitPopupSessionID,
+            sessionID == event.sessionID || event.sessionID == nil
+        else { return }
         Task {
             await timerService.refresh()
             await contextService.refresh()
@@ -1623,11 +1869,11 @@ final class CompanionAppState: ObservableObject {
     }
 
     private var isInactivityDeveloperPreviewActive: Bool {
-#if DEBUG
-        developerPreviewKind == .inactivity
-#else
-        false
-#endif
+        #if DEBUG
+            developerPreviewKind == .inactivity
+        #else
+            false
+        #endif
     }
 
     private func reconcileHardLimitWarningIndicatorPresentation() {
@@ -1642,7 +1888,9 @@ final class CompanionAppState: ObservableObject {
         }
 
         let snapshot = timerService.snapshot
-        guard snapshot.sessionID != nil, snapshot.state == "running", snapshot.hardLimitActive, !snapshot.hardLimitExpired else {
+        guard snapshot.sessionID != nil, snapshot.state == "running", snapshot.hardLimitActive,
+            !snapshot.hardLimitExpired
+        else {
             finalizeHardLimitWarningIndicator()
             return
         }
@@ -1752,8 +2000,9 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func finalizeHardLimitWarningIndicator() {
-        guard hardLimitWarningIndicatorModel != nil
-            || windowService.hardLimitWarningIndicatorVisible
+        guard
+            hardLimitWarningIndicatorModel != nil
+                || windowService.hardLimitWarningIndicatorVisible
         else {
             return
         }
@@ -1785,7 +2034,9 @@ final class CompanionAppState: ObservableObject {
     }
 
     private func startInactivityPopupCountdown() {
-        inactivityPopupCountdownService.start(duration: InactivityPopupConfiguration.autoDismissDuration) { [weak self] in
+        inactivityPopupCountdownService.start(
+            duration: InactivityPopupConfiguration.autoDismissDuration
+        ) { [weak self] in
             guard let self, self.inactivityPopupPhase == .decision else { return }
             self.finalizeInactivityPopup()
         }
@@ -1800,7 +2051,9 @@ final class CompanionAppState: ObservableObject {
         }
     }
 
-    private func buildPomodoroExtendRequest(choice: HardLimitExtendChoice) -> CronaTimerExtendRequest? {
+    private func buildPomodoroExtendRequest(choice: HardLimitExtendChoice)
+        -> CronaTimerExtendRequest?
+    {
         guard let sessions = choice.sessionValue, sessions > 0 else { return nil }
         return CronaTimerExtendRequest(
             additionalSeconds: 0,
@@ -1809,11 +2062,14 @@ final class CompanionAppState: ObservableObject {
             hardLimitWorkSeconds: max(1, timerService.snapshot.hardLimitWorkSeconds),
             hardLimitBreakSeconds: max(0, timerService.snapshot.hardLimitBreakSeconds),
             hardLimitLongBreakSeconds: max(0, timerService.snapshot.hardLimitLongBreakSeconds),
-            hardLimitCyclesBeforeLongBreak: max(0, timerService.snapshot.hardLimitCyclesBeforeLongBreak)
+            hardLimitCyclesBeforeLongBreak: max(
+                0, timerService.snapshot.hardLimitCyclesBeforeLongBreak)
         )
     }
 
-    private func buildHardLimitWarningIndicatorModel(snapshot: TimerSnapshot) -> HardLimitWarningIndicatorModel? {
+    private func buildHardLimitWarningIndicatorModel(snapshot: TimerSnapshot)
+        -> HardLimitWarningIndicatorModel?
+    {
         let leadSeconds = CompanionPreferences.normalizedHardLimitWarningLeadSeconds(
             preferences.preferences.hardLimitWarningLeadSeconds
         )
@@ -1822,8 +2078,7 @@ final class CompanionAppState: ObservableObject {
         guard remainingSeconds > 0, remainingSeconds <= leadSeconds else { return nil }
 
         let sessionID = snapshot.sessionID ?? "unknown"
-        if
-            presentation.mode == .pomodoro,
+        if presentation.mode == .pomodoro,
             let currentSegment = TimerSegmentKind(rawValue: snapshot.segmentType),
             let nextSegment = TimerSegmentKind(rawValue: snapshot.nextSegmentType),
             currentSegment != nextSegment
@@ -1841,7 +2096,8 @@ final class CompanionAppState: ObservableObject {
                 return nil
             }
 
-            let id = "\(sessionID):\(kind.rawValue):\(snapshot.segmentType ?? "unknown"):\(snapshot.nextSegmentType ?? "unknown")"
+            let id =
+                "\(sessionID):\(kind.rawValue):\(snapshot.segmentType ?? "unknown"):\(snapshot.nextSegmentType ?? "unknown")"
             return HardLimitWarningIndicatorModel(
                 id: id,
                 kind: kind,
@@ -1874,6 +2130,18 @@ enum InactivityPopupPhase: Equatable {
 
 enum InactivityPopupConfiguration {
     static let autoDismissDuration: TimeInterval = 60
+}
+
+enum PopoverDetailRoute: Equatable {
+    case issueDetails(issueID: Int64)
+    case habitDetails(habitID: Int64)
+
+    var title: String {
+        switch self {
+        case .issueDetails: return "Issue Details"
+        case .habitDetails: return "Habit Details"
+        }
+    }
 }
 
 enum HardLimitExtendChoice: String, CaseIterable, Identifiable, Equatable {

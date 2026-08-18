@@ -175,6 +175,21 @@ final class CronaDaemonClient {
         )
     }
 
+    func createHabit(_ input: CronaCreateHabitRequest) async throws -> CronaHabitWithMeta {
+        try await request(method: "habit.create", params: AnyEncodable(input))
+    }
+
+    func updateHabit(_ input: CronaUpdateHabitRequest) async throws -> CronaHabitWithMeta {
+        try await request(method: "habit.update", params: AnyEncodable(input))
+    }
+
+    func deleteHabit(habitID: Int64) async throws -> CronaOKResponse {
+        try await request(
+            method: "habit.delete",
+            params: AnyEncodable(CronaNumericIDRequest(id: habitID))
+        )
+    }
+
     func issueStatusTransitions(issueID: Int64) async throws -> CronaIssueStatusTransitions {
         try await request(
             method: "issue.status_transitions",

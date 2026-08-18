@@ -81,11 +81,13 @@ struct SettingsPane<Content: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.title3.weight(.semibold))
+                    .padding(.leading, SettingsLayoutMetrics.cardContentHorizontalPadding)
 
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(PopupVisualTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, SettingsLayoutMetrics.cardContentHorizontalPadding)
             }
 
             content
@@ -108,6 +110,7 @@ struct SettingsCard<Content: View>: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(PopupVisualTheme.secondaryText)
                 .textCase(.uppercase)
+                .padding(.leading, SettingsLayoutMetrics.cardContentHorizontalPadding)
 
             VStack(alignment: .leading, spacing: 0) {
                 content

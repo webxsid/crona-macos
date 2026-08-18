@@ -285,6 +285,325 @@ struct IssueCreatorView: View {
     }
 }
 
+struct HabitCreatorView: View {
+    @ObservedObject var appState: CompanionAppState
+    @State private var destinationPickerPresented = false
+    @State private var selectedRepoID: Int64?
+    @State private var streamQuery = ""
+    @State private var scheduleSelection = "daily"
+
+    private let weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button(action: appState.cancelHabitCreator) {
+                    Image(systemName: "chevron.left").frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+                Text(appState.habitBeingEdited == nil ? "Create Habit" : "Edit Habit")
+                    .font(.headline)
+                Spacer()
+            }
+
+            TextField("Habit name", text: $appState.habitCreateName)
+                .textFieldStyle(.plain)
+                .creatorField()
+
+            if appState.habitBeingEdited == nil {
+                destinationField
+            } else {
+                HStack {
+                    Label("Destination", systemImage: "folder")
+                    Spacer()
+                    Text(destinationLabel)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .creatorField()
+            }
+
+            scheduleSection
+
+            TextField("Target duration (optional, e.g. 30m)", text: $appState.habitCreateTarget)
+                .textFieldStyle(.plain)
+                .creatorField()
+
+            TextField("Description (optional)", text: $appState.habitCreateDescription, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(2...4)
+                .creatorField()
+
+            if appState.habitBeingEdited != nil {
+                Toggle("Active", isOn: $appState.habitCreateActive)
+            }
+
+            Spacer(minLength: 0)
+
+            if let error = appState.habitCreateError ?? appState.habitsService.lastManagementError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+            }
+
+            HStack {
+                Spacer()
+                Button(appState.habitsService.isManagingHabit ? "Saving…" : "Save", action: appState.submitHabitCreator)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(appState.habitsService.isManagingHabit)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .frame(minHeight: 500, maxHeight: 560, alignment: .top)
+        .onAppear {
+            scheduleSelection = appState.habitCreateScheduleType
+            selectedRepoID = selectedDestination?.repoID ?? appState.issueCreationService.destinations.first?.repoID
+            Task { await appState.issueCreationService.loadDestinations() }
+        }
+    }
+
+    private var destinationField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                selectedRepoID = selectedDestination?.repoID ?? selectedRepoID ?? repoGroups.first?.id
+                destinationPickerPresented.toggle()
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "folder")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Destination").font(.caption2).foregroundStyle(.secondary)
+                        Text(selectedDestination?.label ?? "Choose repo and stream")
+                            .lineLimit(1)
+                            .foregroundStyle(selectedDestination == nil ? .secondary : PopupVisualTheme.primaryText)
+                    }
+                    Spacer()
+                    Image(systemName: destinationPickerPresented ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .creatorField()
+
+            if destinationPickerPresented {
+                destinationDrillDown
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: destinationPickerPresented)
+    }
+
+    private var destinationDrillDown: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    ForEach(repoGroups) { repo in
+                        Button {
+                            selectedRepoID = repo.id
+                            streamQuery = ""
+                        } label: {
+                            Text(repo.name)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 7)
+                                .background(repo.id == selectedRepoID ? Color.accentColor.opacity(0.22) : .clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(width: 105, height: 145)
+
+            Divider().padding(.horizontal, 8)
+
+            VStack(spacing: 7) {
+                TextField("Search streams", text: $streamQuery)
+                    .textFieldStyle(.plain)
+                    .creatorField()
+
+                if appState.issueCreationService.isLoadingDestinations {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if repoGroups.isEmpty {
+                    Text("No repositories or streams available.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if filteredStreams.isEmpty {
+                    Text(streamQuery.isEmpty ? "No streams" : "No matches")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 3) {
+                            ForEach(filteredStreams) { destination in
+                                Button {
+                                    appState.habitCreateDestinationID = destination.streamID
+                                    selectedRepoID = destination.repoID
+                                    streamQuery = ""
+                                    destinationPickerPresented = false
+                                } label: {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: destination.streamID == appState.habitCreateDestinationID
+                                            ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(destination.streamID == appState.habitCreateDestinationID ? .yellow : .secondary)
+                                        Text(destination.streamName).lineLimit(1)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.horizontal, 6).padding(.vertical, 5)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 145, maxHeight: 145)
+        }
+        .padding(8)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.7))
+    }
+
+    private var scheduleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Schedule")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                scheduleOption("daily", icon: "sun.max.fill", title: "Daily", subtitle: "Every day")
+                scheduleOption("weekdays", icon: "briefcase.fill", title: "Weekdays", subtitle: "Monday through Friday")
+                scheduleOption("weekly", icon: "calendar", title: "Custom", subtitle: "Choose specific days")
+            }
+
+            if scheduleSelection == "weekly" {
+                HStack(spacing: 5) {
+                    ForEach(0..<weekdayNames.count, id: \.self) { day in
+                        Button {
+                            if appState.habitCreateWeekdays.contains(day) {
+                                appState.habitCreateWeekdays.remove(day)
+                            } else {
+                                appState.habitCreateWeekdays.insert(day)
+                            }
+                        } label: {
+                            Text(weekdayNames[day])
+                                .font(.caption2.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 7)
+                        }
+                        .buttonStyle(.plain)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(appState.habitCreateWeekdays.contains(day) ? Color.accentColor.opacity(0.22) : PopupVisualTheme.primaryText.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(appState.habitCreateWeekdays.contains(day) ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1)
+                        )
+                    }
+                }
+                Text("Runs only on the days you select.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func scheduleOption(_ value: String, icon: String, title: String, subtitle: String) -> some View {
+        Button {
+            scheduleSelection = value
+            DispatchQueue.main.async {
+                appState.habitCreateScheduleType = value
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundStyle(scheduleSelection == value ? Color.accentColor : .secondary)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.weight(.semibold))
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: scheduleSelection == value ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(scheduleSelection == value ? Color.accentColor : .secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(scheduleSelection == value ? Color.accentColor.opacity(0.12) : PopupVisualTheme.primaryText.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(scheduleSelection == value ? Color.accentColor.opacity(0.45) : PopupVisualTheme.surfaceStroke, lineWidth: 1)
+        )
+    }
+
+    private var selectedDestination: IssueDestination? {
+        appState.issueCreationService.destinations.first { $0.streamID == appState.habitCreateDestinationID }
+    }
+
+    private var destinationLabel: String {
+        selectedDestination?.label ?? "Unknown destination"
+    }
+
+    private struct RepoGroup: Identifiable {
+        let id: Int64
+        let name: String
+    }
+
+    private var repoGroups: [RepoGroup] {
+        var seen = Set<Int64>()
+        return appState.issueCreationService.destinations.compactMap { destination in
+            guard seen.insert(destination.repoID).inserted else { return nil }
+            return RepoGroup(id: destination.repoID, name: destination.repoName)
+        }
+    }
+
+    private var filteredStreams: [IssueDestination] {
+        let query = streamQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return appState.issueCreationService.destinations.filter {
+            $0.repoID == selectedRepoID
+                && (query.isEmpty || $0.streamName.localizedCaseInsensitiveContains(query))
+        }
+    }
+}
+
+struct HabitDeleteConfirmationView: View {
+    @ObservedObject var appState: CompanionAppState
+    let habit: HabitRowModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Delete Habit", systemImage: "trash")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text("Delete \"\(habit.name)\"? This cannot be undone.")
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = appState.habitsService.lastManagementError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Button("Cancel", action: appState.cancelHabitActionEditor)
+                Spacer()
+                Button("Delete", role: .destructive, action: appState.submitHabitActionEditor)
+                    .disabled(appState.habitsService.isManagingHabit)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+        .frame(minHeight: 220)
+    }
+}
+
 struct IssueCreationSuccessView: View {
     @ObservedObject var appState: CompanionAppState
     let success: IssueCreationSuccess

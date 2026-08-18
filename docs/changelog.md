@@ -6,6 +6,33 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.14] - 2026-08-18
+
+Crona for macOS v1.0.0-beta.14 expands habit management in the menu-bar companion and updates the daemon protocol contract.
+
+### Added
+
+- Habit creation, editing, and explicit deletion confirmation from the menu-bar popover.
+- Habit detail, kebab, and secondary-click actions for viewing and managing habits.
+- Native habit schedule selection for daily, weekday, and custom schedules.
+- Repository and stream selection for habits using the issue-style destination picker.
+
+### Changed
+
+- Habit rows now use compact completion/failure controls and a dedicated action menu.
+- Habit creation and editing forms provide descriptive schedule subtitles and custom weekday chips.
+- The companion now targets daemon protocol version `1.5`.
+
+### Fixed
+
+- Removed SwiftUI publishing warnings caused by direct schedule Picker bindings during view updates.
+- Habit destination and schedule controls now remain stable while switching options.
+
+### Compatibility
+
+- The daemon must report protocol version `1.5` during handshake.
+- The matching daemon must support the existing `habit.create`, `habit.update`, and `habit.delete` IPC methods.
+
 ## [1.0.0-beta.13] - 2026-08-16
 
 Crona for macOS v1.0.0-beta.13 expands the menu-bar companion into a faster daily-work surface, adds daemon-backed historical Stats data, and prepares the UI for continued feature growth.

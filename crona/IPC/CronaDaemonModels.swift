@@ -79,9 +79,12 @@ struct CronaCoreSettings: Codable, Equatable {
         awayModeEnabled = try values.decodeIfPresent(Bool.self, forKey: .awayModeEnabled) ?? false
         awayDates = try values.decodeIfPresent([String].self, forKey: .awayDates) ?? []
         restWeekdays = try values.decodeIfPresent([Int].self, forKey: .restWeekdays) ?? []
-        restSpecificDates = try values.decodeIfPresent([String].self, forKey: .restSpecificDates) ?? []
-        dateDisplayPreset = try values.decodeIfPresent(String.self, forKey: .dateDisplayPreset) ?? "iso"
-        dateDisplayFormat = try values.decodeIfPresent(String.self, forKey: .dateDisplayFormat) ?? ""
+        restSpecificDates =
+            try values.decodeIfPresent([String].self, forKey: .restSpecificDates) ?? []
+        dateDisplayPreset =
+            try values.decodeIfPresent(String.self, forKey: .dateDisplayPreset) ?? "iso"
+        dateDisplayFormat =
+            try values.decodeIfPresent(String.self, forKey: .dateDisplayFormat) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -97,7 +100,9 @@ struct CronaCoreSettings: Codable, Equatable {
         if restSpecificDates.contains(date) {
             return true
         }
-        guard let parsed = ISO8601DateFormatter().date(from: "\(date)T00:00:00Z") else { return false }
+        guard let parsed = ISO8601DateFormatter().date(from: "\(date)T00:00:00Z") else {
+            return false
+        }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone.current
         let weekday = calendar.component(.weekday, from: parsed) - 1
@@ -132,7 +137,8 @@ struct CronaDayBoundarySchedule: Codable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         defaultTime = try values.decodeIfPresent(String.self, forKey: .defaultTime) ?? "00:00"
-        weekdayOverrides = try values.decodeIfPresent([Int: String].self, forKey: .weekdayOverrides) ?? [:]
+        weekdayOverrides =
+            try values.decodeIfPresent([Int: String].self, forKey: .weekdayOverrides) ?? [:]
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -156,10 +162,10 @@ struct CronaDayBoundarySchedule: Codable, Equatable {
     func isValidTime(_ value: String) -> Bool {
         let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2,
-              parts[0].count == 2,
-              parts[1].count == 2,
-              let hour = Int(parts[0]),
-              let minute = Int(parts[1])
+            parts[0].count == 2,
+            parts[1].count == 2,
+            let hour = Int(parts[0]),
+            let minute = Int(parts[1])
         else {
             return false
         }
@@ -186,9 +192,11 @@ struct CronaDayBoundarySettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        startOfDay = try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .startOfDay)
+        startOfDay =
+            try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .startOfDay)
             ?? .defaultStart
-        endOfDay = try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .endOfDay)
+        endOfDay =
+            try values.decodeIfPresent(CronaDayBoundarySchedule.self, forKey: .endOfDay)
             ?? .defaultEnd
     }
 
@@ -383,7 +391,8 @@ struct CronaAlertSettings: Decodable, Equatable {
                 ? value.boolValue ?? boundarySoundEnabled
                 : boundarySoundEnabled,
             alertSoundPreset: key == "alertSoundPreset"
-                ? value.stringValue.flatMap(CronaAlertSoundPreset.init(rawValue:)) ?? alertSoundPreset
+                ? value.stringValue.flatMap(CronaAlertSoundPreset.init(rawValue:))
+                    ?? alertSoundPreset
                 : alertSoundPreset,
             alertUrgency: key == "alertUrgency"
                 ? value.stringValue.flatMap(CronaAlertProminence.init(rawValue:)) ?? alertUrgency
@@ -473,6 +482,30 @@ struct CronaUpdateIssueRequest: Codable, Equatable {
     }
 }
 
+struct CronaCreateHabitRequest: Codable, Equatable {
+    let streamID: Int64
+    let name: String
+    let description: String?
+    let scheduleType: String
+    let weekdays: [Int]
+    let targetMinutes: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, scheduleType, weekdays, targetMinutes
+        case streamID = "streamId"
+    }
+}
+
+struct CronaUpdateHabitRequest: Codable, Equatable {
+    let id: Int64
+    let name: String?
+    let description: String?
+    let scheduleType: String?
+    let weekdays: [Int]?
+    let targetMinutes: Int?
+    let active: Bool?
+}
+
 struct CronaTimerState: Codable, Equatable {
     let state: String
     let sessionID: String?
@@ -528,6 +561,42 @@ struct CronaIssue: Codable, Equatable, Identifiable {
     let todoForDate: String?
     let completedAt: String?
     let abandonedAt: String?
+    let description: String?
+    let notes: String?
+    let repoName: String?
+    let streamName: String?
+
+    init(
+        id: Int64,
+        streamID: Int64,
+        title: String,
+        status: String,
+        estimateMinutes: Int?,
+        workedSeconds: Int,
+        pinnedDaily: Bool,
+        todoForDate: String?,
+        completedAt: String? = nil,
+        abandonedAt: String? = nil,
+        description: String? = nil,
+        notes: String? = nil,
+        repoName: String? = nil,
+        streamName: String? = nil
+    ) {
+        self.id = id
+        self.streamID = streamID
+        self.title = title
+        self.status = status
+        self.estimateMinutes = estimateMinutes
+        self.workedSeconds = workedSeconds
+        self.pinnedDaily = pinnedDaily
+        self.todoForDate = todoForDate
+        self.completedAt = completedAt
+        self.abandonedAt = abandonedAt
+        self.description = description
+        self.notes = notes
+        self.repoName = repoName
+        self.streamName = streamName
+    }
 
     enum CodingKeys: String, CodingKey {
         case id = "id"
@@ -540,6 +609,10 @@ struct CronaIssue: Codable, Equatable, Identifiable {
         case todoForDate = "todoForDate"
         case completedAt = "completedAt"
         case abandonedAt = "abandonedAt"
+        case description = "description"
+        case notes = "notes"
+        case repoName = "repoName"
+        case streamName = "streamName"
     }
 }
 
@@ -746,7 +819,8 @@ struct CronaHabitDailyItem: Decodable, Equatable, Identifiable {
         )
         self.habit = habit
         self.status = try container.decodeIfPresent(String.self, forKey: .status) ?? "completed"
-        self.completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? (status == "completed")
+        self.completed =
+            try container.decodeIfPresent(Bool.self, forKey: .completed) ?? (status == "completed")
         self.completionID = try container.decodeIfPresent(Int64.self, forKey: .completionID)
         self.completionDate = try container.decodeIfPresent(String.self, forKey: .completionDate)
         self.durationMinutes = try container.decodeIfPresent(Int.self, forKey: .durationMinutes)
@@ -814,18 +888,46 @@ struct CronaFocusScoreSummary: Codable, Equatable {
     let endDate: String
     let score: Int
     let level: String
+    let reason: String
     let workedSeconds: Int
     let restSeconds: Int
     let sessionCount: Int
     let focusDays: Int
     let days: Int
     let targetWorkedSeconds: Int
+
+    init(
+        startDate: String,
+        endDate: String,
+        score: Int,
+        level: String,
+        reason: String = "balanced",
+        workedSeconds: Int,
+        restSeconds: Int,
+        sessionCount: Int,
+        focusDays: Int,
+        days: Int,
+        targetWorkedSeconds: Int
+    ) {
+        self.startDate = startDate
+        self.endDate = endDate
+        self.score = score
+        self.level = level
+        self.reason = reason
+        self.workedSeconds = workedSeconds
+        self.restSeconds = restSeconds
+        self.sessionCount = sessionCount
+        self.focusDays = focusDays
+        self.days = days
+        self.targetWorkedSeconds = targetWorkedSeconds
+    }
 }
 
 struct CronaFocusScoreRangeDay: Codable, Equatable, Identifiable {
     let date: String
     let score: Int
     let level: String
+    let reason: String
     let hasData: Bool
 
     var id: String { date }
@@ -895,7 +997,8 @@ struct CronaManualSessionLogRequest: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case issueID = "issueId"
-        case date, workDurationSeconds, breakDurationSeconds, startTime, endTime, commitMessage, notes
+        case date, workDurationSeconds, breakDurationSeconds, startTime, endTime, commitMessage,
+            notes
     }
 }
 
@@ -989,7 +1092,7 @@ nonisolated struct CronaProtocolEvent: Decodable, Equatable {
     let payload: JSONValue?
 
     var sessionID: String? {
-        guard case let .object(object) = payload else { return nil }
+        guard case .object(let object) = payload else { return nil }
         return object["sessionId"]?.stringValue
     }
 
@@ -1008,21 +1111,21 @@ nonisolated enum JSONValue: Codable, Equatable {
     case null
 
     var stringValue: String? {
-        if case let .string(value) = self {
+        if case .string(let value) = self {
             return value
         }
         return nil
     }
 
     var boolValue: Bool? {
-        if case let .bool(value) = self {
+        if case .bool(let value) = self {
             return value
         }
         return nil
     }
 
     var intValue: Int? {
-        if case let .number(value) = self, value.rounded() == value {
+        if case .number(let value) = self, value.rounded() == value {
             return Int(value)
         }
         return nil
@@ -1043,22 +1146,24 @@ nonisolated enum JSONValue: Codable, Equatable {
         } else if let value = try? container.decode([JSONValue].self) {
             self = .array(value)
         } else {
-            throw DecodingError.typeMismatch(JSONValue.self, .init(codingPath: decoder.codingPath, debugDescription: "Unsupported JSON payload"))
+            throw DecodingError.typeMismatch(
+                JSONValue.self,
+                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported JSON payload"))
         }
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case let .string(value):
+        case .string(let value):
             try container.encode(value)
-        case let .number(value):
+        case .number(let value):
             try container.encode(value)
-        case let .bool(value):
+        case .bool(let value):
             try container.encode(value)
-        case let .object(value):
+        case .object(let value):
             try container.encode(value)
-        case let .array(value):
+        case .array(let value):
             try container.encode(value)
         case .null:
             try container.encodeNil()
@@ -1084,11 +1189,11 @@ enum CronaConnectionFailure: Error, Equatable, LocalizedError {
             return "No kernel discovery file was found."
         case .missingEndpoint:
             return "The kernel discovery file did not include an endpoint."
-        case let .incompatibleProtocol(expected, actual):
+        case .incompatibleProtocol(let expected, let actual):
             return "Protocol mismatch. Expected \(expected), received \(actual)."
-        case let .unsupportedTransport(transport):
+        case .unsupportedTransport(let transport):
             return "Unsupported transport: \(transport)."
-        case let .transport(message):
+        case .transport(let message):
             return message
         case .malformedResponse:
             return "The daemon returned an invalid response."

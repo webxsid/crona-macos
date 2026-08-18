@@ -10,6 +10,39 @@ struct DailyFocusIssue: Equatable, Identifiable {
     let estimateMinutes: Int?
     let workedSeconds: Int
     let todoForDate: String?
+    let repoName: String?
+    let streamName: String?
+    let description: String?
+    let notes: String?
+    let pinnedDaily: Bool?
+
+    init(
+        id: Int64,
+        streamID: Int64,
+        title: String,
+        status: String,
+        estimateMinutes: Int?,
+        workedSeconds: Int,
+        todoForDate: String?,
+        repoName: String? = nil,
+        streamName: String? = nil,
+        description: String? = nil,
+        notes: String? = nil,
+        pinnedDaily: Bool? = nil
+    ) {
+        self.id = id
+        self.streamID = streamID
+        self.title = title
+        self.status = status
+        self.estimateMinutes = estimateMinutes
+        self.workedSeconds = workedSeconds
+        self.todoForDate = todoForDate
+        self.repoName = repoName
+        self.streamName = streamName
+        self.description = description
+        self.notes = notes
+        self.pinnedDaily = pinnedDaily
+    }
 }
 
 struct DailyFocusSnapshot: Equatable {
@@ -64,27 +97,35 @@ final class DailyFocusService: ObservableObject {
             let today = requestedDate ?? daemonConnection.currentDate
             let resolvedDate = today.isEmpty ? Self.todayString() : today
             async let summary = daemonConnection.withClient { try await $0.issueTodaySummary() }
-            async let plan = daemonConnection.withClient { try await $0.dailyPlanGet(date: resolvedDate) }
+            async let plan = daemonConnection.withClient {
+                try await $0.dailyPlanGet(date: resolvedDate)
+            }
             let (issueSummary, dailyPlan) = try await (summary, plan)
             let orderedIssues = Self.buildIssues(summary: issueSummary, plan: dailyPlan)
-            snapshot = DailyFocusSnapshot(date: resolvedDate, issues: orderedIssues, isConnected: true)
+            snapshot = DailyFocusSnapshot(
+                date: resolvedDate, issues: orderedIssues, isConnected: true)
             logger.debug("Applied daily focus issues: \(orderedIssues.count, privacy: .public)")
         } catch {
-            logger.error("Daily focus refresh failed: \(error.localizedDescription, privacy: .private)")
+            logger.error(
+                "Daily focus refresh failed: \(error.localizedDescription, privacy: .private)")
             snapshot = DailyFocusSnapshot()
         }
     }
 
     private func handle(event: CronaProtocolEvent) {
         switch event.type {
-        case "session.started", "session.stopped", "session.ended", "timer.extended", "timer.break_deferral_warning", "timer.break_deferred", "context.issue.changed", "issue.updated", "issue.created", "issue.deleted":
+        case "session.started", "session.stopped", "session.ended", "timer.extended",
+            "timer.break_deferral_warning", "timer.break_deferred", "context.issue.changed",
+            "issue.updated", "issue.created", "issue.deleted":
             Task { await refresh() }
         default:
             break
         }
     }
 
-    static func buildIssues(summary: CronaDailyIssueSummary, plan: CronaDailyPlan) -> [DailyFocusIssue] {
+    static func buildIssues(summary: CronaDailyIssueSummary, plan: CronaDailyPlan)
+        -> [DailyFocusIssue]
+    {
         let validStatuses = Set(["planned", "active", "in_progress", "todo", "backlog"])
         var issuesByID = Dictionary(uniqueKeysWithValues: summary.issues.map { ($0.id, $0) })
         var ordered: [DailyFocusIssue] = []
@@ -92,20 +133,24 @@ final class DailyFocusService: ObservableObject {
 
         for entry in plan.entries where entry.status == "planned" {
             guard let issue = issuesByID.removeValue(forKey: entry.issueID) else { continue }
-            guard Self.isEligible(issue, anchorDate: summary.date, validStatuses: validStatuses) else { continue }
+            guard Self.isEligible(issue, anchorDate: summary.date, validStatuses: validStatuses)
+            else { continue }
             ordered.append(Self.project(issue))
             seen.insert(issue.id)
         }
 
         for issue in summary.issues where !seen.contains(issue.id) {
-            guard Self.isEligible(issue, anchorDate: summary.date, validStatuses: validStatuses) else { continue }
+            guard Self.isEligible(issue, anchorDate: summary.date, validStatuses: validStatuses)
+            else { continue }
             ordered.append(Self.project(issue))
         }
 
         return ordered
     }
 
-    private static func isEligible(_ issue: CronaIssue, anchorDate: String, validStatuses: Set<String>) -> Bool {
+    private static func isEligible(
+        _ issue: CronaIssue, anchorDate: String, validStatuses: Set<String>
+    ) -> Bool {
         if issue.status == "done" || issue.status == "abandoned" {
             return false
         }
@@ -123,7 +168,12 @@ final class DailyFocusService: ObservableObject {
             status: issue.status,
             estimateMinutes: issue.estimateMinutes,
             workedSeconds: issue.workedSeconds,
-            todoForDate: issue.todoForDate
+            todoForDate: issue.todoForDate,
+            repoName: issue.repoName,
+            streamName: issue.streamName,
+            description: issue.description,
+            notes: issue.notes,
+            pinnedDaily: issue.pinnedDaily
         )
     }
 

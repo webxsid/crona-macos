@@ -7,10 +7,51 @@ struct HabitRowModel: Equatable, Identifiable {
     let name: String
     let repoName: String
     let streamName: String
+    let active: Bool
     let status: String
     let completed: Bool
     let durationMinutes: Int?
     let targetMinutes: Int?
+    let description: String?
+    let scheduleType: String?
+    let weekdays: [Int]
+    let notes: String?
+    let completionDate: String?
+    let completionID: Int64?
+
+    init(
+        id: Int64,
+        name: String,
+        repoName: String,
+        streamName: String,
+        active: Bool = true,
+        status: String,
+        completed: Bool,
+        durationMinutes: Int?,
+        targetMinutes: Int?,
+        description: String? = nil,
+        scheduleType: String? = nil,
+        weekdays: [Int] = [],
+        notes: String? = nil,
+        completionDate: String? = nil,
+        completionID: Int64? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.repoName = repoName
+        self.streamName = streamName
+        self.active = active
+        self.status = status
+        self.completed = completed
+        self.durationMinutes = durationMinutes
+        self.targetMinutes = targetMinutes
+        self.description = description
+        self.scheduleType = scheduleType
+        self.weekdays = weekdays
+        self.notes = notes
+        self.completionDate = completionDate
+        self.completionID = completionID
+    }
 
     var supportsClearAction: Bool {
         completed || status == "failed"
@@ -35,6 +76,8 @@ final class HabitsService: ObservableObject {
     @Published var snapshot = HabitsSnapshot()
     @Published private(set) var actionInFlightHabitID: Int64?
     @Published private(set) var actionInFlightStatus: String?
+    @Published private(set) var isManagingHabit = false
+    @Published private(set) var lastManagementError: String?
 
     init(daemonConnection: DaemonConnectionService) {
         self.daemonConnection = daemonConnection
@@ -77,7 +120,9 @@ final class HabitsService: ObservableObject {
 
         do {
             logger.debug("Refreshing due habits for date: \(date, privacy: .private)")
-            let items = try await daemonConnection.withClient { try await $0.listDueHabits(date: date) }
+            let items = try await daemonConnection.withClient {
+                try await $0.listDueHabits(date: date)
+            }
             snapshot = HabitsSnapshot(
                 date: date,
                 items: items.map(Self.project),
@@ -118,7 +163,9 @@ final class HabitsService: ObservableObject {
 
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
-            logger.debug("Setting habit id=\(habit.id, privacy: .private(mask: .hash)) status=\(status, privacy: .public) date=\(date, privacy: .private)")
+            logger.debug(
+                "Setting habit id=\(habit.id, privacy: .private(mask: .hash)) status=\(status, privacy: .public) date=\(date, privacy: .private)"
+            )
             _ = try await daemonConnection.withClient {
                 try await $0.completeHabit(
                     habitID: habit.id,
@@ -131,7 +178,9 @@ final class HabitsService: ObservableObject {
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
         } catch {
-            logger.error("Habit status failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)")
+            logger.error(
+                "Habit status failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)"
+            )
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription
@@ -146,7 +195,9 @@ final class HabitsService: ObservableObject {
 
         do {
             let date = snapshot.date.isEmpty ? DailyFocusService.todayString() : snapshot.date
-            logger.debug("Clearing habit completion id=\(habit.id, privacy: .private(mask: .hash)) date=\(date, privacy: .private)")
+            logger.debug(
+                "Clearing habit completion id=\(habit.id, privacy: .private(mask: .hash)) date=\(date, privacy: .private)"
+            )
             _ = try await daemonConnection.withClient {
                 try await $0.uncompleteHabit(habitID: habit.id, date: date)
             }
@@ -154,16 +205,74 @@ final class HabitsService: ObservableObject {
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
         } catch {
-            logger.error("Habit uncomplete failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)")
+            logger.error(
+                "Habit uncomplete failed for id=\(habit.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private)"
+            )
             actionInFlightHabitID = nil
             actionInFlightStatus = nil
             snapshot.lastRefreshError = error.localizedDescription
         }
     }
 
+    func create(
+        _ request: CronaCreateHabitRequest,
+        refreshDate: String
+    ) async -> Bool {
+        guard !isManagingHabit else { return false }
+        isManagingHabit = true
+        lastManagementError = nil
+        defer { isManagingHabit = false }
+        do {
+            _ = try await daemonConnection.withClient { try await $0.createHabit(request) }
+            await refresh(date: refreshDate)
+            return true
+        } catch {
+            logger.error("Creating habit failed: \(error.localizedDescription, privacy: .private)")
+            lastManagementError = error.localizedDescription
+            return false
+        }
+    }
+
+    func update(_ request: CronaUpdateHabitRequest, refreshDate: String) async -> Bool {
+        guard !isManagingHabit else { return false }
+        isManagingHabit = true
+        lastManagementError = nil
+        defer { isManagingHabit = false }
+        do {
+            _ = try await daemonConnection.withClient { try await $0.updateHabit(request) }
+            await refresh(date: refreshDate)
+            return true
+        } catch {
+            logger.error("Updating habit failed: \(error.localizedDescription, privacy: .private)")
+            lastManagementError = error.localizedDescription
+            return false
+        }
+    }
+
+    func delete(_ habit: HabitRowModel, refreshDate: String) async -> Bool {
+        guard !isManagingHabit else { return false }
+        isManagingHabit = true
+        lastManagementError = nil
+        defer { isManagingHabit = false }
+        do {
+            _ = try await daemonConnection.withClient { try await $0.deleteHabit(habitID: habit.id) }
+            await refresh(date: refreshDate)
+            return true
+        } catch {
+            logger.error("Deleting habit failed: \(error.localizedDescription, privacy: .private)")
+            lastManagementError = error.localizedDescription
+            return false
+        }
+    }
+
+    func clearManagementError() {
+        lastManagementError = nil
+    }
+
     static func shouldRefresh(for eventType: String) -> Bool {
         switch eventType {
-        case "habit.created", "habit.updated", "habit.deleted", "habit.completed", "habit.uncompleted", "session.ended":
+        case "habit.created", "habit.updated", "habit.deleted", "habit.completed",
+            "habit.uncompleted", "session.ended":
             return true
         default:
             return false
@@ -182,10 +291,17 @@ final class HabitsService: ObservableObject {
             name: item.name,
             repoName: item.repoName,
             streamName: item.streamName,
+            active: item.habit.active,
             status: item.status,
             completed: item.completed,
             durationMinutes: item.durationMinutes,
-            targetMinutes: item.targetMinutes
+            targetMinutes: item.targetMinutes,
+            description: item.habit.description,
+            scheduleType: item.habit.scheduleType,
+            weekdays: item.habit.weekdays,
+            notes: item.notes,
+            completionDate: item.completionDate,
+            completionID: item.completionID
         )
     }
 }

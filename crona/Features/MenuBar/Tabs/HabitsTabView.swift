@@ -81,7 +81,12 @@ struct HabitsTabView: View {
                                 }
                             },
                             onFail: { appState.failHabit(habit) },
-                            onClear: { appState.clearHabitCompletion(habit) }
+                            onClear: { appState.clearHabitCompletion(habit) },
+                            openDetails: {
+                                appState.openHabitDetails(habit)
+                            },
+                            editHabit: { appState.presentHabitEditor(for: habit) },
+                            deleteHabit: { appState.presentDeleteHabit(for: habit) }
                         )
                     }
                 }
@@ -110,6 +115,9 @@ struct HabitRow: View {
     let onCancelLog: () -> Void
     let onFail: () -> Void
     let onClear: () -> Void
+    let openDetails: () -> Void
+    let editHabit: () -> Void
+    let deleteHabit: () -> Void
 
     var body: some View {
         VStack(spacing: isLogging ? 10 : 0) {
@@ -130,12 +138,37 @@ struct HabitRow: View {
                         }
                     }
                 }
+                .onTapGesture {
+                    openDetails()
+                }
 
                 Spacer()
 
+                Menu {
+                    Button(action: openDetails) {
+                        Label("View Details", systemImage: "info.circle")
+                    }
+                    Button(action: editHabit) {
+                        Label("Edit Habit", systemImage: "pencil")
+                    }
+                    Button(role: .destructive, action: deleteHabit) {
+                        Label("Delete Habit", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
+                .help("Habit actions")
+
                 if habit.supportsClearAction {
                     habitActionButton(
-                        title: "Clear",
+                        title: "Clear completion",
                         symbol: "arrow.uturn.backward",
                         tint: .white,
                         actionID: "clear",
@@ -144,21 +177,22 @@ struct HabitRow: View {
                 } else if !isLogging {
                     HStack(spacing: 7) {
                         habitActionButton(
-                            title: "Fail",
+                            title: "Mark failed",
                             symbol: "xmark",
                             tint: .red,
                             actionID: "failed",
                             action: onFail
                         )
                         habitActionButton(
-                            title: usesDurationLogging ? "Log" : "Done",
-                            symbol: usesDurationLogging ? "clock.fill" : "checkmark",
+                            title: usesDurationLogging ? "Log duration" : "Mark done",
+                            symbol: "checkmark",
                             tint: .green,
                             actionID: "completed",
                             action: usesDurationLogging ? onBeginLog : onComplete
                         )
                     }
                 }
+
             }
 
             if isLogging {
@@ -175,6 +209,17 @@ struct HabitRow: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
         .background(subtleCardBackground(stroke: statusColor.opacity(0.2), cornerRadius: 16))
+        .contextMenu {
+            Button(action: openDetails) {
+                Label("View Details", systemImage: "info.circle")
+            }
+            Button(action: editHabit) {
+                Label("Edit Habit", systemImage: "pencil")
+            }
+            Button(role: .destructive, action: deleteHabit) {
+                Label("Delete Habit", systemImage: "trash")
+            }
+        }
     }
 
     private func habitActionButton(
@@ -185,31 +230,29 @@ struct HabitRow: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            ZStack {
                 if isWorking && activeAction == actionID {
                     ProgressView()
                         .controlSize(.small)
                 } else if let symbol {
                     Image(systemName: symbol)
-                        .font(.caption.weight(.bold))
+                        .font(.system(size: 13, weight: .bold))
                 }
-                Text(title)
             }
-            .font(.caption.weight(.semibold))
             .foregroundStyle(
                 PopupVisualTheme.primaryText.opacity(actionsDisabled && !isWorking ? 0.42 : 0.9)
             )
-            .padding(.horizontal, 10)
-            .frame(minHeight: 32)
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .frame(width: 30, height: 30)
+            .contentShape(Circle())
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(tint.opacity(title == "Done" || title == "Log" ? 0.16 : 0.08))
+                Circle()
+                    .fill(tint.opacity(0.10))
                     .strokeBorder(tint.opacity(0.18), lineWidth: 1)
             )
         }
         .buttonStyle(GlassPressButtonStyle())
         .disabled(actionsDisabled)
+        .help(title)
     }
 
     private var usesDurationLogging: Bool {

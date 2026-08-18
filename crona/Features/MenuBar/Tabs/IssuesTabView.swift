@@ -574,6 +574,9 @@ struct FocusIssueRow: View {
                     Image(systemName: CronaIssueStatusPresentation.icon(for: issue.status))
                         .foregroundStyle(CronaIssueStatusPresentation.color(for: issue.status))
                 }
+                .onTapGesture {
+                    appState.openIssueDetails(issue)
+                }
 
                 HStack(spacing: 12) {
                     metaLabel(
@@ -590,6 +593,11 @@ struct FocusIssueRow: View {
             Spacer()
 
             Menu {
+                Button {
+                    appState.openIssueDetails(issue)
+                } label: {
+                    Label("View Details", systemImage: "info.circle")
+                }
                 Button {
                     appState.presentIssueEditor(for: issue)
                 } label: {

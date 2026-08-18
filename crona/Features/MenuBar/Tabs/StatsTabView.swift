@@ -215,7 +215,10 @@ struct StatsTabView: View {
     private func statsCalendarBody(snapshot: PopoverStatsSnapshot) -> some View {
         let anchoredSnapshot = snapshotForCalendar(snapshot)
         return VStack(alignment: .leading, spacing: StatsLayout.sectionSpacing) {
-            calendarMonthGrid(snapshot: anchoredSnapshot)
+            calendarMonthGrid(
+                snapshot: anchoredSnapshot,
+                monthDate: statsService.calendarMonthDate ?? anchoredSnapshot.date
+            )
 
             if let error = anchoredSnapshot.lastErrorDescription, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -248,7 +251,7 @@ struct StatsTabView: View {
                         .lineLimit(1)
 
                     if let score = selectedSnapshot.focusScore {
-                        Text(score.level.capitalized)
+                        Text(PopoverStatsService.title(for: score.reason))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(PopupVisualTheme.primaryText.opacity(0.72))
 
@@ -274,24 +277,48 @@ struct StatsTabView: View {
         .background(subtleCardBackground(stroke: PopupVisualTheme.border, cornerRadius: 22))
     }
 
-    private func calendarMonthGrid(snapshot: PopoverStatsSnapshot) -> some View {
+    private func calendarMonthGrid(snapshot: PopoverStatsSnapshot, monthDate: String) -> some View {
         let selectedDate = CronaCalendarDate.date(from: snapshot.date) ?? Date()
-        let monthTitle = calendarMonthTitle(for: selectedDate)
-        let days = calendarGridDays(containing: selectedDate)
+        let displayedMonthDate = CronaCalendarDate.date(from: monthDate) ?? selectedDate
+        let monthTitle = calendarMonthTitle(for: displayedMonthDate)
+        let days = calendarGridDays(containing: displayedMonthDate)
         let todayString =
             appState.daemonConnection.currentDate.isEmpty
             ? DailyFocusService.todayString()
             : appState.daemonConnection.currentDate
-        let visibleDates = days.compactMap { date in
-            date.map(calendarDateString(for:))
-        }
-        .filter { $0 <= todayString }
+        let visibleDates = PopoverStatsService.monthRange(for: monthDate, through: todayString)
 
         return VStack(alignment: .leading, spacing: StatsLayout.gridSpacing) {
-            Text(monthTitle)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .font(.headline)
-                .foregroundStyle(PopupVisualTheme.primaryText)
+            HStack(spacing: 8) {
+                Button {
+                    appState.popoverStatsService.showPreviousCalendarMonth()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+
+                Text(monthTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PopupVisualTheme.primaryText)
+                    .lineLimit(1)
+
+                Button {
+                    appState.popoverStatsService.showNextCalendarMonth()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(!appState.popoverStatsService.canShowNextCalendarMonth())
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .modifier(StatsDatePillSurfaceModifier())
+            .frame(height: 32)
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 7),
@@ -305,7 +332,11 @@ struct StatsTabView: View {
                 }
 
                 ForEach(Array(days.enumerated()), id: \.offset) { _, date in
-                    calendarDayCell(date: date, selectedDate: snapshot.date)
+                    calendarDayCell(
+                        date: date,
+                        selectedDate: snapshot.date,
+                        displayedMonth: monthDate
+                    )
                 }
             }
         }
@@ -327,21 +358,27 @@ struct StatsTabView: View {
             ?? PopoverStatsSnapshot(date: anchor, isLoading: true)
     }
 
-    private func calendarDayCell(date: Date?, selectedDate: String) -> some View {
+    private func calendarDayCell(
+        date: Date?,
+        selectedDate: String,
+        displayedMonth: String
+    ) -> some View {
         let calendar = calendarForLayout()
         let todayString =
             appState.daemonConnection.currentDate.isEmpty
             ? DailyFocusService.todayString()
             : appState.daemonConnection.currentDate
         let today = CronaCalendarDate.date(from: todayString) ?? Date()
-        let selected = date.map(calendarDateString(for:)) == selectedDate
+        let dateString = date.map(calendarDateString(for:))
+        let isInDisplayedMonth = dateString?.hasPrefix(String(displayedMonth.prefix(7))) == true
+        let selected = isInDisplayedMonth && dateString == selectedDate
         let isToday = date.map { calendar.isDate($0, inSameDayAs: today) } ?? false
         let isFuture =
             date.map { calendar.compare($0, to: today, toGranularity: .day) == .orderedDescending }
             ?? false
-        let cached = date.flatMap {
+        let cached = isInDisplayedMonth ? date.flatMap {
             appState.popoverStatsService.cachedSnapshot(for: calendarDateString(for: $0))
-        }
+        } : nil
         let score = cached?.focusScore?.score
         let isAway =
             date.map {
@@ -475,10 +512,10 @@ struct StatsTabView: View {
                         .fill(PopupVisualTheme.selectedControlBackground.opacity(0.38))
                 }
             }
-            .opacity(isFuture ? 0.35 : 1)
+            .opacity(isInDisplayedMonth ? (isFuture ? 0.35 : 1) : 0.28)
         }
         .buttonStyle(.plain)
-        .disabled(date == nil || isFuture)
+        .disabled(date == nil || !isInDisplayedMonth || isFuture)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             date.map {
@@ -620,7 +657,7 @@ struct StatsTabView: View {
                 .matchedGeometryEffect(id: "stats-score-ring", in: calendarTransition)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(score.level.capitalized)
+                Text(PopoverStatsService.title(for: score.reason))
                     .font(.title3.weight(.bold))
                     .foregroundStyle(PopupVisualTheme.primaryText)
                     .contentTransition(.numericText())

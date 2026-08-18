@@ -731,6 +731,24 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertTrue(label.contains("focus score 87"))
     }
 
+    func testCalendarMonthRangeIsBoundedByDisplayedMonthAndToday() {
+        let pastMonth = PopoverStatsService.monthRange(
+            for: "2026-07-15",
+            through: "2026-08-18"
+        )
+        XCTAssertEqual(pastMonth.first, "2026-07-01")
+        XCTAssertEqual(pastMonth.last, "2026-07-31")
+        XCTAssertEqual(pastMonth.count, 31)
+
+        let currentMonth = PopoverStatsService.monthRange(
+            for: "2026-08-01",
+            through: "2026-08-18"
+        )
+        XCTAssertEqual(currentMonth.first, "2026-08-01")
+        XCTAssertEqual(currentMonth.last, "2026-08-18")
+        XCTAssertEqual(currentMonth.count, 18)
+    }
+
     func testCronaCalendarDateFormatsWireDateForLocale() {
         let formatted = CronaCalendarDate.localizedString(
             from: "2026-08-09",
@@ -2294,10 +2312,13 @@ final class CronaCompanionTests: XCTestCase {
         XCTAssertEqual(timerState.resolvedCountdownMinutes, 1)
     }
 
-    func testPopoverStatsMessagesCoverKnownLevels() {
-        XCTAssertTrue(PopoverStatsService.message(for: "strong").contains("strong"))
-        XCTAssertTrue(PopoverStatsService.message(for: "steady").contains("steady"))
-        XCTAssertTrue(PopoverStatsService.message(for: "overextended").contains("recovery"))
+    func testPopoverStatsMessagesCoverKnownReasons() {
+        XCTAssertTrue(PopoverStatsService.message(for: "no_activity").contains("Start"))
+        XCTAssertTrue(PopoverStatsService.message(for: "under_target").contains("planned"))
+        XCTAssertTrue(PopoverStatsService.message(for: "needs_breaks").contains("recovery"))
+        XCTAssertTrue(PopoverStatsService.message(for: "overextended").contains("beyond"))
+        XCTAssertEqual(PopoverStatsService.title(for: "no_activity"), "Ready to begin")
+        XCTAssertEqual(PopoverStatsService.title(for: "needs_breaks"), "Take a break")
         XCTAssertFalse(PopoverStatsService.message(for: "unknown").isEmpty)
     }
 

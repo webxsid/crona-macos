@@ -95,6 +95,17 @@ final class DaemonConnectionService: ObservableObject {
         return try await body(client)
     }
 
+    func refreshHealth() async throws -> CronaHealth {
+        guard let client else {
+            throw CronaConnectionFailure.transport("The daemon client is unavailable.")
+        }
+        let health = try await client.healthGet()
+        self.health = health
+        currentDate = health.currentDate ?? ""
+        timezone = health.timezone ?? ""
+        return health
+    }
+
     func applyDayBoundary(_ payload: CronaDayBoundaryEventPayload) -> Bool {
         guard payload.kind == "start", !payload.logicalDate.isEmpty else { return false }
         guard payload.occurrenceID != lastDayBoundaryOccurrenceID else { return false }

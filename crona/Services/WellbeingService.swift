@@ -2,6 +2,7 @@ import Combine
 import Foundation
 
 struct WellbeingSnapshot: Equatable {
+    var date = ""
     var checkIn: CronaDailyCheckIn?
     var isLoading = false
     var isSaving = false
@@ -17,13 +18,16 @@ final class WellbeingService: ObservableObject {
         self.daemonConnection = daemonConnection
     }
 
-    func refresh() async {
+    func refresh(date requestedDate: String? = nil) async {
+        let date = requestedDate ?? daemonConnection.currentDate
+        let resolvedDate = date.isEmpty ? DailyFocusService.todayString() : date
+        snapshot.date = resolvedDate
         snapshot.isLoading = true
         snapshot.lastErrorDescription = nil
         defer { snapshot.isLoading = false }
         do {
             snapshot.checkIn = try await daemonConnection.withClient {
-                try await $0.checkInGet(date: DailyFocusService.todayString())
+                try await $0.checkInGet(date: resolvedDate)
             }
         } catch {
             snapshot.lastErrorDescription = error.localizedDescription
