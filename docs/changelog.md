@@ -16,22 +16,27 @@ Crona for macOS v1.0.0-beta.14 expands habit management in the menu-bar companio
 - Habit detail, kebab, and secondary-click actions for viewing and managing habits.
 - Native habit schedule selection for daily, weekday, and custom schedules.
 - Repository and stream selection for habits using the issue-style destination picker.
+- A dedicated Stats calendar with historical month navigation and daily focus-score heat-map data.
 
 ### Changed
 
 - Habit rows now use compact completion/failure controls and a dedicated action menu.
 - Habit creation and editing forms provide descriptive schedule subtitles and custom weekday chips.
 - The companion now targets daemon protocol version `1.5`.
+- Opening the popover now reconciles the companion's functional date with the daemon before rendering date-scoped tabs.
+- Calendar navigation cannot move into future months and loads the complete focus-score range for each historical month.
 
 ### Fixed
 
 - Removed SwiftUI publishing warnings caused by direct schedule Picker bindings during view updates.
 - Habit destination and schedule controls now remain stable while switching options.
+- Historical calendar data no longer jumps between dates or resets to an unrelated month when the calendar opens.
 
 ### Compatibility
 
 - The daemon must report protocol version `1.5` during handshake.
 - The matching daemon must support the existing `habit.create`, `habit.update`, and `habit.delete` IPC methods.
+- The matching daemon must support `dashboard.focus_score_range` for the Stats calendar.
 
 ## [1.0.0-beta.13] - 2026-08-16
 
