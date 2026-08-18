@@ -383,7 +383,6 @@ final class CompanionAppState: ObservableObject {
     }
 
     func start() {
-        statusBarService.installIfNeeded()
         notificationService.start()
         userActivityMonitor.start()
         launchAtLoginService.refresh()

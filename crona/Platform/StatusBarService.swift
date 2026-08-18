@@ -50,7 +50,10 @@ final class StatusBarService: NSObject {
         category: "MenuBarPopup"
     )
     private weak var appState: CompanionAppState?
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    // Creating an NSStatusItem during SwiftUI App initialization can crash
+    // Sonoma 14.5 inside SkyLight before applicationDidFinishLaunching.
+    // Keep this lazy so AppKit is ready before the status bar is touched.
+    private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var popupPanel: StatusPopupPanel?
     private let popupDisplayClock = PopupDisplayClock()
     private var statusDisplayTimer: Timer?
