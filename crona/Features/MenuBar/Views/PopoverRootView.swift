@@ -138,7 +138,7 @@ struct PopoverRootView: View {
                     Button(action: appState.checkForAppUpdates) {
                         HStack(spacing: 10) {
                             Image(systemName: "arrow.down.circle.fill")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(PopupVisualTheme.semantic(.info))
                             Text(
                                 "Crona \(appState.appUpdateService.snapshot.latestVersion ?? "") is ready"
                             )
@@ -195,7 +195,7 @@ struct PopoverRootView: View {
             {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(PopupVisualTheme.semantic(.warning))
                     Text(error)
                         .lineLimit(2)
                 }

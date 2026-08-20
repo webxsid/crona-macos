@@ -6,6 +6,30 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.15] - 2026-08-20
+
+Crona for macOS v1.0.0-beta.15 improves hard-limit decision making and strengthens release validation.
+
+### Added
+
+- Contextual session-time summaries on hard-limit decision, extension, and commit screens.
+- Main-branch and pull-request CI for the macOS unit test suite.
+
+### Changed
+
+- Hard-limit actions now distinguish between deciding whether to continue, choosing an extension, and committing completed work while showing the same authoritative spent and limit values.
+- Popup sizing keeps the new context visible without introducing scrolling.
+- Custom semantic status colors and transient popup surfaces continue to adapt to the surface underneath them.
+
+### Fixed
+
+- Committing a paused or running stopwatch session now decodes the daemon's timer-state response correctly instead of reporting a missing `ok` field.
+
+### Compatibility
+
+- The Apple marketing version remains `1.0.0`; the build number is `16`.
+- The daemon must report protocol version `1.5` during handshake.
+
 ## [1.0.0-beta.14] - 2026-08-18
 
 Crona for macOS v1.0.0-beta.14 expands habit management in the menu-bar companion and updates the daemon protocol contract.

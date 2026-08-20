@@ -43,7 +43,7 @@ struct PopoverModalScrim: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 32, style: .continuous)
-            .fill(.black.opacity(0.56))
+            .fill(PopupVisualTheme.modalScrim)
             .overlay(
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .fill(PopupVisualTheme.primaryText.opacity(0.015))

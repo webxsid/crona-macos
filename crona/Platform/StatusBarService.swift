@@ -486,6 +486,7 @@ final class StatusBarService: NSObject {
             NSRect(origin: panel.frame.origin, size: viewportSize),
             display: false
         )
+        applyPopupAppearance(panel)
         logger.info("Showing popup; frame=\(String(describing: panel.frame), privacy: .public)")
         appState?.windowService.setMenuBarPopoverPresented(true)
         Task { await appState?.coreSettingsService.refresh() }
@@ -587,6 +588,20 @@ final class StatusBarService: NSObject {
 
         popupPanel = panel
         logger.info("Created popup panel; frame=\(String(describing: panel.frame), privacy: .public), contentView=\(panel.contentView != nil, privacy: .public)")
+    }
+
+    private func applyPopupAppearance(_ panel: NSPanel) {
+        let appearance = appState?.preferences.preferences.appearance ?? .system
+        switch appearance {
+        case .system:
+            panel.appearance = nil
+        case .light:
+            panel.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            panel.appearance = NSAppearance(named: .darkAqua)
+        }
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
     }
 
     private func reconcileStatusDisplayTimer() {

@@ -65,7 +65,11 @@ struct TimerHUDRootView: View {
             HStack(spacing: size == .compact ? 8 : 12) {
                 Image(systemName: presentation.phaseSymbolName)
                     .font(.system(size: size == .compact ? 12 : 14, weight: .semibold))
-                    .foregroundStyle(presentation.mode == .stopwatch ? .yellow : .pink)
+                    .foregroundStyle(
+                        presentation.mode == .stopwatch
+                            ? PopupVisualTheme.semantic(.focus)
+                            : PopupVisualTheme.semantic(.breakTime)
+                    )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(MenuBarTextFormatter.formatClock(seconds: presentation.displaySeconds))
@@ -88,7 +92,7 @@ struct TimerHUDRootView: View {
             .background(PopoverGlassBackground(cornerRadius: 20, showsShadow: false))
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(.white.opacity(0.14))
+                    .strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.8)
             )
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .onHover { hovered in
@@ -153,9 +157,9 @@ struct TimerHUDRootView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PopupVisualTheme.semantic(.success))
                     .frame(width: 30, height: 30)
-                    .background(.green.opacity(0.14), in: Circle())
+                    .background(PopupVisualTheme.semantic(.success).opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Finish session")
@@ -183,7 +187,7 @@ struct TimerHUDRootView: View {
             if let error = appState.endSessionErrorMessage, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     .lineLimit(2)
             }
 
@@ -213,7 +217,7 @@ struct TimerHUDRootView: View {
         .background(PopoverGlassBackground(cornerRadius: 22, showsShadow: false))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.white.opacity(0.14))
+                .strokeBorder(PopupVisualTheme.surfaceStroke, lineWidth: 0.8)
         }
     }
 

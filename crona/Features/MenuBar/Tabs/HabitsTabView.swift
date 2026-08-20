@@ -26,7 +26,7 @@ struct HabitsTabView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "checklist.checked")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PopupVisualTheme.semantic(.success))
                     .frame(width: 22)
                 Text(formattedPopoverDate(snapshot.date, appState: appState))
                     .font(.title3.weight(.semibold))
@@ -95,7 +95,7 @@ struct HabitsTabView: View {
             if let error = snapshot.lastRefreshError, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     .padding(.horizontal, 4)
             }
         }
@@ -179,14 +179,14 @@ struct HabitRow: View {
                         habitActionButton(
                             title: "Mark failed",
                             symbol: "xmark",
-                            tint: .red,
+                            tint: PopupVisualTheme.semantic(.error),
                             actionID: "failed",
                             action: onFail
                         )
                         habitActionButton(
                             title: usesDurationLogging ? "Log duration" : "Mark done",
                             symbol: "checkmark",
-                            tint: .green,
+                            tint: PopupVisualTheme.semantic(.success),
                             actionID: "completed",
                             action: usesDurationLogging ? onBeginLog : onComplete
                         )
@@ -272,11 +272,11 @@ struct HabitRow: View {
     private var statusColor: Color {
         switch habit.status {
         case "completed":
-            return .green
+            return PopupVisualTheme.semantic(.success)
         case "failed":
-            return .red
+            return PopupVisualTheme.semantic(.error)
         default:
-            return .yellow
+            return PopupVisualTheme.semantic(.warning)
         }
     }
 
@@ -363,7 +363,7 @@ private struct InlineHabitLogEditor: View {
                 Image(systemName: "checkmark")
                     .fontWeight(.bold)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.green.opacity(0.2)))
+                    .background(Circle().fill(PopupVisualTheme.semantic(.success).opacity(0.2)))
                     .menuBarIconHitTarget()
             }
             .buttonStyle(GlassPressButtonStyle())

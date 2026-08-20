@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private enum PopupCloseChromeInsets {
@@ -68,6 +69,7 @@ final class WindowService {
     private var screenParametersObserver: NSObjectProtocol?
     private var activeSpaceObserver: NSObjectProtocol?
     private var externalWindowPresentationCount = 0
+    private var preferenceCancellables: Set<AnyCancellable> = []
 
     init(
         activationPolicyApplier: @escaping @MainActor (NSApplication.ActivationPolicy) -> Void = {
@@ -117,6 +119,7 @@ final class WindowService {
         }
         let panel = timerHUDPanel ?? makeTimerHUDPanel(appState: appState)
         timerHUDPanel = panel
+        prepareTransientPanel(panel)
         let preferences = appState.preferences.preferences
         let desiredSize = preferences.timerHUDSize
         if timerHUDAppliedSize != desiredSize {
@@ -330,6 +333,15 @@ final class WindowService {
 
     func configure(appState: CompanionAppState) {
         self.appState = appState
+        applyAppearance(to: allTransientPanels, using: appState.preferences.preferences.appearance)
+        appState.preferences.$preferences
+            .map(\.appearance)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] appearance in
+                self?.applyAppearance(to: self?.allTransientPanels ?? [], using: appearance)
+            }
+            .store(in: &preferenceCancellables)
         screenParametersObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -350,6 +362,43 @@ final class WindowService {
                 self?.reconcileTransientPopupsForActiveSpace()
             }
         }
+    }
+
+    private var allTransientPanels: [NSPanel] {
+        var panels: [NSPanel] = [
+            hardLimitPanel,
+            inactivityPanel,
+            smartPauseResumePanel,
+            timerHUDPanel,
+            hardLimitWarningPanel,
+        ].compactMap { $0 }
+        panels.append(contentsOf: breakScreenPanels.values.map { $0 as NSPanel })
+        #if DEBUG
+            if let developerBreakScreenPanel { panels.append(developerBreakScreenPanel) }
+        #endif
+        return panels
+    }
+
+    private func applyAppearance(
+        to panels: [NSPanel],
+        using appearance: CompanionAppearance
+    ) {
+        let nsAppearance: NSAppearance?
+        switch appearance {
+        case .system: nsAppearance = nil
+        case .light: nsAppearance = NSAppearance(named: .aqua)
+        case .dark: nsAppearance = NSAppearance(named: .darkAqua)
+        }
+        for panel in panels {
+            panel.appearance = nsAppearance
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+        }
+    }
+
+    private func prepareTransientPanel(_ panel: NSPanel) {
+        guard let appState else { return }
+        applyAppearance(to: [panel], using: appState.preferences.preferences.appearance)
     }
 
     private func reconcileTransientPopupsForActiveSpace() {
@@ -710,6 +759,7 @@ final class WindowService {
         let targetScreen = popupTargetScreen()
         let panel = hardLimitPanel ?? makeHardLimitPanel(appState: appState)
         hardLimitPanel = panel
+        prepareTransientPanel(panel)
         resizeHardLimitPanel(panel, animated: false)
         position(panel: panel, on: targetScreen)
 
@@ -794,6 +844,7 @@ final class WindowService {
         let targetScreen = popupTargetScreen()
         let panel = inactivityPanel ?? makeInactivityPanel(appState: appState)
         inactivityPanel = panel
+        prepareTransientPanel(panel)
         resizeInactivityPanel(panel, animated: false)
         position(
             panel: panel,
@@ -838,6 +889,7 @@ final class WindowService {
 
         let panel = smartPauseResumePanel ?? makeSmartPauseResumePanel(appState: appState)
         smartPauseResumePanel = panel
+        prepareTransientPanel(panel)
         panel.setFrame(
             NSRect(
                 x: 0,
@@ -915,6 +967,7 @@ final class WindowService {
             panel = makeHardLimitWarningPanel(appState: appState)
             hardLimitWarningPanel = panel
         }
+        prepareTransientPanel(panel)
 
         installHardLimitWarningMonitorsIfNeeded()
         positionWarning(panel: panel)

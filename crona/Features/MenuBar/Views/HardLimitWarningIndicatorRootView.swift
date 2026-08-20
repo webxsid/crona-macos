@@ -23,7 +23,7 @@ struct HardLimitWarningIndicatorRootView: View {
                             .overlay {
                                 Image(systemName: model.kind.symbolName)
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.black)
+                                    .foregroundStyle(PopupVisualTheme.primaryText)
                             }
 
                         Text(model.title)

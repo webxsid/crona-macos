@@ -258,7 +258,7 @@ struct HabitDetailView: View {
                         if let durationError {
                             Text(durationError)
                                 .font(.caption)
-                                .foregroundStyle(.red.opacity(0.9))
+                                .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                         }
                     }
                 }
@@ -332,9 +332,9 @@ struct HabitDetailView: View {
 
     private var habitTint: Color {
         switch habit.status {
-        case "completed": return .green
-        case "failed": return .red
-        default: return .yellow
+        case "completed": return PopupVisualTheme.semantic(.success)
+        case "failed": return PopupVisualTheme.semantic(.error)
+        default: return PopupVisualTheme.semantic(.warning)
         }
     }
 

@@ -6,12 +6,12 @@ enum CronaIssueStatusColor: String, Equatable {
     var color: Color {
         switch self {
         case .subtle: return PopupVisualTheme.secondaryText
-        case .blue: return .blue
-        case .cyan: return .cyan
-        case .yellow: return .yellow
-        case .red: return .red
-        case .magenta: return .purple
-        case .green: return .green
+        case .blue: return PopupVisualTheme.semantic(.planned)
+        case .cyan: return PopupVisualTheme.semantic(.info)
+        case .yellow: return PopupVisualTheme.semantic(.inProgress)
+        case .red: return PopupVisualTheme.semantic(.error)
+        case .magenta: return PopupVisualTheme.semantic(.review)
+        case .green: return PopupVisualTheme.semantic(.success)
         }
     }
 }

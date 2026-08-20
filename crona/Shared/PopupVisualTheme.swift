@@ -2,6 +2,41 @@ import AppKit
 import SwiftUI
 
 enum PopupVisualTheme {
+    enum SemanticColor {
+        case focus
+        case breakTime
+        case success
+        case warning
+        case error
+        case info
+        case planned
+        case inProgress
+        case review
+        case away
+        case mood
+        case energy
+        case stats
+    }
+
+    static func semantic(_ role: SemanticColor) -> Color {
+        let color: NSColor
+        switch role {
+        case .focus, .warning, .inProgress, .energy:
+            color = .systemYellow
+        case .breakTime, .mood:
+            color = .systemPink
+        case .success, .away:
+            color = .systemGreen
+        case .error:
+            color = .systemRed
+        case .info, .planned:
+            color = .systemBlue
+        case .review, .stats:
+            color = .systemPurple
+        }
+        return Color(nsColor: color)
+    }
+
     static var windowBackground: Color {
         Color(nsColor: .windowBackgroundColor)
     }
@@ -31,7 +66,7 @@ enum PopupVisualTheme {
     }
 
     static var selectedControlText: Color {
-        NSColor.white.swiftUIColor
+        Color(nsColor: .alternateSelectedControlTextColor)
     }
 
     static var border: Color {
@@ -47,7 +82,7 @@ enum PopupVisualTheme {
     }
 
     static var shadow: Color {
-        Color.black.opacity(0.22)
+        Color(nsColor: .shadowColor).opacity(0.42)
     }
 
     static var primaryText: Color {
@@ -74,15 +109,10 @@ enum PopupVisualTheme {
         Color.primary.opacity(0.18)
     }
 
-    private static func dynamic(light: NSColor, dark: NSColor) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        })
+    static var modalScrim: Color {
+        Color.black.opacity(0.56)
     }
-}
 
-private extension NSColor {
-    var swiftUIColor: Color { Color(nsColor: self) }
 }
 
 struct CompanionAppearanceModifier: ViewModifier {

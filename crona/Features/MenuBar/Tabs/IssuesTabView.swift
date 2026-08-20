@@ -76,7 +76,7 @@ struct AwayModeView: View {
         VStack(spacing: 16) {
             Image(systemName: "figure.walk.circle.fill")
                 .font(.system(size: 42, weight: .semibold))
-                .foregroundStyle(.green.opacity(0.82))
+                .foregroundStyle(PopupVisualTheme.semantic(.away).opacity(0.82))
 
             Text("Away Mode")
                 .font(.title3.weight(.bold))
@@ -109,7 +109,7 @@ struct AwayModeView: View {
             if let error = appState.coreSettingsService.lastErrorDescription, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     .multilineTextAlignment(.center)
             }
         }
@@ -179,7 +179,7 @@ struct ActiveTimerView: View {
                                 .lineLimit(2)
                         } icon: {
                             Image(systemName: "record.circle.fill")
-                                .foregroundStyle(.yellow)
+                                .foregroundStyle(PopupVisualTheme.semantic(.focus))
                         }
                     }
 
@@ -243,7 +243,7 @@ struct ActiveTimerView: View {
             if let upcoming = presentation.upcomingSegment {
                 MetricStripCard(
                     icon: upcoming.kind == .work ? "bolt.fill" : "cup.and.saucer.fill",
-                    tint: upcoming.kind == .work ? .yellow : .pink,
+                    tint: upcoming.kind == .work ? PopupVisualTheme.semantic(.focus) : PopupVisualTheme.semantic(.breakTime),
                     title: upcoming.title,
                     value: shortDuration(upcoming.durationSeconds)
                 )
@@ -284,7 +284,7 @@ struct IdleFocusView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Image(systemName: "scope")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(PopupVisualTheme.semantic(.focus))
                     .frame(width: 22)
                 Text(
                     formattedPopoverDate(
@@ -303,7 +303,7 @@ struct IdleFocusView: View {
             if let error = appState.coreSettingsService.lastErrorDescription, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
             }
 
             if appState.dailyFocusService.snapshot.issues.isEmpty {
@@ -325,7 +325,7 @@ struct IdleFocusView: View {
             if let error = appState.issueActionsService.lastErrorMessage {
                 HStack(spacing: 7) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(PopupVisualTheme.semantic(.warning))
                     Text(error)
                         .lineLimit(2)
                     Spacer(minLength: 0)
@@ -389,7 +389,7 @@ struct FocusStartConfigView: View {
                     .lineLimit(2)
             } icon: {
                 Image(systemName: "record.circle.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(PopupVisualTheme.semantic(.focus))
             }
 
             SegmentedControl(
@@ -404,12 +404,12 @@ struct FocusStartConfigView: View {
                 switch editor.state.mode {
                 case .stopwatch:
                     MetricStripCard(
-                        icon: "play.fill", tint: .green, title: "Open-ended focus",
+                        icon: "play.fill", tint: PopupVisualTheme.semantic(.success), title: "Open-ended focus",
                         value: "No hard limit")
                 case .pomodoro:
                     ExpandablePresetRow(
                         icon: "bolt.fill",
-                        tint: .yellow,
+                        tint: PopupVisualTheme.semantic(.focus),
                         title: "Focus",
                         displayValue: editor.focusDisplay,
                         choices: FocusStartConfigState.focusChoices,
@@ -425,7 +425,7 @@ struct FocusStartConfigView: View {
                     )
                     ExpandablePresetRow(
                         icon: "cup.and.saucer.fill",
-                        tint: .pink,
+                        tint: PopupVisualTheme.semantic(.breakTime),
                         title: "Short break",
                         displayValue: editor.breakDisplay,
                         choices: FocusStartConfigState.shortBreakChoices,
@@ -446,7 +446,7 @@ struct FocusStartConfigView: View {
                     if editor.state.showsLongBreakControls {
                         ExpandablePresetRow(
                             icon: "moon.zzz.fill",
-                            tint: .purple,
+                            tint: PopupVisualTheme.semantic(.review),
                             title: "Long break",
                             displayValue: editor.longBreakDisplay,
                             choices: FocusStartConfigState.longBreakChoices,
@@ -468,7 +468,7 @@ struct FocusStartConfigView: View {
                     if editor.state.showsCycleControls {
                         ExpandableNumberRow(
                             icon: "repeat.circle.fill",
-                            tint: .orange,
+                            tint: PopupVisualTheme.semantic(.warning),
                             title: "Cycles",
                             displayValue: "\(editor.state.effectivePomodoroCycles)",
                             values: Array(1...12),
@@ -500,7 +500,7 @@ struct FocusStartConfigView: View {
                 case .timer:
                     ExpandablePresetRow(
                         icon: "timer",
-                        tint: .orange,
+                        tint: PopupVisualTheme.semantic(.warning),
                         title: "Countdown",
                         displayValue: editor.countdownDisplay,
                         choices: FocusStartConfigState.countdownChoices,

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project crona.xcodeproj \
+            -scheme crona \
+            -clonedSourcePackagesDirPath .build/SourcePackages
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project crona.xcodeproj \
+            -scheme crona \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_TESTABILITY=YES \
+            -enableCodeCoverage NO \
+            -only-testing:cronaTests

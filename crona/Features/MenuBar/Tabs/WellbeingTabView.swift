@@ -38,14 +38,14 @@ struct WellbeingTabView: View {
                 subtitle: "How are you feeling?",
                 symbol: "face.smiling",
                 value: $mood,
-                tint: .pink
+                tint: PopupVisualTheme.semantic(.mood)
             )
             ratingRow(
                 title: "Energy",
                 subtitle: "How energized do you feel?",
                 symbol: "bolt.fill",
                 value: $energy,
-                tint: .yellow
+                tint: PopupVisualTheme.semantic(.energy)
             )
 
             VStack(spacing: 0) {
@@ -121,16 +121,16 @@ struct WellbeingTabView: View {
             switch saveFeedback {
             case .success:
                 Label("Check-in updated", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PopupVisualTheme.semantic(.success))
             case let .error(message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     .lineLimit(2)
             case nil:
                 if let error = validationError
                     ?? (suppressServiceError ? nil : appState.wellbeingService.snapshot.lastErrorDescription) {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red.opacity(0.9))
+                        .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                         .lineLimit(2)
                 } else {
                     Color.clear
@@ -146,7 +146,7 @@ struct WellbeingTabView: View {
         HStack {
             Image(systemName: "heart.text.square.fill")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(PopupVisualTheme.semantic(.mood))
                 .frame(width: leadingRailWidth)
             Text(formattedPopoverDate(appState.daemonConnection.currentDate, appState: appState))
                 .font(.title3.weight(.semibold))

@@ -79,6 +79,8 @@ The workflow validates:
 - `CURRENT_PROJECT_VERSION` is newer than the latest appcast build
 - Sparkle public key exists and decodes correctly
 
+The CI workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs the macOS unit suite for pushes to `main` and pull requests targeting `main`.
+
 ## Packaging and Signing
 
 The workflow:

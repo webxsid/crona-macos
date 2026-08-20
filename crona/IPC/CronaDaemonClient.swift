@@ -148,7 +148,7 @@ final class CronaDaemonClient {
         try await request(method: "timer.extend", params: AnyEncodable(input))
     }
 
-    func timerEnd(commitMessage: String) async throws -> CronaOKResponse {
+    func timerEnd(commitMessage: String) async throws -> CronaTimerState {
         try await request(method: "timer.end", params: AnyEncodable(CronaEndSessionRequest(commitMessage: commitMessage)))
     }
 

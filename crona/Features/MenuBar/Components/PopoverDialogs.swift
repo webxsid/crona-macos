@@ -59,7 +59,7 @@ struct EndSessionSheetView: View {
                     if let error = appState.endSessionErrorMessage, !error.isEmpty {
                         Text(error)
                             .font(.caption)
-                            .foregroundStyle(.red.opacity(0.9))
+                            .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     }
                 }
 
@@ -297,7 +297,7 @@ struct IssueActionEditorView: View {
             title: "Log Session",
             subtitle: issue.title,
             systemImage: "clock.fill",
-            iconColor: .blue
+            iconColor: PopupVisualTheme.semantic(.info)
         )
 
         VStack(alignment: .leading, spacing: 12) {
@@ -379,7 +379,7 @@ struct IssueActionEditorView: View {
             title: "Confirm Delete",
             subtitle: issue.title,
             systemImage: "trash.fill",
-            iconColor: .red
+            iconColor: PopupVisualTheme.semantic(.error)
         )
 
         Text("This will permanently remove the issue from Crona.")
@@ -407,7 +407,7 @@ struct IssueActionEditorView: View {
                 )
             }
             .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .tint(PopupVisualTheme.semantic(.error))
             .disabled(appState.issueActionsService.actionInFlightIssueID != nil)
         }
     }
@@ -499,7 +499,7 @@ struct IssueActionEditorView: View {
         {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(PopupVisualTheme.semantic(.warning))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -508,7 +508,7 @@ struct IssueActionEditorView: View {
         title: String,
         subtitle: String,
         systemImage: String,
-        iconColor: Color = .yellow
+        iconColor: Color = PopupVisualTheme.semantic(.warning)
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
@@ -545,7 +545,11 @@ struct IssueActionEditorView: View {
                     Image(
                         systemName: submitTitle == "Log Session" ? "clock.fill" : "checkmark"
                     )
-                    .foregroundStyle(submitTitle == "Log Session" ? .yellow : .white)
+                        .foregroundStyle(
+                            submitTitle == "Log Session"
+                                ? PopupVisualTheme.semantic(.warning)
+                                : PopupVisualTheme.selectedControlText
+                        )
                     Text(submitTitle)
                 }
             }

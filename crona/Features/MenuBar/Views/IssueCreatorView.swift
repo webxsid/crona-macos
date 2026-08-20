@@ -64,7 +64,7 @@ struct IssueCreatorView: View {
             if let error = validationMessage ?? appState.issueCreationService.lastErrorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(PopupVisualTheme.semantic(.warning))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -199,7 +199,7 @@ struct IssueCreatorView: View {
                                     HStack(spacing: 7) {
                                         Image(systemName: destination.streamID == appState.issueCreateDestinationID
                                             ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(destination.streamID == appState.issueCreateDestinationID ? .yellow : .secondary)
+                                            .foregroundStyle(destination.streamID == appState.issueCreateDestinationID ? PopupVisualTheme.semantic(.warning) : .secondary)
                                         Text(destination.streamName).lineLimit(1)
                                         Spacer(minLength: 0)
                                     }
@@ -343,7 +343,7 @@ struct HabitCreatorView: View {
             if let error = appState.habitCreateError ?? appState.habitsService.lastManagementError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(PopupVisualTheme.semantic(.warning))
             }
 
             HStack {
@@ -449,7 +449,7 @@ struct HabitCreatorView: View {
                                     HStack(spacing: 7) {
                                         Image(systemName: destination.streamID == appState.habitCreateDestinationID
                                             ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(destination.streamID == appState.habitCreateDestinationID ? .yellow : .secondary)
+                                            .foregroundStyle(destination.streamID == appState.habitCreateDestinationID ? PopupVisualTheme.semantic(.warning) : .secondary)
                                         Text(destination.streamName).lineLimit(1)
                                         Spacer(minLength: 0)
                                     }
@@ -585,11 +585,11 @@ struct HabitDeleteConfirmationView: View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Delete Habit", systemImage: "trash")
                 .font(.headline)
-                .foregroundStyle(.red)
+                .foregroundStyle(PopupVisualTheme.semantic(.error))
             Text("Delete \"\(habit.name)\"? This cannot be undone.")
                 .fixedSize(horizontal: false, vertical: true)
             if let error = appState.habitsService.lastManagementError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Text(error).font(.caption).foregroundStyle(PopupVisualTheme.semantic(.error))
             }
             HStack {
                 Button("Cancel", action: appState.cancelHabitActionEditor)
@@ -610,12 +610,12 @@ struct IssueCreationSuccessView: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(PopupVisualTheme.semantic(.success))
             Text("Created \(success.issue.title)").font(.caption.weight(.semibold)).lineLimit(1)
             Spacer(minLength: 0)
             if success.plannedForToday && !appState.hasActiveFocusSession {
                 Button("Start Focus", action: appState.startFocusFromCreatedIssue)
-                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.yellow)
+                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(PopupVisualTheme.semantic(.warning))
             }
             Button(action: appState.dismissIssueCreationSuccess) { Image(systemName: "xmark") }
                 .buttonStyle(.plain).accessibilityLabel("Dismiss")

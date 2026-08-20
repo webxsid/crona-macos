@@ -123,19 +123,19 @@ struct StatsTabView: View {
                     ) {
                         StatsMetricTile(
                             icon: "bolt.fill",
-                            tint: .yellow,
+                            tint: PopupVisualTheme.semantic(.focus),
                             title: "Focus",
                             value: compactDuration(metrics.workedSeconds)
                         )
                         StatsMetricTile(
                             icon: "cup.and.saucer.fill",
-                            tint: .pink,
+                            tint: PopupVisualTheme.semantic(.breakTime),
                             title: "Breaks",
                             value: compactDuration(metrics.restSeconds)
                         )
                         StatsMetricTile(
                             icon: "rectangle.stack.fill",
-                            tint: .orange,
+                            tint: PopupVisualTheme.semantic(.warning),
                             title: "Sessions",
                             value: "\(metrics.sessionCount)"
                         )
@@ -158,7 +158,7 @@ struct StatsTabView: View {
 
                     StatsOutcomeCard(
                         icon: "checkmark.circle.fill",
-                        tint: .green,
+                        tint: PopupVisualTheme.semantic(.success),
                         title: "Issues",
                         values: [
                             ("Completed", metrics.completedIssues),
@@ -171,7 +171,7 @@ struct StatsTabView: View {
 
                     StatsOutcomeCard(
                         icon: "checklist.checked",
-                        tint: .cyan,
+                        tint: PopupVisualTheme.semantic(.info),
                         title: "Habits",
                         values: [
                             ("Done", metrics.habitCompletedCount),
@@ -190,7 +190,7 @@ struct StatsTabView: View {
                 if let error = snapshot.lastErrorDescription, !error.isEmpty {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(.red.opacity(0.9))
+                        .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }
@@ -223,7 +223,7 @@ struct StatsTabView: View {
             if let error = anchoredSnapshot.lastErrorDescription, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .foregroundStyle(PopupVisualTheme.semantic(.error).opacity(0.9))
                     .padding(.horizontal, 4)
             }
         }
@@ -388,7 +388,7 @@ struct StatsTabView: View {
         if isFuture {
             tileFill = AnyShapeStyle(PopupVisualTheme.primaryText.opacity(0.025))
         } else if isAway {
-            tileFill = AnyShapeStyle(Color.green.opacity(0.055))
+            tileFill = AnyShapeStyle(PopupVisualTheme.semantic(.success).opacity(0.055))
         } else if let score {
             tileFill = AnyShapeStyle(
                 LinearGradient(
@@ -426,7 +426,7 @@ struct StatsTabView: View {
                 }
                 .foregroundStyle(
                     isAway
-                        ? Color.green.opacity(0.9)
+                        ? PopupVisualTheme.semantic(.success).opacity(0.9)
                         : selected
                             ? PopupVisualTheme.selectedControlText : PopupVisualTheme.primaryText
                 )
@@ -474,7 +474,7 @@ struct StatsTabView: View {
                 } else if isAway {
                     Text("Away")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.green.opacity(0.9))
+                        .foregroundStyle(PopupVisualTheme.semantic(.success).opacity(0.9))
                         .frame(maxWidth: .infinity)
                 } else if cached == nil && !isFuture && date != nil {
                     ProgressView()
@@ -554,7 +554,7 @@ struct StatsTabView: View {
             VStack(spacing: StatsLayout.sectionSpacing) {
                 Image(systemName: "figure.walk.circle.fill")
                     .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(.green.opacity(0.82))
+                    .foregroundStyle(PopupVisualTheme.semantic(.away).opacity(0.82))
                 Text("Away Mode")
                     .font(.title3.weight(.bold))
                 Text("You chose to rest and recover on \(displayDate).")
@@ -635,11 +635,11 @@ struct StatsTabView: View {
     private func calendarScoreColors(_ score: Int) -> [Color] {
         switch score {
         case 80...:
-            return [.mint, .yellow]
+            return [PopupVisualTheme.semantic(.success), PopupVisualTheme.semantic(.focus)]
         case 50..<80:
-            return [.yellow, .orange]
+            return [PopupVisualTheme.semantic(.focus), PopupVisualTheme.semantic(.warning)]
         default:
-            return [.orange, .pink]
+            return [PopupVisualTheme.semantic(.warning), PopupVisualTheme.semantic(.breakTime)]
         }
     }
 
@@ -744,7 +744,7 @@ private struct CompactScoreRing: View {
                 .stroke(
                     LinearGradient(
                         colors: [
-                            PopupVisualTheme.primaryText.opacity(0.82), Color.yellow.opacity(0.72),
+                            PopupVisualTheme.primaryText.opacity(0.82), PopupVisualTheme.semantic(.focus).opacity(0.72),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -819,7 +819,7 @@ private struct FocusRestBalanceView: View {
 
             GeometryReader { geometry in
                 Capsule()
-                    .fill(Color.pink.opacity(0.18))
+                    .fill(PopupVisualTheme.semantic(.breakTime).opacity(0.18))
                     .overlay(alignment: .leading) {
                         Capsule()
                             .fill(PopupVisualTheme.primaryText.opacity(0.56))

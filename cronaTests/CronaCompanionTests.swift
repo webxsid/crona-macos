@@ -2955,14 +2955,25 @@ final class CronaCompanionTests: XCTestCase {
 
     func testDaemonClientBuildsEndSessionRequestWithCommitMessage() async throws {
         let response = """
-        {"id":"response-1","result":{"ok":true}}
+        {
+          "id":"response-1",
+          "result":{
+            "state":"idle",
+            "sessionId":"session-1",
+            "issueId":303,
+            "elapsedSeconds":600
+          }
+        }
         """.data(using: .utf8)!
         let transport = CapturingDaemonTransport(responseData: response)
         let client = CronaDaemonClient(transport: transport)
 
         let result = try await client.timerEnd(commitMessage: "Ship macOS companion end flow")
 
-        XCTAssertTrue(result.ok)
+        XCTAssertEqual(result.state, "idle")
+        XCTAssertEqual(result.sessionID, "session-1")
+        XCTAssertEqual(result.issueID, 303)
+        XCTAssertEqual(result.elapsedSeconds, 600)
         let request = try XCTUnwrap(transport.requestData)
         let requestProbe = try JSONDecoder().decode(RequestWithParamsProbe.self, from: request)
         XCTAssertEqual(requestProbe.method, "timer.end")
@@ -3462,6 +3473,55 @@ private final class SmartPauseMonitor: SmartPauseSystemMonitoring {
 
     func stop() {
         isStarted = false
+    }
+}
+
+extension CronaCompanionTests {
+    func testHardLimitSessionTimeSummaryUsesConsumedLimitTime() {
+        let summary = HardLimitSessionTimeSummary.from(
+            TimerSnapshot(
+                state: "expired",
+                sessionID: "session-1",
+                hardLimitActive: true,
+                hardLimitExpired: true,
+                hardLimitTotalSeconds: 1_800,
+                hardLimitRemainingSeconds: 0,
+                isConnected: true
+            )
+        )
+
+        XCTAssertEqual(summary.spentSeconds, 1_800)
+        XCTAssertEqual(summary.limitSeconds, 1_800)
+        XCTAssertEqual(summary.spentText, "30:00")
+    }
+
+    func testHardLimitSessionTimeSummaryClampsRemainingTime() {
+        let overLimit = HardLimitSessionTimeSummary.from(
+            TimerSnapshot(
+                hardLimitActive: true,
+                hardLimitTotalSeconds: 600,
+                hardLimitRemainingSeconds: 900
+            )
+        )
+        let negativeRemaining = HardLimitSessionTimeSummary.from(
+            TimerSnapshot(
+                hardLimitActive: true,
+                hardLimitTotalSeconds: 600,
+                hardLimitRemainingSeconds: -10
+            )
+        )
+
+        XCTAssertEqual(overLimit.spentSeconds, 0)
+        XCTAssertEqual(negativeRemaining.spentSeconds, 600)
+    }
+
+    func testHardLimitSessionTimeSummaryFallsBackToStopwatchElapsedTime() {
+        let summary = HardLimitSessionTimeSummary.from(
+            TimerSnapshot(state: "running", elapsedSeconds: 125, isConnected: true)
+        )
+
+        XCTAssertEqual(summary.spentSeconds, 125)
+        XCTAssertEqual(summary.limitSeconds, 0)
     }
 }
 
