@@ -1628,15 +1628,18 @@ final class CompanionAppState: ObservableObject {
 
     private func handleDaemonEvent(_ event: CronaProtocolEvent) {
         switch event.type {
+        case "session.started", "session.stopped", "session.ended":
+            issueActionsService.refreshTransitionsAfterSessionChange()
+            if event.type == "session.ended" {
+                guard let sessionID = event.sessionID else { return }
+                finalizeEndSessionIfNeeded(for: sessionID)
+            }
         case "day.start":
             handleDayStart(event)
         case "timer.hard_limit_reached":
             handleHardLimitReached(event)
         case "timer.extended":
             handleTimerExtended(event)
-        case "session.ended":
-            guard let sessionID = event.sessionID else { return }
-            finalizeEndSessionIfNeeded(for: sessionID)
         default:
             break
         }

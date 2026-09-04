@@ -1,46 +1,63 @@
 {
   "color-space-for-untagged-svg-colors" : "display-p3",
-  "fill" : "system-dark",
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "display-p3:0.90588,0.93333,0.92157,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "display-p3:0.08235,0.11373,0.10980,1.00000"
+      }
+    }
+  ],
   "groups" : [
     {
       "layers" : [
         {
-          "fill" : {
-            "solid" : "display-p3:0.72960,0.63398,0.38448,1.00000"
-          },
-          "glass" : true,
-          "image-name" : "Crona Terminal Icon.svg",
-          "name" : "Crona Terminal Icon",
-          "position" : {
-            "scale" : 0.7,
-            "translation-in-points" : [
-              -116.64477035601408,
-              -134.1417338581498
-            ]
-          }
-        },
-        {
           "fill-specializations" : [
             {
               "value" : {
-                "solid" : "display-p3:0.81610,0.69963,0.41119,1.00000"
+                "solid" : "srgb:0.94902,0.96863,0.96078,1.00000"
               }
             },
             {
               "appearance" : "dark",
-              "value" : "none"
-            },
-            {
-              "appearance" : "tinted",
               "value" : {
-                "solid" : "display-p3:0.81610,0.69963,0.41119,1.00000"
+                "solid" : "srgb:0.06275,0.08235,0.08235,1.00000"
               }
             }
           ],
-          "image-name" : "Crona C 4.svg",
-          "name" : "Crona C 4",
+          "image-name" : "terminal mark 2.svg",
+          "name" : "terminal mark 2",
           "position" : {
-            "scale" : 0.4,
+            "scale" : 0.5,
+            "translation-in-points" : [
+              210.07605757778686,
+              150.87346730679258
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "srgb:0.08627,0.23529,0.21961,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.64706,0.92157,0.87451,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Outer c.svg",
+          "name" : "Outer c",
+          "position" : {
+            "scale" : 0.5,
             "translation-in-points" : [
               0,
               0
@@ -48,40 +65,38 @@
           }
         },
         {
-          "blend-mode" : "lighten",
           "fill-specializations" : [
             {
               "value" : {
-                "solid" : "srgb:0.00000,0.00000,0.00000,0.17909"
+                "solid" : "srgb:0.18431,0.62353,0.57255,1.00000"
               }
             },
             {
-              "appearance" : "tinted",
+              "appearance" : "dark",
               "value" : {
-                "solid" : "srgb:0.00000,0.00000,0.00000,1.00000"
+                "solid" : "srgb:0.38039,0.81961,0.75686,1.00000"
               }
             }
           ],
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "Crona BG.svg",
-          "name" : "Crona BG",
+          "image-name" : "terminal block.svg",
+          "name" : "terminal block",
           "position" : {
-            "scale" : 1,
+            "scale" : 0.5,
             "translation-in-points" : [
-              0,
-              0
+              209.8732471126865,
+              150.6664459579448
             ]
           }
         }
       ],
+      "lighting" : "combined",
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.5
+        "opacity" : 0.6
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.2
       }
     }
   ],

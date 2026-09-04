@@ -91,6 +91,14 @@ final class IssueActionsService: ObservableObject {
         lastErrorMessage = nil
     }
 
+    /// Status transitions depend on whether the daemon currently has an active session.
+    /// Invalidate them when session state changes so menus do not retain a stale block.
+    func refreshTransitionsAfterSessionChange() {
+        synchronizationTask?.cancel()
+        transitionsByIssueID.removeAll()
+        synchronize(issues: dailyFocusService.snapshot.issues, force: true)
+    }
+
     func logManualSession(_ request: CronaManualSessionLogRequest) async -> Bool {
         await perform(issueID: request.issueID) {
             _ = try await self.daemonConnection.withClient {

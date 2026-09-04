@@ -6,6 +6,19 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0-beta.16] - 2026-09-03
+
+Crona for macOS v1.0.0-beta.16 fixes stale issue status actions after using the menu-bar companion.
+
+### Fixed
+
+- Issue-card status menus now refresh when a focus session starts or ends, so they no longer incorrectly report that status cannot be changed while a session is active.
+
+### Compatibility
+
+- The Apple marketing version remains `1.0.0`; the build number is `17`.
+- The daemon must report protocol version `1.5` during handshake.
+
 ## [1.0.0-beta.15] - 2026-08-20
 
 Crona for macOS v1.0.0-beta.15 improves hard-limit decision making and strengthens release validation.
