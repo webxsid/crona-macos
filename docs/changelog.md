@@ -6,6 +6,23 @@ All notable changes to **Crona for macOS** are documented here.
 
 No unreleased changes.
 
+## [1.0.0] - 2026-09-13
+
+First stable release of Crona for macOS: a native, daemon-backed menu-bar client for focus sessions, issues, habits, wellbeing, Stats, Away Mode, and configurable timer workflows.
+
+- Added issue and habit creation, editing, planning, scheduling, completion, and deletion workflows.
+- Added wellbeing check-ins, manual session logging, historical Stats calendars, Away Mode, and configurable date presentation.
+- Added authoritative daemon-backed Pomodoro behavior, break deferral, hard-limit decisions, notifications, and protocol compatibility handling.
+- Added configurable floating timer HUD, native Settings, global Settings shortcut, menu-bar/Dock controls, accessibility refinements, and stable popup presentation.
+- Added signed Sparkle updates, universal packaging, notarized DMG/ZIP distribution, CI validation, release documentation, and daemon recovery tooling.
+
+### Compatibility
+
+- Apple marketing version: `1.0.0`.
+- Build number: `18`.
+- Required daemon protocol: `1.5`.
+- The matching daemon must support habit mutations, `dashboard.focus_score_range`, session/issue mutations, and daemon-owned break-deferral behavior.
+
 ## [1.0.0-beta.16] - 2026-09-03
 
 Crona for macOS v1.0.0-beta.16 fixes stale issue status actions after using the menu-bar companion.
