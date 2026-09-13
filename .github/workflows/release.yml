@@ -339,16 +339,17 @@ jobs:
           gh release view "${GITHUB_REF_NAME}" --json body --jq .body > "feed/Crona-${VERSION}-macOS.md"
           GENERATE_APPCAST="$(find .build/SourcePackages/artifacts -type f -name generate_appcast -perm +111 | head -1)"
           test -x "${GENERATE_APPCAST}"
-          CHANNEL=()
+          APPCAST_ARGS=(
+            --ed-key-file -
+            --maximum-versions 0
+            --download-url-prefix "https://github.com/webxsid/crona-macos/releases/download/${GITHUB_REF_NAME}/"
+            --release-notes-url-prefix "https://webxsid.github.io/crona-macos/"
+          )
           if [[ "${GITHUB_REF_NAME}" == *-beta.* ]]; then
-            CHANNEL=(--channel beta)
+            APPCAST_ARGS+=(--channel beta)
           fi
           printf '%s' "${SPARKLE_EDDSA_PRIVATE_KEY}" | "${GENERATE_APPCAST}" \
-            --ed-key-file - \
-            --maximum-versions 0 \
-            --download-url-prefix "https://github.com/webxsid/crona-macos/releases/download/${GITHUB_REF_NAME}/" \
-            --release-notes-url-prefix "https://webxsid.github.io/crona-macos/" \
-            "${CHANNEL[@]}" \
+            "${APPCAST_ARGS[@]}" \
             feed
           grep -Eq '<enclosure[^>]+sparkle:edSignature=' feed/appcast.xml
           grep -q '<!-- sparkle-signatures:' feed/appcast.xml

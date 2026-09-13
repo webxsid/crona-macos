@@ -1540,7 +1540,7 @@ final class CronaCompanionTests: XCTestCase {
             .path
 
         XCTAssertEqual(runtime.config.runtimeDirectoryPath, expected)
-        XCTAssertFalse(runtime.config.runtimeDirectoryPath.contains("/Users/runner"))
+        XCTAssertFalse(runtime.config.runtimeDirectoryPath.contains("~"))
     }
 
     func testOptionalActiveContextDecodesNull() throws {
